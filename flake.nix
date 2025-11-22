@@ -28,7 +28,12 @@
               pkgs.clang
               pkgs.pkg-config
               pkgs.openssl
+              pkgs.git
             ];
+
+            shellHook = ''
+              export PATH="$HOME/.cargo/bin:$PATH"
+            '';
           };
         });
     };
