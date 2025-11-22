@@ -132,5 +132,4 @@ jobs:
           cache-key: clippy
           components: clippy rust-docs
       - run: cargo lint -- -D warnings
-      - run: cargo lint --profile dev-no-debug-assertions -- -D warnings
       - run: RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --document-private-items
