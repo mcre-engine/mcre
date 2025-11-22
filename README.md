@@ -34,7 +34,7 @@ If you are unable to contribute by code, you can still participate by:
 
 MCRE is open-source software released under the [MIT License](./LICENSE).
 
-[discord-badge]: https://img.shields.io/discord/1079625926024900739?logo=discord&label=Discord
+[discord-badge]: https://img.shields.io/discord/1441732591576420397?logo=discord&label=Discord
 [discord-url]: https://discord.gg/ueQSJ9pS
 [license-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [license-url]: https://github.com/mcre-project/mcre/blob/main/LICENSE
