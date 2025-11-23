@@ -12,7 +12,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-serde = { workspace = true }
+serde     = { workspace = true }
+indexmap = { workspace = true }
 
 [dev-dependencies]
 tokio      = { workspace = true }

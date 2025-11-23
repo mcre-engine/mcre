@@ -837,6 +837,7 @@ dependencies = [
 name = "mcre_assest"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
  "mcje_downloader",
  "serde",
  "serde_json",

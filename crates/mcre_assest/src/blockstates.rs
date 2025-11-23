@@ -1,6 +1,7 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, slice};
 
+use indexmap::IndexMap;
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self, MapAccess, Unexpected, Visitor},
@@ -254,9 +255,29 @@ pub struct MultipartRule {
 
 #[derive(Debug, Clone)]
 pub enum Condition {
-    KeyValue(String, String),
+    KeyValue(String, StateValue),
     And(Vec<Condition>),
     Or(Vec<Condition>),
+}
+
+impl Condition {
+    pub fn test(&self, state_values: &IndexMap<String, StateValue>) -> bool {
+        match self {
+            Condition::KeyValue(key, value) => {
+                if let Some(state_value) = state_values.get(key) {
+                    state_value == value
+                } else {
+                    false
+                }
+            }
+            Condition::And(conditions) => conditions
+                .iter()
+                .all(|condition| condition.test(state_values)),
+            Condition::Or(conditions) => conditions
+                .iter()
+                .any(|condition| condition.test(state_values)),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for Condition {
@@ -265,7 +286,7 @@ impl<'de> Deserialize<'de> for Condition {
         D: Deserializer<'de>,
     {
         #[derive(Debug, Clone)]
-        struct SingleCond(String, String);
+        struct SingleCond(String, StateValue);
 
         impl<'de> Deserialize<'de> for SingleCond {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -285,7 +306,7 @@ impl<'de> Deserialize<'de> for Condition {
                     where
                         M: MapAccess<'de>,
                     {
-                        let (key, value): (String, String) = map
+                        let (key, value): (String, StateValue) = map
                             .next_entry()?
                             .ok_or_else(|| de::Error::custom("condition cannot be empty"))?;
 
@@ -315,7 +336,7 @@ impl<'de> Deserialize<'de> for Condition {
                 or: Vec<Helper>,
             },
             Single(SingleCond),
-            ImplicitAnd(HashMap<String, String>),
+            ImplicitAnd(HashMap<String, StateValue>),
         }
 
         impl From<Helper> for Condition {
@@ -336,6 +357,65 @@ impl<'de> Deserialize<'de> for Condition {
         }
 
         Ok(Helper::deserialize(deserializer)?.into())
+    }
+}
+
+pub enum BlockModelResolution<'a> {
+    Unified(&'a [ModelVariant]),
+    Multipart(Box<[ModelVariant]>),
+}
+
+impl BlockStateDefinition {
+    pub fn resolve<'a>(
+        &'a self,
+        state_values: &IndexMap<String, StateValue>,
+    ) -> Option<BlockModelResolution<'a>> {
+        match self {
+            Self::Variants(variants) => {
+                'variant_loop: for variant in variants.iter() {
+                    for (key, value) in &variant.filter {
+                        let Some(state_value) = state_values.get(key) else {
+                            continue 'variant_loop;
+                        };
+
+                        if state_value != value {
+                            continue 'variant_loop;
+                        };
+                    }
+
+                    let models = match &variant.definition {
+                        VariantDefinition::Single(model) => slice::from_ref(model),
+                        VariantDefinition::Multiple(models) => models.as_slice(),
+                    };
+
+                    return Some(BlockModelResolution::Unified(models));
+                }
+
+                None
+            }
+            Self::Multipart(rules) => {
+                let mut resolved_models = Vec::new();
+
+                for rule in rules {
+                    let condition_met = if let Some(condition) = &rule.when {
+                        condition.test(state_values)
+                    } else {
+                        true
+                    };
+
+                    if condition_met {
+                        match rule.apply.clone() {
+                            VariantDefinition::Single(model) => resolved_models.push(model),
+                            VariantDefinition::Multiple(models) => resolved_models.extend(models),
+                        }
+                    }
+                }
+
+                Some(BlockModelResolution::Multipart(
+                    resolved_models.into_boxed_slice(),
+                ))
+            }
+        }
     }
 }
 
