@@ -2,25 +2,136 @@ use core::fmt;
 use std::collections::HashMap;
 
 use serde::{
-    Deserialize, Deserializer,
+    Deserialize, Deserializer, Serialize,
     de::{self, MapAccess, Unexpected, Visitor},
 };
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum StateValue {
+    Int(u8),
+    Bool(bool),
+    String(String),
+}
+
+/// Represents a single variant entry from the "variants" map.
+#[derive(Debug, Clone)]
+pub struct VariantEntry {
+    /// Parsed from the JSON map key (e.g., "face=ceiling,facing=east")
+    pub filter: HashMap<String, StateValue>,
+    /// The value of the JSON map entry
+    pub definition: VariantDefinition,
+}
+
+/// A wrapper struct to handle deserializing a JSON Map into a `Vec<VariantEntry>`
+/// while preserving the order of entry appearance in the file.
+#[derive(Debug, Clone)]
+pub struct VariantEntries(pub Vec<VariantEntry>);
+
+// Allow accessing the inner Vec easily
+impl std::ops::Deref for VariantEntries {
+    type Target = Vec<VariantEntry>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl IntoIterator for VariantEntries {
+    type Item = VariantEntry;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockStateDefinition {
-    Variants(HashMap<String, VariantDefinition>),
+    /// Deserializes from a JSON Map, but stores as a `Vec<VariantEntry>`.
+    Variants(VariantEntries),
     Multipart(Vec<MultipartRule>),
 }
 
-#[derive(Deserialize)]
+impl<'de> Deserialize<'de> for VariantEntries {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct VariantsVisitor;
+
+        impl<'de> Visitor<'de> for VariantsVisitor {
+            type Value = VariantEntries;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a map of blockstate variants")
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut variants = Vec::with_capacity(access.size_hint().unwrap_or(0));
+
+                // Iterate over the map entries.
+                // serde_json preserves the order of keys as they appear in the file
+                // when iterating via MapAccess.
+                while let Some((key_str, definition)) =
+                    access.next_entry::<String, VariantDefinition>()?
+                {
+                    let filter = parse_variant_key(&key_str);
+                    variants.push(VariantEntry { filter, definition });
+                }
+
+                Ok(VariantEntries(variants))
+            }
+        }
+
+        deserializer.deserialize_map(VariantsVisitor)
+    }
+}
+
+/// Helper to parse "face=ceiling,powered=true" into a HashMap
+fn parse_variant_key(key: &str) -> HashMap<String, StateValue> {
+    let mut map = HashMap::new();
+
+    // Handle empty key or "normal" (legacy/default)
+    if key.is_empty() || key == "normal" {
+        return map;
+    }
+
+    for part in key.split(',') {
+        // Split "key=value"
+        if let Some((k, v)) = part.split_once('=') {
+            map.insert(k.to_string(), parse_state_value(v));
+        } else {
+            // Fallback for malformed strings or single keys without values (rare in MC)
+            // We treat the whole part as a key with an empty string value,
+            // or you could ignore it.
+            map.insert(part.to_string(), StateValue::String(String::new()));
+        }
+    }
+    map
+}
+
+/// Helper to infer type (Int -> Bool -> String)
+fn parse_state_value(v: &str) -> StateValue {
+    if let Ok(b) = v.parse::<bool>() {
+        StateValue::Bool(b)
+    } else if let Ok(i) = v.parse::<u8>() {
+        StateValue::Int(i)
+    } else {
+        StateValue::String(v.to_string())
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum VariantDefinition {
     Single(ModelVariant),
     Multiple(Vec<ModelVariant>),
 }
 
-// currently only supports minecraft namespace
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockModelId(pub String);
 
@@ -59,7 +170,7 @@ impl<'de> Deserialize<'de> for BlockModelId {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ModelVariant {
     pub model: BlockModelId,
@@ -75,7 +186,7 @@ pub struct ModelVariant {
     pub z: RotationDegrees,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub enum RotationDegrees {
     #[default]
     R0,
@@ -129,7 +240,7 @@ impl<'de> Deserialize<'de> for RotationDegrees {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct MultipartRule {
     pub apply: VariantDefinition,
@@ -170,7 +281,6 @@ impl<'de> Deserialize<'de> for Condition {
                     where
                         M: MapAccess<'de>,
                     {
-                        // Must contain exactly 1 entry
                         let (key, value): (String, String) = map
                             .next_entry()?
                             .ok_or_else(|| de::Error::custom("condition cannot be empty"))?;
@@ -227,32 +337,28 @@ impl<'de> Deserialize<'de> for Condition {
 
 #[cfg(test)]
 mod tests {
+    use crate::blockstates::BlockStateDefinition;
     use std::{
         fs::{self, File},
         path::PathBuf,
     };
 
-    use crate::blockstates::BlockStateDefinition;
-
     #[tokio::test]
     async fn test_part_block_state_definition() {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         let manifest_dir = PathBuf::from(manifest_dir);
-
         let root_dir = manifest_dir.join("assets/minecraft/blockstates");
+
         let mut total = 0;
         let mut passed = 0;
-
         let mut failed = Vec::new();
 
         for entry in fs::read_dir(&root_dir).unwrap() {
             total += 1;
-
             let entry = entry.unwrap();
             let path = entry.path();
             let file = File::open(&path).unwrap();
             let result: Result<BlockStateDefinition, _> = serde_json::from_reader(file);
-
             match result {
                 Ok(_) => passed += 1,
                 Err(err) => {
