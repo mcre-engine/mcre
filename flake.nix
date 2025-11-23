@@ -23,6 +23,7 @@
         in {
           default = pkgs.mkShell {
             buildInputs = [
+              pkgs.rustup
               pkgs.rust-bin.stable."${rust-toolchain.toolchain.channel}".default
 
               pkgs.clang
