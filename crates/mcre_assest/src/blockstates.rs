@@ -176,14 +176,18 @@ pub struct ModelVariant {
     pub model: BlockModelId,
     #[serde(default)]
     pub uvlock: bool,
-    #[serde(default)]
-    pub weight: Option<u8>,
+    #[serde(default = "default_weight")]
+    pub weight: u8,
     #[serde(default)]
     pub x: RotationDegrees,
     #[serde(default)]
     pub y: RotationDegrees,
     #[serde(default)]
     pub z: RotationDegrees,
+}
+
+fn default_weight() -> u8 {
+    1
 }
 
 #[derive(Default, Debug, Clone)]
