@@ -110,7 +110,15 @@ jobs:
       - run: cross --version
       # `--lib --bins --tests` to skip doctests which are very slow to run via `cross`.
       # https://github.com/cross-rs/cross/issues/1703
-      - run: cross test --workspace --lib --bins --tests --all-features --target s390x-unknown-linux-gnu --exclude data_generator
+      - run: cross test \
+          --workspace \
+          --lib \
+          --bins \
+          --tests \
+          --all-features \
+          --target s390x-unknown-linux-gnu \
+          --exclude data_generator \
+          --exclude mcje_downloader
 
   typos:
     name: Spell Check
