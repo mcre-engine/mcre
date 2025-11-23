@@ -33,3 +33,6 @@ zip          = "6"
 
 java-locator = "0.1"
 jni          = { version = "0.21", features = ["invocation"] }
+
+[workspace.metadata.cargo-shear]
+ignored = ["mcre_assest"]
