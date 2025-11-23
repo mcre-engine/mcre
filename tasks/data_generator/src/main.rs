@@ -5,7 +5,7 @@ use jni::{
     InitArgsBuilder, JNIEnv, JavaVM,
     objects::{JObject, JString, JValueGen},
 };
-use mcdl::RootManifest;
+use mcje_downloader::RootManifest;
 use mcre_data::{
     block::{Block, BlockStateField, BlockStateFieldValues},
     state::{BlockState, OffsetType, StateValue},
@@ -45,7 +45,7 @@ async fn main() {
             .download_as_string()
             .await
             .unwrap();
-        let mappings = mcdl::convert_mappings(&mappings);
+        let mappings = mcje_downloader::convert_mappings(&mappings);
         fs::write(&mappings_path, &mappings).unwrap();
     }
 

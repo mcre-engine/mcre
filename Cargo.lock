@@ -116,7 +116,7 @@ dependencies = [
  "indexmap",
  "java-locator",
  "jni",
- "mcdl",
+ "mcje_downloader",
  "mcre_data",
  "serde_json",
  "tokio",
@@ -680,19 +680,6 @@ name = "log"
 version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
-
-[[package]]
-name = "mcdl"
-version = "0.1.0"
-source = "git+https://github.com/oxidized-steve/mcdl#bfb8c17c09977488fc9330ed2d81dc34ebc1963e"
-dependencies = [
- "bytes",
- "chrono",
- "futures-core",
- "reqwest",
- "serde",
- "url",
-]
 
 [[package]]
 name = "mcje_downloader"

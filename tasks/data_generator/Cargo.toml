@@ -12,9 +12,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-mcre_data = { workspace = true }
-
-mcdl = { workspace = true }
+mcre_data       = { workspace = true }
+mcje_downloader = { workspace = true }
 
 java-locator = { workspace = true }
 jni          = { workspace = true }
