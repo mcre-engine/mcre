@@ -344,7 +344,7 @@ mod tests {
     };
 
     #[tokio::test]
-    async fn test_part_block_state_definition() {
+    async fn test_parse_block_state_definition() {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         let manifest_dir = PathBuf::from(manifest_dir);
         let root_dir = manifest_dir.join("assets/minecraft/blockstates");
