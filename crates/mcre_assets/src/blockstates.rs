@@ -2,10 +2,7 @@ use core::fmt;
 use std::{collections::HashMap, slice};
 
 use indexmap::IndexMap;
-use serde::{
-    Deserialize, Deserializer, Serialize,
-    de::{self, MapAccess, Unexpected, Visitor},
-};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
@@ -54,78 +51,6 @@ pub enum BlockStateDefinition {
     Multipart(Vec<MultipartRule>),
 }
 
-impl<'de> Deserialize<'de> for VariantEntries {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct VariantsVisitor;
-
-        impl<'de> Visitor<'de> for VariantsVisitor {
-            type Value = VariantEntries;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a map of blockstate variants")
-            }
-
-            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                let mut variants = Vec::with_capacity(access.size_hint().unwrap_or(0));
-
-                // Iterate over the map entries.
-                // serde_json preserves the order of keys as they appear in the file
-                // when iterating via MapAccess.
-                while let Some((key_str, definition)) =
-                    access.next_entry::<String, VariantDefinition>()?
-                {
-                    let filter = parse_variant_key(&key_str);
-                    variants.push(VariantEntry { filter, definition });
-                }
-
-                Ok(VariantEntries(variants))
-            }
-        }
-
-        deserializer.deserialize_map(VariantsVisitor)
-    }
-}
-
-/// Helper to parse "face=ceiling,powered=true" into a HashMap
-fn parse_variant_key(key: &str) -> HashMap<String, StateValue> {
-    let mut map = HashMap::new();
-
-    // Handle empty key or "normal" (legacy/default)
-    if key.is_empty() || key == "normal" {
-        return map;
-    }
-
-    for part in key.split(',') {
-        // Split "key=value"
-        if let Some((k, v)) = part.split_once('=') {
-            map.insert(k.to_string(), parse_state_value(v));
-        } else {
-            // Fallback for malformed strings or single keys without values (rare in MC)
-            // We treat the whole part as a key with an empty string value,
-            // or you could ignore it.
-            map.insert(part.to_string(), StateValue::String(String::new()));
-        }
-    }
-    map
-}
-
-/// Helper to infer type (Int -> Bool -> String)
-fn parse_state_value(v: &str) -> StateValue {
-    if let Ok(b) = v.parse::<bool>() {
-        StateValue::Bool(b)
-    } else if let Ok(i) = v.parse::<u8>() {
-        StateValue::Int(i)
-    } else {
-        StateValue::String(v.to_string())
-    }
-}
-
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum VariantDefinition {
@@ -135,41 +60,6 @@ pub enum VariantDefinition {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockModelId(pub String);
-
-impl<'de> Deserialize<'de> for BlockModelId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct BlockPatternVisitor;
-
-        impl<'de> Visitor<'de> for BlockPatternVisitor {
-            type Value = BlockModelId;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a string starting with \"minecraft:block/\"")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                if let Some(id) = value.strip_prefix("minecraft:block/") {
-                    Ok(BlockModelId(id.to_string()))
-                } else if let Some(id) = value.strip_prefix("block/") {
-                    Ok(BlockModelId(id.to_string()))
-                } else {
-                    Err(E::invalid_value(
-                        de::Unexpected::Str(value),
-                        &"string matching minecraft:block/*",
-                    ))
-                }
-            }
-        }
-
-        deserializer.deserialize_str(BlockPatternVisitor)
-    }
-}
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
@@ -198,51 +88,6 @@ pub enum RotationDegrees {
     R90,
     R180,
     R270,
-}
-
-impl<'de> Deserialize<'de> for RotationDegrees {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct RotationVisitor;
-
-        impl<'de> Visitor<'de> for RotationVisitor {
-            type Value = RotationDegrees;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an integer rotation: 0, 90, 180, or 270")
-            }
-
-            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                match value {
-                    0 => Ok(RotationDegrees::R0),
-                    90 => Ok(RotationDegrees::R90),
-                    180 => Ok(RotationDegrees::R180),
-                    270 => Ok(RotationDegrees::R270),
-                    _ => Err(E::invalid_value(Unexpected::Signed(value), &self)),
-                }
-            }
-
-            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                match value {
-                    0 => Ok(RotationDegrees::R0),
-                    90 => Ok(RotationDegrees::R90),
-                    180 => Ok(RotationDegrees::R180),
-                    270 => Ok(RotationDegrees::R270),
-                    _ => Err(E::invalid_value(Unexpected::Unsigned(value), &self)),
-                }
-            }
-        }
-
-        deserializer.deserialize_i64(RotationVisitor)
-    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -277,86 +122,6 @@ impl Condition {
                 .iter()
                 .any(|condition| condition.test(state_values)),
         }
-    }
-}
-
-impl<'de> Deserialize<'de> for Condition {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Debug, Clone)]
-        struct SingleCond(String, StateValue);
-
-        impl<'de> Deserialize<'de> for SingleCond {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                struct SingleCondVisitor;
-
-                impl<'de> Visitor<'de> for SingleCondVisitor {
-                    type Value = SingleCond;
-
-                    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                        f.write_str("a single key-value condition like {\"facing\": \"north\"}")
-                    }
-
-                    fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
-                    where
-                        M: MapAccess<'de>,
-                    {
-                        let (key, value): (String, StateValue) = map
-                            .next_entry()?
-                            .ok_or_else(|| de::Error::custom("condition cannot be empty"))?;
-
-                        if map.next_entry::<String, String>()?.is_some() {
-                            return Err(de::Error::custom(
-                                "condition must contain exactly one entry",
-                            ));
-                        }
-
-                        Ok(SingleCond(key, value))
-                    }
-                }
-
-                deserializer.deserialize_map(SingleCondVisitor)
-            }
-        }
-
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Helper {
-            ExplicitAnd {
-                #[serde(rename = "AND")]
-                and: Vec<Helper>,
-            },
-            Or {
-                #[serde(rename = "OR")]
-                or: Vec<Helper>,
-            },
-            Single(SingleCond),
-            ImplicitAnd(HashMap<String, StateValue>),
-        }
-
-        impl From<Helper> for Condition {
-            fn from(value: Helper) -> Self {
-                match value {
-                    Helper::Single(single) => Condition::KeyValue(single.0, single.1),
-                    Helper::ExplicitAnd { and } => {
-                        Condition::And(and.into_iter().map(Into::into).collect())
-                    }
-                    Helper::Or { or } => Condition::Or(or.into_iter().map(Into::into).collect()),
-                    Helper::ImplicitAnd(and) => Condition::And(
-                        and.into_iter()
-                            .map(|(key, val)| Condition::KeyValue(key, val))
-                            .collect(),
-                    ),
-                }
-            }
-        }
-
-        Ok(Helper::deserialize(deserializer)?.into())
     }
 }
 
@@ -461,5 +226,247 @@ mod tests {
         }
 
         assert_eq!(passed, total);
+    }
+}
+
+mod de_impl {
+    use super::*;
+    use serde::{
+        Deserialize,
+        de::{self, MapAccess, Unexpected, Visitor},
+    };
+
+    impl<'de> Deserialize<'de> for BlockModelId {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct BlockPatternVisitor;
+
+            impl<'de> Visitor<'de> for BlockPatternVisitor {
+                type Value = BlockModelId;
+
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("a string starting with \"minecraft:block/\"")
+                }
+
+                fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    if let Some(id) = value.strip_prefix("minecraft:block/") {
+                        Ok(BlockModelId(id.to_string()))
+                    } else if let Some(id) = value.strip_prefix("block/") {
+                        Ok(BlockModelId(id.to_string()))
+                    } else {
+                        Err(E::invalid_value(
+                            de::Unexpected::Str(value),
+                            &"string matching minecraft:block/*",
+                        ))
+                    }
+                }
+            }
+
+            deserializer.deserialize_str(BlockPatternVisitor)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for RotationDegrees {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct RotationVisitor;
+
+            impl<'de> Visitor<'de> for RotationVisitor {
+                type Value = RotationDegrees;
+
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("an integer rotation: 0, 90, 180, or 270")
+                }
+
+                fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    match value {
+                        0 => Ok(RotationDegrees::R0),
+                        90 => Ok(RotationDegrees::R90),
+                        180 => Ok(RotationDegrees::R180),
+                        270 => Ok(RotationDegrees::R270),
+                        _ => Err(E::invalid_value(Unexpected::Signed(value), &self)),
+                    }
+                }
+
+                fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    match value {
+                        0 => Ok(RotationDegrees::R0),
+                        90 => Ok(RotationDegrees::R90),
+                        180 => Ok(RotationDegrees::R180),
+                        270 => Ok(RotationDegrees::R270),
+                        _ => Err(E::invalid_value(Unexpected::Unsigned(value), &self)),
+                    }
+                }
+            }
+
+            deserializer.deserialize_i64(RotationVisitor)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Condition {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            #[derive(Debug, Clone)]
+            struct SingleCond(String, StateValue);
+
+            impl<'de> Deserialize<'de> for SingleCond {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    struct SingleCondVisitor;
+
+                    impl<'de> Visitor<'de> for SingleCondVisitor {
+                        type Value = SingleCond;
+
+                        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                            f.write_str("a single key-value condition like {\"facing\": \"north\"}")
+                        }
+
+                        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+                        where
+                            M: MapAccess<'de>,
+                        {
+                            let (key, value): (String, StateValue) = map
+                                .next_entry()?
+                                .ok_or_else(|| de::Error::custom("condition cannot be empty"))?;
+
+                            if map.next_entry::<String, String>()?.is_some() {
+                                return Err(de::Error::custom(
+                                    "condition must contain exactly one entry",
+                                ));
+                            }
+
+                            Ok(SingleCond(key, value))
+                        }
+                    }
+
+                    deserializer.deserialize_map(SingleCondVisitor)
+                }
+            }
+
+            #[derive(Deserialize)]
+            #[serde(untagged)]
+            enum Helper {
+                ExplicitAnd {
+                    #[serde(rename = "AND")]
+                    and: Vec<Helper>,
+                },
+                Or {
+                    #[serde(rename = "OR")]
+                    or: Vec<Helper>,
+                },
+                Single(SingleCond),
+                ImplicitAnd(HashMap<String, StateValue>),
+            }
+
+            impl From<Helper> for Condition {
+                fn from(value: Helper) -> Self {
+                    match value {
+                        Helper::Single(single) => Condition::KeyValue(single.0, single.1),
+                        Helper::ExplicitAnd { and } => {
+                            Condition::And(and.into_iter().map(Into::into).collect())
+                        }
+                        Helper::Or { or } => {
+                            Condition::Or(or.into_iter().map(Into::into).collect())
+                        }
+                        Helper::ImplicitAnd(and) => Condition::And(
+                            and.into_iter()
+                                .map(|(key, val)| Condition::KeyValue(key, val))
+                                .collect(),
+                        ),
+                    }
+                }
+            }
+
+            Ok(Helper::deserialize(deserializer)?.into())
+        }
+    }
+
+    impl<'de> Deserialize<'de> for VariantEntries {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct VariantsVisitor;
+
+            impl<'de> Visitor<'de> for VariantsVisitor {
+                type Value = VariantEntries;
+
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("a map of blockstate variants")
+                }
+
+                fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+                where
+                    M: MapAccess<'de>,
+                {
+                    let mut variants = Vec::with_capacity(access.size_hint().unwrap_or(0));
+
+                    // Iterate over the map entries.
+                    // serde_json preserves the order of keys as they appear in the file
+                    // when iterating via MapAccess.
+                    while let Some((key_str, definition)) =
+                        access.next_entry::<String, VariantDefinition>()?
+                    {
+                        let filter = parse_variant_key(&key_str);
+                        variants.push(VariantEntry { filter, definition });
+                    }
+
+                    Ok(VariantEntries(variants))
+                }
+            }
+
+            deserializer.deserialize_map(VariantsVisitor)
+        }
+    }
+
+    /// Helper to parse "face=ceiling,powered=true" into a HashMap
+    fn parse_variant_key(key: &str) -> HashMap<String, StateValue> {
+        let mut map = HashMap::new();
+
+        // Handle empty key or "normal" (legacy/default)
+        if key.is_empty() || key == "normal" {
+            return map;
+        }
+
+        for part in key.split(',') {
+            // Split "key=value"
+            if let Some((k, v)) = part.split_once('=') {
+                map.insert(k.to_string(), parse_state_value(v));
+            } else {
+                // Fallback for malformed strings or single keys without values (rare in MC)
+                // We treat the whole part as a key with an empty string value,
+                // or you could ignore it.
+                map.insert(part.to_string(), StateValue::String(String::new()));
+            }
+        }
+        map
+    }
+
+    /// Helper to infer type (Int -> Bool -> String)
+    fn parse_state_value(v: &str) -> StateValue {
+        if let Ok(b) = v.parse::<bool>() {
+            StateValue::Bool(b)
+        } else if let Ok(i) = v.parse::<u8>() {
+            StateValue::Int(i)
+        } else {
+            StateValue::String(v.to_string())
+        }
     }
 }
