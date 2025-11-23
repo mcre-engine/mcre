@@ -15,15 +15,21 @@ edition = "2024"
 rust-version = "1.91.0"
 
 [workspace.dependencies]
-mcre_core = { version = "0.1.0", path = "crates/mcre_core" }
-mcre_data = { version = "0.1.0", path = "crates/mcre_data" }
+mcre_core       = { version = "0.1.0", path = "crates/mcre_core" }
+mcre_data       = { version = "0.1.0", path = "crates/mcre_data" }
+mcje_downloader = { version = "0.1.0", path = "crates/mcje_downloader" }
 
 mcdl = { version = "0.1.0", git = "https://github.com/oxidized-steve/mcdl" }
 
-serde      = { version = "1", features = ["derive"] }
-serde_json = "1"
-indexmap   = { version = "2", features = ["serde"] }
-tokio      = { version = "1", features = ["full"] }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+indexmap     = { version = "2", features = ["serde"] }
+tokio        = { version = "1", features = ["full"] }
+chrono       = { version = "0.4", features = ["serde"] }
+reqwest      = { version = "0.12", features = ["json", "stream"] }
+url          = { version = "2", features = ["serde"] }
+futures-core = "0.3"
+bytes        = "1"
 
 java-locator = "0.1"
 jni          = { version = "0.21", features = ["invocation"] }

@@ -695,6 +695,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcje_downloader"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "chrono",
+ "futures-core",
+ "reqwest",
+ "serde",
+ "url",
+]
+
+[[package]]
 name = "mcre_core"
 version = "0.1.0"
 
