@@ -1,0 +1,275 @@
+use core::fmt;
+use std::collections::HashMap;
+
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, MapAccess, Unexpected, Visitor},
+};
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BlockStateDefinition {
+    Variants(HashMap<String, VariantDefinition>),
+    Multipart(Vec<MultipartRule>),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum VariantDefinition {
+    Single(ModelVariant),
+    Multiple(Vec<ModelVariant>),
+}
+
+// currently only supports minecraft namespace
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockModelId(pub String);
+
+impl<'de> Deserialize<'de> for BlockModelId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct BlockPatternVisitor;
+
+        impl<'de> Visitor<'de> for BlockPatternVisitor {
+            type Value = BlockModelId;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a string starting with \"minecraft:block/\"")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if let Some(id) = value.strip_prefix("minecraft:block/") {
+                    Ok(BlockModelId(id.to_string()))
+                } else if let Some(id) = value.strip_prefix("block/") {
+                    Ok(BlockModelId(id.to_string()))
+                } else {
+                    Err(E::invalid_value(
+                        de::Unexpected::Str(value),
+                        &"string matching minecraft:block/*",
+                    ))
+                }
+            }
+        }
+
+        deserializer.deserialize_str(BlockPatternVisitor)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelVariant {
+    pub model: BlockModelId,
+    #[serde(default)]
+    pub uvlock: bool,
+    #[serde(default)]
+    pub weight: Option<u8>,
+    #[serde(default)]
+    pub x: RotationDegrees,
+    #[serde(default)]
+    pub y: RotationDegrees,
+    #[serde(default)]
+    pub z: RotationDegrees,
+}
+
+#[derive(Default)]
+pub enum RotationDegrees {
+    #[default]
+    R0,
+    R90,
+    R180,
+    R270,
+}
+
+impl<'de> Deserialize<'de> for RotationDegrees {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct RotationVisitor;
+
+        impl<'de> Visitor<'de> for RotationVisitor {
+            type Value = RotationDegrees;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an integer rotation: 0, 90, 180, or 270")
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    0 => Ok(RotationDegrees::R0),
+                    90 => Ok(RotationDegrees::R90),
+                    180 => Ok(RotationDegrees::R180),
+                    270 => Ok(RotationDegrees::R270),
+                    _ => Err(E::invalid_value(Unexpected::Signed(value), &self)),
+                }
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    0 => Ok(RotationDegrees::R0),
+                    90 => Ok(RotationDegrees::R90),
+                    180 => Ok(RotationDegrees::R180),
+                    270 => Ok(RotationDegrees::R270),
+                    _ => Err(E::invalid_value(Unexpected::Unsigned(value), &self)),
+                }
+            }
+        }
+
+        deserializer.deserialize_i64(RotationVisitor)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MultipartRule {
+    pub apply: VariantDefinition,
+    #[serde(default)]
+    pub when: Option<Condition>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Condition {
+    KeyValue(String, String),
+    And(Vec<Condition>),
+    Or(Vec<Condition>),
+}
+
+impl<'de> Deserialize<'de> for Condition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Debug, Clone)]
+        struct SingleCond(String, String);
+
+        impl<'de> Deserialize<'de> for SingleCond {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct SingleCondVisitor;
+
+                impl<'de> Visitor<'de> for SingleCondVisitor {
+                    type Value = SingleCond;
+
+                    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                        f.write_str("a single key-value condition like {\"facing\": \"north\"}")
+                    }
+
+                    fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+                    where
+                        M: MapAccess<'de>,
+                    {
+                        // Must contain exactly 1 entry
+                        let (key, value): (String, String) = map
+                            .next_entry()?
+                            .ok_or_else(|| de::Error::custom("condition cannot be empty"))?;
+
+                        if map.next_entry::<String, String>()?.is_some() {
+                            return Err(de::Error::custom(
+                                "condition must contain exactly one entry",
+                            ));
+                        }
+
+                        Ok(SingleCond(key, value))
+                    }
+                }
+
+                deserializer.deserialize_map(SingleCondVisitor)
+            }
+        }
+
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            ExplicitAnd {
+                #[serde(rename = "AND")]
+                and: Vec<Helper>,
+            },
+            Or {
+                #[serde(rename = "OR")]
+                or: Vec<Helper>,
+            },
+            Single(SingleCond),
+            ImplicitAnd(HashMap<String, String>),
+        }
+
+        impl From<Helper> for Condition {
+            fn from(value: Helper) -> Self {
+                match value {
+                    Helper::Single(single) => Condition::KeyValue(single.0, single.1),
+                    Helper::ExplicitAnd { and } => {
+                        Condition::And(and.into_iter().map(Into::into).collect())
+                    }
+                    Helper::Or { or } => Condition::Or(or.into_iter().map(Into::into).collect()),
+                    Helper::ImplicitAnd(and) => Condition::And(
+                        and.into_iter()
+                            .map(|(key, val)| Condition::KeyValue(key, val))
+                            .collect(),
+                    ),
+                }
+            }
+        }
+
+        Ok(Helper::deserialize(deserializer)?.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs::{self, File},
+        path::PathBuf,
+    };
+
+    use crate::blockstates::BlockStateDefinition;
+
+    #[tokio::test]
+    async fn test_part_block_state_definition() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let manifest_dir = PathBuf::from(manifest_dir);
+
+        let root_dir = manifest_dir.join("assets/minecraft/blockstates");
+        let mut total = 0;
+        let mut passed = 0;
+
+        let mut failed = Vec::new();
+
+        for entry in fs::read_dir(&root_dir).unwrap() {
+            total += 1;
+
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let file = File::open(&path).unwrap();
+            let result: Result<BlockStateDefinition, _> = serde_json::from_reader(file);
+
+            match result {
+                Ok(_) => passed += 1,
+                Err(err) => {
+                    let file_name = path.file_name().unwrap().to_str().unwrap();
+                    let name = file_name.strip_suffix(".json").unwrap().to_string();
+                    failed.push((name, err));
+                }
+            }
+        }
+
+        if !failed.is_empty() {
+            eprintln!("Failed tests:");
+            for (name, err) in failed {
+                eprintln!("- {}: {}", name, err);
+            }
+        }
+
+        assert_eq!(passed, total);
+    }
+}

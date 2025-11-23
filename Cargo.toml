@@ -17,6 +17,7 @@ rust-version = "1.91.0"
 [workspace.dependencies]
 mcre_core       = { version = "0.1.0", path = "crates/mcre_core" }
 mcre_data       = { version = "0.1.0", path = "crates/mcre_data" }
+mcre_assest     = { version = "0.1.0", path = "crates/mcre_assest" }
 mcje_downloader = { version = "0.1.0", path = "crates/mcje_downloader" }
 
 serde        = { version = "1", features = ["derive"] }
@@ -28,6 +29,7 @@ reqwest      = { version = "0.12", features = ["json", "stream"] }
 url          = { version = "2", features = ["serde"] }
 futures-core = "0.3"
 bytes        = "1"
+zip          = "6"
 
 java-locator = "0.1"
 jni          = { version = "0.21", features = ["invocation"] }

@@ -1,0 +1,25 @@
+[package]
+name = "mcre_assest"
+version = "0.1.0"
+authors.workspace = true
+categories.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+tokio      = { workspace = true }
+serde_json = { workspace = true }
+
+[build-dependencies]
+mcje_downloader = { workspace = true }
+
+tokio = { workspace = true }
+zip   = { workspace = true }
