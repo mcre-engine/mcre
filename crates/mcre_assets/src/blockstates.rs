@@ -127,7 +127,7 @@ impl Condition {
 
 pub enum BlockModelResolution<'a> {
     Unified(&'a [ModelVariant]),
-    Multipart(Box<[ModelVariant]>),
+    Multipart(Box<[&'a [ModelVariant]]>),
 }
 
 impl BlockStateDefinition {
@@ -150,7 +150,7 @@ impl BlockStateDefinition {
 
                     let models = match &variant.definition {
                         VariantDefinition::Single(model) => slice::from_ref(model),
-                        VariantDefinition::Multiple(models) => models.as_slice(),
+                        VariantDefinition::Multiple(models) => models,
                     };
 
                     return Some(BlockModelResolution::Unified(models));
@@ -169,9 +169,11 @@ impl BlockStateDefinition {
                     };
 
                     if condition_met {
-                        match rule.apply.clone() {
-                            VariantDefinition::Single(model) => resolved_models.push(model),
-                            VariantDefinition::Multiple(models) => resolved_models.extend(models),
+                        match &rule.apply {
+                            VariantDefinition::Single(model) => {
+                                resolved_models.push(slice::from_ref(model))
+                            }
+                            VariantDefinition::Multiple(models) => resolved_models.push(&models),
                         }
                     }
                 }
