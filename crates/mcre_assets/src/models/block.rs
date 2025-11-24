@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use mcre_core::{Vec3f, Vec4f};
+use mcre_core::{Axis, Direction, Vec3f, Vec4f};
 use serde::Deserialize;
 
 use crate::{BlockModelId, BlockTextureId, RefOr, RotationDegrees, TextureId};
@@ -38,7 +38,7 @@ pub struct BlockModelElement {
     pub from: Vec3f,
     pub to: Vec3f,
     pub rotation: Option<BlockModelElementRotation>,
-    pub faces: HashMap<FaceDirection, BlockModelFace>,
+    pub faces: HashMap<Direction, BlockModelFace>,
     #[serde(default = "default_shade")]
     pub shade: bool,
     #[serde(default)]
@@ -53,29 +53,10 @@ fn default_shade() -> bool {
 #[serde(deny_unknown_fields)]
 pub struct BlockModelElementRotation {
     pub origin: Vec3f,
-    pub axis: BlockModelElementRotationAxis,
+    pub axis: Axis,
     pub angle: f32,
     #[serde(default)]
     pub rescale: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BlockModelElementRotationAxis {
-    X,
-    Y,
-    Z,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum FaceDirection {
-    Up,
-    Down,
-    North,
-    South,
-    East,
-    West,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -86,7 +67,7 @@ pub struct BlockModelFace {
     pub rotation: RotationDegrees,
     pub uv: Option<Vec4f>,
     pub tintindex: Option<u8>,
-    pub cullface: Option<FaceDirection>,
+    pub cullface: Option<Direction>,
 }
 
 #[cfg(test)]
