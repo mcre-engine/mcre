@@ -93,7 +93,7 @@ pub struct MultipartRule {
 
 #[derive(Debug, Clone)]
 pub enum Condition {
-    KeyValue(String, StateValue),
+    KeyValue(String, Vec<StateValue>),
     And(Vec<Condition>),
     Or(Vec<Condition>),
 }
@@ -101,9 +101,9 @@ pub enum Condition {
 impl Condition {
     pub fn test(&self, state_values: &IndexMap<String, StateValue>) -> bool {
         match self {
-            Condition::KeyValue(key, value) => {
-                if let Some(state_value) = state_values.get(key) {
-                    state_value == value
+            Condition::KeyValue(key, condition_values) => {
+                if let Some(value) = state_values.get(key) {
+                    condition_values.contains(value)
                 } else {
                     false
                 }
@@ -166,7 +166,7 @@ impl BlockStateDefinition {
                             VariantDefinition::Single(model) => {
                                 resolved_models.push(slice::from_ref(model))
                             }
-                            VariantDefinition::Multiple(models) => resolved_models.push(&models),
+                            VariantDefinition::Multiple(models) => resolved_models.push(models),
                         }
                     }
                 }
@@ -317,7 +317,7 @@ mod de_impl {
             D: Deserializer<'de>,
         {
             #[derive(Debug, Clone)]
-            struct SingleCond(String, StateValue);
+            struct SingleCond(String, String);
 
             impl<'de> Deserialize<'de> for SingleCond {
                 fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -337,7 +337,7 @@ mod de_impl {
                         where
                             M: MapAccess<'de>,
                         {
-                            let (key, value): (String, StateValue) = map
+                            let (key, value): (String, String) = map
                                 .next_entry()?
                                 .ok_or_else(|| de::Error::custom("condition cannot be empty"))?;
 
@@ -367,13 +367,16 @@ mod de_impl {
                     or: Vec<Helper>,
                 },
                 Single(SingleCond),
-                ImplicitAnd(HashMap<String, StateValue>),
+                ImplicitAnd(HashMap<String, String>),
             }
 
             impl From<Helper> for Condition {
                 fn from(value: Helper) -> Self {
                     match value {
-                        Helper::Single(single) => Condition::KeyValue(single.0, single.1),
+                        Helper::Single(single) => Condition::KeyValue(
+                            single.0,
+                            single.1.split('|').map(parse_state_value).collect(),
+                        ),
                         Helper::ExplicitAnd { and } => {
                             Condition::And(and.into_iter().map(Into::into).collect())
                         }
@@ -382,7 +385,12 @@ mod de_impl {
                         }
                         Helper::ImplicitAnd(and) => Condition::And(
                             and.into_iter()
-                                .map(|(key, val)| Condition::KeyValue(key, val))
+                                .map(|(key, val)| {
+                                    Condition::KeyValue(
+                                        key,
+                                        val.split('|').map(parse_state_value).collect(),
+                                    )
+                                })
                                 .collect(),
                         ),
                     }
