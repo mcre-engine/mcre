@@ -34,9 +34,9 @@ impl From<Vec3i> for BlockPos {
     #[inline]
     fn from(vec: Vec3i) -> Self {
         Self {
-            x: vec.x,
-            y: vec.y,
-            z: vec.z,
+            x: vec[0],
+            y: vec[1],
+            z: vec[2],
         }
     }
 }
