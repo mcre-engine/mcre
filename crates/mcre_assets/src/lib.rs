@@ -1,1 +1,3 @@
-pub mod blockstates;
+mod blockstates;
+
+pub use blockstates::*;
