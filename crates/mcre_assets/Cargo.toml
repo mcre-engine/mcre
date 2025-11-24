@@ -14,14 +14,14 @@ rust-version.workspace = true
 [dependencies]
 mcre_core = { workspace = true }
 
-serde    = { workspace = true }
-indexmap = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+indexmap   = { workspace = true }
 
 [dev-dependencies]
 mcre_data = { workspace = true }
 
-tokio      = { workspace = true }
-serde_json = { workspace = true }
+tokio = { workspace = true }
 
 [build-dependencies]
 mcje_downloader = { workspace = true }
