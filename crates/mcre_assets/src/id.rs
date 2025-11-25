@@ -1,6 +1,6 @@
 use std::{
     any::type_name,
-    fmt::{self, Debug},
+    fmt::{self, Debug, Display},
     marker::PhantomData,
 };
 
@@ -76,6 +76,12 @@ impl<S: AssetScope> Debug for NamespacedId<S> {
     }
 }
 
+impl<S: AssetScope> Display for NamespacedId<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}/{}", self.namespace, S::NAME, self.id)
+    }
+}
+
 impl<'a, S: AssetScope> Deserialize<'a> for NamespacedId<S> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -119,12 +125,18 @@ pub enum RefOr<T> {
     Value(T),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReferenceId(String);
 
 impl ReferenceId {
     pub fn new(id: String) -> Self {
         ReferenceId(id)
+    }
+}
+
+impl Display for ReferenceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.0)
     }
 }
 
