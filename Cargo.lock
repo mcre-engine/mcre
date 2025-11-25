@@ -215,9 +215,8 @@ name = "data_generator"
 version = "0.1.0"
 dependencies = [
  "indexmap",
- "java-locator",
  "jni",
- "mcje_downloader",
+ "mcje",
  "mcre_core",
  "mcre_data",
  "serde_json",

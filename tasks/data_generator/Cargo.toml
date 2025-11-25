@@ -14,9 +14,8 @@ rust-version.workspace = true
 [dependencies]
 mcre_core       = { workspace = true }
 mcre_data       = { workspace = true }
-mcje_downloader = { workspace = true }
 
-java-locator = { workspace = true }
+mcje = { workspace = true }
 jni          = { workspace = true }
 
 tokio      = { workspace = true }
@@ -24,4 +23,6 @@ serde_json = { workspace = true }
 indexmap   = { workspace = true }
 
 [build-dependencies]
-java-locator = { workspace = true }
+
+[package.metadata.cargo-shear]
+ignored = ["tokio"]
