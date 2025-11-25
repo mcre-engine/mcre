@@ -73,7 +73,7 @@ fn default_weight() -> u8 {
     1
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Copy, Clone)]
 pub enum RotationDegrees {
     #[default]
     R0,
