@@ -80,3 +80,15 @@ impl<T, const LEN: usize> IndexMut<usize> for VecN<T, LEN> {
         &mut self.0[index]
     }
 }
+
+impl<T> VecN<T, 3> {
+    pub fn new(x: T, y: T, z: T) -> Self {
+        Self([x, y, z])
+    }
+}
+
+impl<T> VecN<T, 4> {
+    pub fn new(x: T, y: T, z: T, w: T) -> Self {
+        Self([x, y, z, w])
+    }
+}
