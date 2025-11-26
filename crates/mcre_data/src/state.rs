@@ -5,7 +5,7 @@ use std::io;
 use std::path::PathBuf;
 use tokio::fs;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockState {
     pub id: u16,
     pub block_id: u16,
@@ -42,7 +42,7 @@ pub struct BlockState {
     pub state_values: IndexMap<String, StateValue>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OffsetType {
     None,
