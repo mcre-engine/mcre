@@ -5,6 +5,7 @@ use jni::{
     JNIEnv,
     objects::{JObject, JString, JValueGen},
 };
+use mcje::{get_registry, iterate};
 use mcre_core::StateValue;
 use mcre_data::{
     block::{Block, BlockStateField, BlockStateFieldValues},
@@ -415,57 +416,6 @@ fn get_state_values(block_state: &JObject, env: &mut JNIEnv) -> IndexMap<String,
     });
 
     values
-}
-
-fn iterate<'a>(
-    obj: &JObject<'a>,
-    env: &'a mut JNIEnv,
-    mut cb: impl FnMut(usize, JObject<'a>, &mut JNIEnv),
-) {
-    let iterator = env
-        .call_method(obj, "iterator", "()Ljava/util/Iterator;", &[])
-        .unwrap()
-        .l()
-        .unwrap();
-
-    let mut i = 0;
-    loop {
-        // call hasNext()
-        let has_next = env
-            .call_method(&iterator, "hasNext", "()Z", &[])
-            .unwrap()
-            .z()
-            .unwrap();
-        if !has_next {
-            break;
-        }
-
-        // call next()
-        let element = env
-            .call_method(&iterator, "next", "()Ljava/lang/Object;", &[])
-            .unwrap()
-            .l()
-            .unwrap();
-
-        cb(i, element, env);
-
-        i += 1;
-    }
-}
-
-fn get_registry<'a>(env: &mut JNIEnv<'a>, name: &str, jtype: &str) -> JObject<'a> {
-    let built_in_registries = env
-        .find_class("net/minecraft/core/registries/BuiltInRegistries")
-        .unwrap();
-
-    env.get_static_field(
-        built_in_registries,
-        name,
-        format!("Lnet/minecraft/core/{jtype};"),
-    )
-    .unwrap()
-    .l()
-    .unwrap()
 }
 
 fn get_block_display_name(env: &mut JNIEnv, block: &JObject) -> String {
