@@ -21,3 +21,8 @@ serde_json = { workspace = true }
 indexmap   = { workspace = true }
 
 tokio = { workspace = true }
+
+[dev-dependencies]
+mcje = { workspace = true }
+
+jni = { workspace = true }

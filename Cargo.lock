@@ -877,6 +877,8 @@ name = "mcre_data"
 version = "0.1.0"
 dependencies = [
  "indexmap",
+ "jni",
+ "mcje",
  "mcre_core",
  "serde",
  "serde_json",
