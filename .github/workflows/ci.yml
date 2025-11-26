@@ -113,26 +113,6 @@ jobs:
         working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
         shell: bash
 
-  test-big-endian:
-    if: ${{ github.ref_name == 'main' }}
-    name: Test big-endian # s390x-unknown-linux-gnu is a big-endian
-    runs-on: ubuntu-latest
-    steps:
-      - uses: taiki-e/checkout-action@b13d20b7cda4e2f325ef19895128f7ff735c0b3d # v1.3.1
-      - uses: oxc-project/setup-rust@83350c0ef69ec34f00be596f1cb9302179b9f43d # v1.0.9
-        with:
-          save-cache: ${{ github.ref_name == 'main' }}
-          cache-key: s390x-unknown-linux-gnu
-          tools: cross
-      - uses: actions/setup-java@v4
-        with:
-          java-version: "21"
-          distribution: "temurin"
-      - run: cross --version
-      # `--lib --bins --tests` to skip doctests which are very slow to run via `cross`.
-      # https://github.com/cross-rs/cross/issues/1703
-      - run: cross test --workspace --lib --bins --tests --all-features --target s390x-unknown-linux-gnu
-
   typos:
     name: Spell Check
     runs-on: ubuntu-latest

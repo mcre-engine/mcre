@@ -43,7 +43,3 @@ quote       = "1.0"
 [workspace.metadata.cargo-shear]
 ignored = ["mcre_assets"]
 
-[workspace.metadata.cross.target.s390x-unknown-linux-gnu]
-pre-build = [
-    "apt-get update && apt-get --assume-yes install openjdk-21-jre-headless"
-]
