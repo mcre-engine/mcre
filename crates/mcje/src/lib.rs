@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
-use jni::{InitArgsBuilder, JavaVM};
+use jni::{InitArgsBuilder, JNIEnv, JavaVM, objects::JValueGen};
 use mcje_downloader::RootManifest;
-use tokio::{fs, process::Command, task::JoinSet};
+use tokio::{fs, process::Command, time};
 
 pub use mcje_macros::*;
 
@@ -19,8 +19,7 @@ pub async fn init() -> JavaVM {
 
     let version_manifest = version_release.fetch_manifest().await.unwrap();
 
-    let outdir = env!("OUT_DIR");
-    let root_path = PathBuf::from(outdir).join("downloads");
+    let root_path = manifest_dir.join("../../target/").join("downloads");
     let main_path = root_path.join("mc.jar");
     let mappings_path = root_path.join("mappings.tsrg");
 
@@ -78,8 +77,6 @@ pub async fn init() -> JavaVM {
     #[cfg(not(target_os = "windows"))]
     let sep = ":";
 
-    let mut tasks = JoinSet::new();
-
     for lib in version_manifest.libraries {
         if lib.rules.iter().all(|rule| rule.allow()) {
             let name = lib.name.replace([';', ':'], "-");
@@ -89,21 +86,19 @@ pub async fn init() -> JavaVM {
                 format!("{}.jar", name)
             });
             classpath += &format!("{}{}", sep, lib_path.to_str().unwrap());
-            tasks.spawn(async move {
-                if !lib_path.exists() {
-                    let lib_source = lib.downloads.artifact.download().await.unwrap();
-                    if let Some(parent) = lib_path.parent()
-                        && !parent.exists()
-                    {
-                        fs::create_dir_all(parent).await.unwrap();
-                    }
-                    fs::write(&lib_path, lib_source).await.unwrap();
+            if !lib_path.exists() {
+                // avoid rate limit
+                time::sleep(Duration::from_millis(100)).await;
+                let lib_source = lib.downloads.artifact.download().await.unwrap();
+                if let Some(parent) = lib_path.parent()
+                    && !parent.exists()
+                {
+                    fs::create_dir_all(parent).await.unwrap();
                 }
-            });
+                fs::write(&lib_path, lib_source).await.unwrap();
+            }
         }
     }
-
-    tasks.join_all().await;
 
     let jvm_args = InitArgsBuilder::new()
         .option(format!("-Djava.class.path={classpath}"))
@@ -111,4 +106,27 @@ pub async fn init() -> JavaVM {
         .unwrap();
 
     JavaVM::new(jvm_args).unwrap()
+}
+
+pub fn bootstrap(env: &mut JNIEnv) {
+    let detected_version_built_in = env
+        .get_static_field(
+            "net/minecraft/DetectedVersion",
+            "BUILT_IN",
+            "Lnet/minecraft/WorldVersion;",
+        )
+        .unwrap()
+        .l()
+        .unwrap();
+
+    env.call_static_method(
+        "net/minecraft/SharedConstants",
+        "setVersion",
+        "(Lnet/minecraft/WorldVersion;)V",
+        &[JValueGen::Object(&detected_version_built_in)],
+    )
+    .unwrap();
+
+    env.call_static_method("net/minecraft/server/Bootstrap", "bootStrap", "()V", &[])
+        .unwrap();
 }

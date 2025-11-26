@@ -16,7 +16,6 @@ const BLOCK_STATE_DATA_PATH: &str = "crates/mcre_data/block_states.json";
 
 #[mcje::main]
 async fn main(env: &mut JNIEnv<'_>) {
-    init(env);
     generate_block_data(env);
     generate_block_state_data(env);
 }
@@ -452,31 +451,6 @@ fn iterate<'a>(
 
         i += 1;
     }
-}
-
-fn init(env: &mut JNIEnv) {
-    let detected_version_built_in = env
-        .get_static_field(
-            "net/minecraft/DetectedVersion",
-            "BUILT_IN",
-            "Lnet/minecraft/WorldVersion;",
-        )
-        .unwrap()
-        .l()
-        .unwrap();
-
-    println!("[DEBUG] Calling: SharedConstants.setVersion(DetectedVersion.BUILT_IN);");
-    env.call_static_method(
-        "net/minecraft/SharedConstants",
-        "setVersion",
-        "(Lnet/minecraft/WorldVersion;)V",
-        &[JValueGen::Object(&detected_version_built_in)],
-    )
-    .unwrap();
-
-    println!("[DEBUG] Calling: Bootstrap.bootStrap();");
-    env.call_static_method("net/minecraft/server/Bootstrap", "bootStrap", "()V", &[])
-        .unwrap();
 }
 
 fn get_registry<'a>(env: &mut JNIEnv<'a>, name: &str, jtype: &str) -> JObject<'a> {

@@ -60,6 +60,7 @@ fn generate_runner(item: TokenStream, is_test: bool) -> TokenStream {
 
             let jvm = ::mcje::init().await;
             let mut env = jvm.attach_current_thread().unwrap();
+            ::mcje::bootstrap(&mut env);
             // Call the user's function with the prepared environment
             #inner_name(&mut env)#await_call;
         }
