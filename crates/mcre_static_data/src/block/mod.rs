@@ -1,8 +1,4 @@
-mod default_state_id;
-mod display_name;
-mod max_state_id;
-mod min_state_id;
-mod name;
+mod data;
 
 use crate::StateId;
 
@@ -23,22 +19,22 @@ impl From<BlockId> for u16 {
 
 impl BlockId {
     pub fn name(self) -> &'static str {
-        name::NAME_VALUES[self.0 as usize]
+        data::name::get(self.0)
     }
 
     pub fn display_name(self) -> &'static str {
-        display_name::DISPLAY_NAME_VALUES[self.0 as usize]
+        data::display_name::get(self.0)
     }
 
     pub fn default_state_id(self) -> StateId {
-        default_state_id::DEFAULT_STATE_ID_VALUES[self.0 as usize].into()
+        data::default_state_id::get(self.0).into()
     }
 
     pub fn min_state_id(self) -> StateId {
-        min_state_id::MIN_STATE_ID_VALUES[self.0 as usize].into()
+        data::min_state_id::get(self.0).into()
     }
 
     pub fn max_state_id(self) -> StateId {
-        max_state_id::MAX_STATE_ID_VALUES[self.0 as usize].into()
+        data::max_state_id::get(self.0).into()
     }
 }
