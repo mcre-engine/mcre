@@ -1,5 +1,5 @@
-use std::{
-    array,
+use core::{
+    array, mem,
     ops::{Add, Deref, DerefMut, Index, IndexMut, Sub},
 };
 
@@ -50,9 +50,7 @@ impl<T, const LEN: usize> VecN<T, LEN> {
     }
 
     pub fn set(&mut self, index: usize, value: T) -> Option<T> {
-        self.0
-            .get_mut(index)
-            .map(|slot| std::mem::replace(slot, value))
+        self.0.get_mut(index).map(|slot| mem::replace(slot, value))
     }
 }
 

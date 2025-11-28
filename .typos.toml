@@ -1,2 +1,2 @@
 [files]
-extend-exclude = ["crates/mcre_static_data/**/*.bin"]
+extend-exclude = ["crates/mcre_core/src/data/**/*.bin"]

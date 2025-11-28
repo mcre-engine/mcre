@@ -21,7 +21,7 @@ async fn main() {
     generate_states(&block_states, &state_fields_data).await;
 
     fs::write(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/mcre_static_data/src/lib.rs"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/mcre_core/src/data/mod.rs"),
         "mod block;
 mod state;
 
@@ -35,7 +35,7 @@ pub use state::*;
 
 async fn generate_blocks(blocks: &[Block]) {
     let root_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/mcre_static_data/src/block");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/mcre_core/src/data/block");
     let mut name_array = Vec::new();
     let mut display_name_array = Vec::new();
     let mut default_state_array = Vec::new();
@@ -329,7 +329,7 @@ async fn generate_state_enums<'a>(blocks: &'a [Block]) -> StateFieldsData<'a> {
 
     let mut enums_out = String::new();
 
-    write!(enums_out, "pub use mcre_core::{{Axis, Direction}};\n\n").unwrap();
+    write!(enums_out, "pub use crate::{{Axis, Direction}};\n\n").unwrap();
 
     for (enum_name, values) in &enums {
         if ["Direction", "Axis"].contains(&enum_name.as_str()) {
@@ -349,7 +349,7 @@ async fn generate_state_enums<'a>(blocks: &'a [Block]) -> StateFieldsData<'a> {
 
     fs::write(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../crates/mcre_static_data/src/state/enums.rs"),
+            .join("../../crates/mcre_core/src/data/state/enums.rs"),
         enums_out,
     )
     .await
@@ -388,7 +388,7 @@ fn strip_common_suffix(strings: Vec<&str>) -> Vec<String> {
 
 async fn generate_states(states: &[BlockState], state_fields_data: &StateFieldsData<'_>) {
     let root_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/mcre_static_data/src/state");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/mcre_core/src/data/state");
     let mut block_id_array = Vec::new();
     let mut light_emission_array = SubByteArray::new(0, 2, states.len());
     let mut use_shape_for_light_occlusion_array = SubByteArray::new(0, 0, states.len());
@@ -492,11 +492,7 @@ async fn generate_states(states: &[BlockState], state_fields_data: &StateFieldsD
         write!(root_mod, "mod enums;\nmod data;\n\nuse enums::*;\n").unwrap();
     }
 
-    write!(
-        root_mod,
-        "use crate::BlockId;\nuse mcre_core::OffsetType;\n\n"
-    )
-    .unwrap();
+    write!(root_mod, "use crate::BlockId;\nuse crate::OffsetType;\n\n").unwrap();
 
     write!(
         root_mod,

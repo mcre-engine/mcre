@@ -1,4 +1,4 @@
-pub use mcre_core::{Axis, Direction};
+pub use crate::{Axis, Direction};
 
 #[derive(Debug, Copy, Clone)]
 pub enum NoteBlockInstrument {

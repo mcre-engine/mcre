@@ -1,9 +1,10 @@
 mod data;
 mod enums;
+mod ext;
 
 use crate::BlockId;
+use crate::OffsetType;
 use enums::*;
-use mcre_core::OffsetType;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct StateId(u16);
