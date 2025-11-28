@@ -6,10 +6,10 @@ use jni::{
     objects::{JObject, JString, JValueGen},
 };
 use mcje::{get_registry, iterate};
-use mcre_core::StateValue;
+use mcre_core::{OffsetType, StateValue};
 use mcre_data::{
     block::{Block, BlockStateField, BlockStateFieldValues},
-    state::{BlockState, OffsetType},
+    state::BlockState,
 };
 
 const BLOCK_DATA_PATH: &str = "crates/mcre_data/blocks.json";
@@ -99,7 +99,7 @@ fn generate_block_data(env: &mut JNIEnv) {
             id: i as u16,
             name,
             display_name,
-            default_state: default_state_id,
+            default_state_id,
             min_state_id,
             max_state_id,
             states,

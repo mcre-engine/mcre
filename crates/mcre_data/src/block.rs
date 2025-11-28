@@ -3,25 +3,25 @@ use std::io;
 use std::path::PathBuf;
 use tokio::fs;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Block {
     pub id: u16,
     pub name: String,         // "oak_planks"
     pub display_name: String, // "Oak Planks",
-    pub default_state: u16,
+    pub default_state_id: u16,
     pub min_state_id: u16,
     pub max_state_id: u16,
     pub states: Vec<BlockStateField>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BlockStateField {
     pub name: String,
     #[serde(flatten)]
     pub values: BlockStateFieldValues,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum BlockStateFieldValues {
     Bool,
@@ -34,6 +34,36 @@ pub enum BlockStateFieldValues {
         min: u8,
         max: u8,
     },
+}
+
+impl BlockStateFieldValues {
+    pub fn is_bool(&self) -> bool {
+        matches!(self, Self::Bool)
+    }
+
+    pub fn is_enum(&self) -> bool {
+        matches!(self, Self::Enum { .. })
+    }
+
+    pub fn is_int(&self) -> bool {
+        matches!(self, Self::Int { .. })
+    }
+
+    pub fn as_enum(&self) -> Option<(&str, &[String])> {
+        if let Self::Enum { enum_name, values } = self {
+            Some((enum_name, values))
+        } else {
+            None
+        }
+    }
+
+    pub fn as_int(&self) -> Option<(u8, u8)> {
+        if let Self::Int { min, max } = self {
+            Some((*min, *max))
+        } else {
+            None
+        }
+    }
 }
 
 impl Block {

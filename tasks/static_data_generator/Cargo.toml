@@ -1,0 +1,21 @@
+[package]
+name = "static_data_generator"
+version = "0.1.0"
+authors.workspace = true
+categories.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mcre_core = { workspace = true }
+mcre_data = { workspace = true }
+
+indexmap = { workspace = true }
+
+tokio = { workspace = true }
+convert_case = { workspace = true }

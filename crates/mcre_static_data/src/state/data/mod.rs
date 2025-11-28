@@ -1,0 +1,19 @@
+pub(crate) mod block_id;
+pub(crate) mod can_occlude;
+pub(crate) mod destroy_speed;
+pub(crate) mod ignited_by_lava;
+pub(crate) mod is_air;
+pub(crate) mod is_randomly_ticking;
+pub(crate) mod light_block;
+pub(crate) mod light_emission;
+pub(crate) mod max_horizontal_offset;
+pub(crate) mod max_vertical_offset;
+pub(crate) mod offset_type;
+pub(crate) mod propagates_skylight_down;
+pub(crate) mod replaceable;
+pub(crate) mod requires_correct_tool_for_drops;
+pub(crate) mod solid_render;
+pub(crate) mod spawn_terrain_particles;
+pub(crate) mod use_shape_for_light_occlusion;
+
+pub(crate) mod state_fields;

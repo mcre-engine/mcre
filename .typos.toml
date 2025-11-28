@@ -1,0 +1,2 @@
+[files]
+extend-exclude = ["crates/mcre_static_data/**/*.bin"]
