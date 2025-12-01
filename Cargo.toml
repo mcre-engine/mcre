@@ -40,7 +40,9 @@ jni          = { version = "0.21", features = ["invocation"] }
 
 syn          = { version = "2.0", features = ["full"] }
 quote        = "1"
+proc-macro2  = "1"
 convert_case = "0.10"
+prettyplease = "0.2"
 
 [workspace.metadata.cargo-shear]
 ignored = ["mcre_assets", "mcre_static_data"]
