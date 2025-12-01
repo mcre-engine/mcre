@@ -235,7 +235,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "data_generator"
+name = "data_gen"
 version = "0.1.0"
 dependencies = [
  "indexmap",
