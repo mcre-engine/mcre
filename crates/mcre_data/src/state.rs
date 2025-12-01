@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use mcre_core::{BlockPos, OffsetType, StateValue};
+use mcre_core::{BlockPos, OffsetType};
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
@@ -40,6 +40,14 @@ pub struct BlockState {
     pub max_horizontal_offset: f32,
     pub max_vertical_offset: f32,
     pub state_values: IndexMap<String, StateValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum StateValue {
+    Bool(bool),
+    Int(u8),
+    String(String),
 }
 
 impl BlockState {

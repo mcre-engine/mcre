@@ -182,7 +182,6 @@ version = "0.1.0"
 dependencies = [
  "convert_case",
  "indexmap",
- "mcre_core",
  "mcre_data",
  "prettyplease",
  "proc-macro2",

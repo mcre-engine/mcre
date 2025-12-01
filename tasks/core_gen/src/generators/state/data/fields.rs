@@ -1,5 +1,4 @@
-use mcre_core::StateValue;
-use mcre_data::state::BlockState;
+use mcre_data::state::{BlockState, StateValue};
 use quote::{format_ident, quote};
 
 use crate::{

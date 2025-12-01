@@ -12,7 +12,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-mcre_core = { workspace = true }
 mcre_data = { workspace = true }
 
 indexmap = { workspace = true }
