@@ -15,6 +15,7 @@ impl From<StateId> for u16 {
     }
 }
 impl StateId {
+    pub const MAX: Self = Self(29670u16);
     pub fn block_id(self) -> BlockId {
         data::block_id::get(self.0).into()
     }

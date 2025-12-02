@@ -21,7 +21,12 @@ impl<'a> ScopeGen<'a> for StateScope<'a> {
     fn generate(&self, _analysis: &Analysis) -> Scope<'a> {
         Scope {
             name: "state".to_string(),
-            units: Box::new([Box::new(StateRootUnit), Box::new(EnumsGenerator)]),
+            units: Box::new([
+                Box::new(StateRootUnit {
+                    states: self.states,
+                }),
+                Box::new(EnumsGenerator),
+            ]),
             sub_scopes: Box::new([Box::new(StateDataScope {
                 states: self.states,
             })]),
@@ -29,9 +34,11 @@ impl<'a> ScopeGen<'a> for StateScope<'a> {
     }
 }
 
-pub struct StateRootUnit;
+pub struct StateRootUnit<'a> {
+    states: &'a [BlockState],
+}
 
-impl UnitGen for StateRootUnit {
+impl UnitGen for StateRootUnit<'_> {
     fn generate(&self, analysis: &Analysis) -> Unit {
         let fields = analysis.field_schema.iter().map(|(field_name, schema)| {
             let field_name = format_ident!("{}", field_name);
@@ -123,6 +130,7 @@ impl UnitGen for StateRootUnit {
                         }
                     }
                 });
+        let max = self.states.last().unwrap().id;
         let code = quote! {
             mod data;
             mod enums;
@@ -146,6 +154,8 @@ impl UnitGen for StateRootUnit {
             }
 
             impl StateId {
+                pub const MAX: Self = Self(#max);
+
                 pub fn block_id(self) -> BlockId {
                     data::block_id::get(self.0).into()
                 }

@@ -13,6 +13,7 @@ impl From<BlockId> for u16 {
     }
 }
 impl BlockId {
+    pub const MAX: Self = Self(1165u16);
     pub fn name(self) -> &'static str {
         data::name::get(self.0)
     }
@@ -30,6 +31,6 @@ impl BlockId {
     }
     pub fn is_field_present(self, field: FieldKey) -> bool {
         let fields_present = data::fields_present::get(self.0);
-        ((fields_present << (field as u8)) & 1) == 1
+        ((fields_present >> (field as u8)) & 1) == 1
     }
 }

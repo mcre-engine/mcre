@@ -6,7 +6,7 @@ use crate::{
     },
 };
 
-use mcre_data::block::Block;
+use mcre_data::block::{Block, BlockStateFieldValues};
 use quote::quote;
 
 pub struct BlockDataScope<'a> {
@@ -50,21 +50,37 @@ impl<'a> ScopeGen<'a> for BlockDataScope<'a> {
                     mapping_fn: Box::new(|block, analysis: &Analysis<'_>| {
                         let mut fields_present = 0;
 
-                        for (i, (field, schema)) in analysis.field_schema.iter().enumerate() {
+                        for (i, (field_name, schema)) in analysis.field_schema.iter().enumerate() {
                             let present = match schema {
                                 FieldSchema::Bool => {
-                                    let name = field.strip_prefix("is_").unwrap();
-                                    block.states.iter().any(|state| state.name == name)
+                                    let name = field_name.strip_prefix("is_").unwrap();
+                                    block.states.iter().any(|state| {
+                                        state.name == name
+                                            && matches!(state.values, BlockStateFieldValues::Bool)
+                                    })
                                 }
                                 FieldSchema::Int(_, _) => {
-                                    block.states.iter().any(|state| &state.name == field)
+                                    block.states.iter().any(|state| &state.name == field_name)
                                 }
-                                FieldSchema::Enum(_) => block.states.iter().any(|state| {
-                                    analysis
+                                FieldSchema::Enum(_) => {
+                                    let prop_name = if let Some(prop_name) =
+                                        analysis.field_to_prop.get(field_name)
+                                    {
+                                        *prop_name
+                                    } else {
+                                        field_name.as_str()
+                                    };
+
+                                    if let Some(field_name1) = analysis
                                         .prop_to_field
-                                        .get(&(block.name.as_str(), state.name.as_str()))
-                                        .is_some_and(|field1| field1 == field)
-                                }),
+                                        .get(&(block.name.as_str(), prop_name))
+                                        && field_name1 != field_name
+                                    {
+                                        false
+                                    } else {
+                                        block.states.iter().any(|state| state.name == prop_name)
+                                    }
+                                }
                             };
 
                             if present {

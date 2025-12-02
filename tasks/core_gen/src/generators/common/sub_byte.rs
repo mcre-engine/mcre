@@ -136,11 +136,19 @@ impl SubByteArray {
                 }
             }
         } else {
-            let bits_per_value = 1u16 << self.pow;
-
-            let values_per_byte = 8 / bits_per_value;
-
+            let bits_per_value = 1u16 << self.pow; // e.g., 2
+            let values_per_byte = 8 / bits_per_value; // e.g., 4
             let mask = ((1u16 << bits_per_value) - 1) as u8;
+
+            let bit_pos_calculation = if bits_per_value == 1 {
+                quote! {
+                    let bit_pos = idx % #values_per_byte;
+                }
+            } else {
+                quote! {
+                    let bit_pos = (idx % #values_per_byte) * #bits_per_value;
+                }
+            };
 
             if self.min == 0 {
                 quote! {
@@ -148,10 +156,9 @@ impl SubByteArray {
 
                     pub(crate) fn get(idx: u16) -> u8 {
                         let byte_pos = idx / #values_per_byte;
-                        let bit_pos = idx % #values_per_byte;
+                        #bit_pos_calculation // Insert fixed calculation
 
                         let byte = VALUES[byte_pos as usize];
-
                         (byte >> bit_pos) & #mask
                     }
                 }
@@ -162,10 +169,9 @@ impl SubByteArray {
 
                     pub(crate) fn get(idx: u16) -> u8 {
                         let byte_pos = idx / #values_per_byte;
-                        let bit_pos = idx % #values_per_byte;
+                        #bit_pos_calculation // Insert fixed calculation
 
                         let byte = VALUES[byte_pos as usize];
-
                         ((byte >> bit_pos) & #mask) + #min
                     }
                 }

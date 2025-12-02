@@ -16,7 +16,9 @@ impl<'a> ScopeGen<'a> for BlockScope<'a> {
     fn generate(&self, _analysis: &Analysis) -> Scope<'a> {
         Scope {
             name: "block".to_string(),
-            units: Box::new([Box::new(BlockRootUnit)]),
+            units: Box::new([Box::new(BlockRootUnit {
+                blocks: self.blocks,
+            })]),
             sub_scopes: Box::new([Box::new(BlockDataScope {
                 blocks: self.blocks,
             })]),
@@ -24,10 +26,13 @@ impl<'a> ScopeGen<'a> for BlockScope<'a> {
     }
 }
 
-pub struct BlockRootUnit;
+pub struct BlockRootUnit<'a> {
+    blocks: &'a [Block],
+}
 
-impl UnitGen for BlockRootUnit {
+impl UnitGen for BlockRootUnit<'_> {
     fn generate(&self, _analysis: &Analysis) -> Unit {
+        let max = self.blocks.last().unwrap().id;
         let code = quote! {
             mod data;
 
@@ -49,6 +54,8 @@ impl UnitGen for BlockRootUnit {
             }
 
             impl BlockId {
+                pub const MAX: Self = Self(#max);
+
                 pub fn name(self) -> &'static str {
                     data::name::get(self.0)
                 }
@@ -71,7 +78,7 @@ impl UnitGen for BlockRootUnit {
 
                 pub fn is_field_present(self, field: FieldKey) -> bool {
                     let fields_present = data::fields_present::get(self.0);
-                    ((fields_present << (field as u8)) & 1) == 1
+                    ((fields_present >> (field as u8)) & 1) == 1
                 }
             }
         };
