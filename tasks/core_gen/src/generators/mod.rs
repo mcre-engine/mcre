@@ -7,6 +7,8 @@ use crate::analyzer::Analysis;
 
 mod block;
 pub mod common;
+mod fields;
+mod props;
 mod root;
 mod state;
 
@@ -47,6 +49,7 @@ impl<'a> Factory<'a> {
         }
     }
 
+    #[allow(unused)]
     pub fn add_unit(&mut self, unit: impl UnitGen + 'a) {
         self.units.push(Box::new(unit));
     }

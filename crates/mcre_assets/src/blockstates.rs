@@ -2,7 +2,8 @@ use core::fmt;
 use std::{collections::HashMap, slice};
 
 use indexmap::IndexMap;
-use mcre_core::{StateValue, Vec4f};
+use mcre_core::Vec4f;
+use mcre_data::state::StateValue;
 use serde::{Deserialize, Deserializer};
 
 use crate::BlockModelId;

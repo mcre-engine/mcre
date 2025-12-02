@@ -31,7 +31,7 @@ impl UnitGen for BlockRootUnit {
         let code = quote! {
             mod data;
 
-            use crate::StateId;
+            use crate::{StateId, FieldKey};
 
             #[derive(Debug, Copy, Clone, Hash)]
             pub struct BlockId(u16);
@@ -67,6 +67,11 @@ impl UnitGen for BlockRootUnit {
 
                 pub fn max_state_id(self) -> StateId {
                     data::max_state_id::get(self.0).into()
+                }
+
+                pub fn is_field_present(self, field: FieldKey) -> bool {
+                    let fields_present = data::fields_present::get(self.0);
+                    ((fields_present << (field as u8)) & 1) == 1
                 }
             }
         };

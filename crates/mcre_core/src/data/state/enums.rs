@@ -1,4 +1,4 @@
-pub use crate::{Axis, Direction};
+pub use crate::{Direction, Axis};
 use core::str::FromStr;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]

@@ -27,13 +27,13 @@ impl UnitGen for EnumsGenerator {
                     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
                     #[repr(u8)]
                     pub enum #enum_name {
-                        #( #variants_idents = #variants_indices ),*
+                        #( #variants_idents = #variants_indices, )*
                     }
 
                     impl #enum_name {
                         pub fn as_str(self) -> &'static str {
                             match self {
-                                #( Self::#variants_idents => #variants ),*
+                                #( Self::#variants_idents => #variants, )*
                             }
                         }
                     }
@@ -43,7 +43,7 @@ impl UnitGen for EnumsGenerator {
 
                         fn from_str(s: &str) -> Result<Self, ()> {
                             match s {
-                                #( #variants => Ok(Self::#variants_idents) ),*,
+                                #( #variants => Ok(Self::#variants_idents), )*
                                 _ => Err(()),
                             }
                         }

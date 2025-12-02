@@ -68,6 +68,8 @@ pub fn analyze<'a>(
                             if !entry.1.contains(&block.name.as_str()) {
                                 entry.1.push(&block.name);
                             }
+                        } else {
+                            enums.push((enum_name, vec![&block.name]));
                         }
                     })
                     .or_insert_with(|| vec![(enum_name, vec![&block.name])]);
@@ -117,7 +119,14 @@ pub fn analyze<'a>(
     let mut field_schema = IndexMap::new();
 
     for (prop_name, prop_schema) in &prop_schema {
-        if matches!(prop_schema, PropSchema::Bool) {
+        if matches!(
+            prop_schema,
+            PropSchema::Bool
+                | PropSchema::Enums {
+                    contains_bool: true,
+                    ..
+                }
+        ) {
             field_schema.insert(format!("is_{}", prop_name), FieldSchema::Bool);
             continue;
         }

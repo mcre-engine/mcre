@@ -1,8 +1,10 @@
+use core::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 
 use crate::VecN;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Axis {
     X,
@@ -67,6 +69,33 @@ impl Direction {
             Direction::West | Direction::East => Axis::X,
         }
     }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Direction::Down => "down",
+            Direction::Up => "up",
+            Direction::North => "north",
+            Direction::South => "south",
+            Direction::West => "west",
+            Direction::East => "east",
+        }
+    }
+}
+
+impl FromStr for Direction {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "down" => Ok(Direction::Down),
+            "up" => Ok(Direction::Up),
+            "north" => Ok(Direction::North),
+            "south" => Ok(Direction::South),
+            "west" => Ok(Direction::West),
+            "east" => Ok(Direction::East),
+            _ => Err(()),
+        }
+    }
 }
 
 impl Axis {
@@ -91,6 +120,27 @@ impl Axis {
             Axis::X => [Axis::Y, Axis::Z],
             Axis::Y => [Axis::X, Axis::Z],
             Axis::Z => [Axis::X, Axis::Y],
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::X => "x",
+            Self::Y => "y",
+            Self::Z => "z",
+        }
+    }
+}
+
+impl FromStr for Axis {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "x" => Ok(Self::X),
+            "y" => Ok(Self::Y),
+            "z" => Ok(Self::Z),
+            _ => Err(()),
         }
     }
 }

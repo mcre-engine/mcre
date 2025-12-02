@@ -25,7 +25,7 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
                 Box::new(MultiByteGen {
                     name: "block_id".to_string(),
                     list: self.states,
-                    mapping_fn: Box::new(|state| state.block_id),
+                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.block_id),
                 }),
                 Box::new(SubByteGen {
                     name: "light_emission".to_string(),
@@ -140,7 +140,7 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
                 Box::new(MultiByteGen {
                     name: "destroy_speed".to_string(),
                     list: self.states,
-                    mapping_fn: Box::new(|state| state.destroy_speed),
+                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.destroy_speed),
                 }),
                 Box::new(SubByteGen {
                     name: "offset_type".to_string(),
@@ -153,12 +153,16 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
                 Box::new(MultiByteGen {
                     name: "max_horizontal_offset".to_string(),
                     list: self.states,
-                    mapping_fn: Box::new(|state| state.max_horizontal_offset),
+                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
+                        state.max_horizontal_offset
+                    }),
                 }),
                 Box::new(MultiByteGen {
                     name: "max_vertical_offset".to_string(),
                     list: self.states,
-                    mapping_fn: Box::new(|state| state.max_vertical_offset),
+                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
+                        state.max_vertical_offset
+                    }),
                 }),
             ]),
             sub_scopes: Box::new([Box::new(StateFieldsDataScope {

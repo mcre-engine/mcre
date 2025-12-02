@@ -17,7 +17,7 @@ impl<'a, T> UnitGen for StringGen<'a, T> {
         let len = self.list.len();
 
         let code = quote! {
-            static VALUES: [&str; #len] = [#(#data),*];
+            static VALUES: [&str; #len] = [#( #data, )*];
 
             pub(crate) fn get(idx: u16) -> &'static str {
                 VALUES[idx as usize]

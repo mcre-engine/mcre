@@ -4,6 +4,7 @@ extern crate alloc;
 
 mod axis;
 mod blockpos;
+#[rustfmt::skip]
 mod data;
 mod random_offset;
 mod vec;

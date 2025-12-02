@@ -6,6 +6,8 @@ use crate::{
     generators::{Unit, UnitGen},
 };
 
+type MappingFn<'a, T> = Box<dyn Fn(&'a T, &Analysis) -> u8>;
+
 // u1 (bool), u2, u4, u8
 pub struct SubByteGen<'a, T> {
     // inclusive range
@@ -14,7 +16,7 @@ pub struct SubByteGen<'a, T> {
     pub min: u8,
     pub max: u8,
     pub list: &'a [T],
-    pub mapping_fn: Box<dyn Fn(&'a T, &Analysis) -> u8>,
+    pub mapping_fn: MappingFn<'a, T>,
 }
 
 impl<'a, T> UnitGen for SubByteGen<'a, T> {

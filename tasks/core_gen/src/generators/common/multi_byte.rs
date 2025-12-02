@@ -7,15 +7,21 @@ use crate::{
     generators::{Unit, UnitGen},
 };
 
+type MappingFn<'a, T, U> = Box<dyn Fn(&'a T, &Analysis) -> U>;
+
 pub struct MultiByteGen<'a, T, U> {
     pub name: String,
     pub list: &'a [T],
-    pub mapping_fn: Box<dyn Fn(&'a T) -> U>,
+    pub mapping_fn: MappingFn<'a, T, U>,
 }
 
 impl<'a, T, U> UnitGen for MultiByteGen<'a, T, U> {
-    fn generate(&self, _analysis: &Analysis) -> Unit {
-        let data: Box<[U]> = self.list.iter().map(&self.mapping_fn).collect();
+    fn generate(&self, analysis: &Analysis) -> Unit {
+        let data: Box<[U]> = self
+            .list
+            .iter()
+            .map(|el| (self.mapping_fn)(el, analysis))
+            .collect();
         let data = box_t_to_box_u8(data);
 
         let len = self.list.len();
@@ -44,6 +50,7 @@ impl<'a, T, U> UnitGen for MultiByteGen<'a, T, U> {
 ///
 /// # Safety
 /// `T` must be POD and have no padding you care about.
+#[allow(clippy::cast_slice_from_raw_parts)]
 pub fn box_t_to_box_u8<T>(b: Box<[T]>) -> Box<[u8]> {
     let len_t = b.len();
     let ptr = Box::into_raw(b) as *mut T as *mut u8;

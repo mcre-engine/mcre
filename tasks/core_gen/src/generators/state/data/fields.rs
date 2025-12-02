@@ -71,12 +71,18 @@ impl<'a> ScopeGen<'a> for StateFieldsDataScope<'a> {
                                     .state_values
                                     .get(prop_name)
                                     .and_then(|val| {
-                                        if let StateValue::String(val) = val {
+                                        if let Some(field_name1) = analysis
+                                            .prop_to_field
+                                            .get(&(state.block_name.as_str(), prop_name))
+                                            && field_name1 != &field_name
+                                        {
+                                            None
+                                        } else if let StateValue::String(val) = val {
+                                            let enum_values =
+                                                analysis.enums.get(&enum_name.as_str()).unwrap();
+
                                             Some(
-                                                analysis
-                                                    .enums
-                                                    .get(&enum_name.as_str())
-                                                    .unwrap()
+                                                enum_values
                                                     .iter()
                                                     .position(|variant| variant == val)
                                                     .unwrap()

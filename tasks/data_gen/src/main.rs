@@ -6,10 +6,10 @@ use jni::{
     objects::{JObject, JString, JValueGen},
 };
 use mcje::{get_registry, iterate};
-use mcre_core::{OffsetType, StateValue};
+use mcre_core::OffsetType;
 use mcre_data::{
     block::{Block, BlockStateField, BlockStateFieldValues},
-    state::BlockState,
+    state::{BlockState, StateValue},
 };
 
 const BLOCK_DATA_PATH: &str = "crates/mcre_data/blocks.json";

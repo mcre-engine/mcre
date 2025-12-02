@@ -1,8 +1,9 @@
+use convert_case::ccase;
 use mcre_data::state::BlockState;
 use quote::{format_ident, quote};
 
 use crate::{
-    analyzer::{Analysis, FieldSchema},
+    analyzer::{Analysis, FieldSchema, PropSchema},
     generators::{
         Scope, ScopeGen, Unit, UnitGen,
         state::{data::StateDataScope, enums::EnumsGenerator},
@@ -57,12 +58,77 @@ impl UnitGen for StateRootUnit {
                 }
             }
         });
+        let fields_pascal_idents = analysis
+            .field_schema
+            .keys()
+            .map(|name| format_ident!("{}", ccase!(pascal, name)))
+            .collect::<Vec<_>>();
+        let fields_snake_idents = analysis
+            .field_schema
+            .keys()
+            .map(|name| format_ident!("{}", name))
+            .collect::<Vec<_>>();
+        let get_prop_matches =
+            analysis
+                .prop_schema
+                .iter()
+                .map(|(prop_name, prop_schema)| match prop_schema {
+                    PropSchema::Bool => {
+                        let prop_variant = format_ident!("{}", ccase!(pascal, prop_name));
+                        let field_variant = format_ident!("Is{}", ccase!(pascal, prop_name));
+                        let method = format_ident!("is_{}", prop_name);
+                        quote! {
+                            PropKey::#prop_variant => self.block_id().is_field_present(FieldKey::#field_variant).then_some(PropVal::#prop_variant(self.#method()))
+                        }
+                    }
+                    PropSchema::Int(_, _) => {
+                        let variant = format_ident!("{}", ccase!(pascal, prop_name));
+                        let method = format_ident!("{}", prop_name);
+                        quote! {
+                            PropKey::#variant => self.block_id().is_field_present(FieldKey::#variant).then_some(PropVal::#variant(self.#method()))
+                        }
+                    }
+                    PropSchema::Enums { contains_bool, enums } => {
+                        if *contains_bool || enums.len() > 1 {
+                            let mut fields_variants = Vec::new();
+                            let mut fields_methods = Vec::new();
+
+                            if *contains_bool {
+                                fields_variants.push(format_ident!("Is{}", ccase!(pascal, prop_name)));
+                                fields_methods.push(format_ident!("is_{}", prop_name));
+                            }
+
+                            for (field, prop) in &analysis.field_to_prop {
+                                if prop == prop_name {
+                                    fields_variants.push(format_ident!("{}", ccase!(pascal, field)));
+                                    fields_methods.push(format_ident!("{}", field));
+                                }
+                            }
+
+                            let prop_variant = format_ident!("{}", ccase!(pascal, prop_name));
+
+                            quote! {
+                                PropKey::#prop_variant => #(if self.block_id().is_field_present(FieldKey::#fields_variants) {
+                                    Some(PropVal::#prop_variant(self.#fields_methods().into()))
+                                } else)* {
+                                    None
+                                }
+                            }
+                        } else {
+                            let variant = format_ident!("{}", ccase!(pascal, prop_name));
+                            let method = format_ident!("{}", prop_name);
+                            quote! {
+                                PropKey::#variant => self.block_id().is_field_present(FieldKey::#variant).then_some(PropVal::#variant(self.#method()))
+                            }
+                        }
+                    }
+                });
         let code = quote! {
             mod data;
             mod enums;
 
-            use crate::{BlockId, OffsetType};
-            use enums::*;
+            use crate::{BlockId, OffsetType, FieldKey, FieldVal, PropKey, PropVal};
+            pub use enums::*;
 
             #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
             pub struct StateId(u16);
@@ -146,6 +212,21 @@ impl UnitGen for StateRootUnit {
 
                 pub fn max_vertical_offset(self) -> f32 {
                     data::max_vertical_offset::get(self.0)
+                }
+
+                pub fn get_field(self, field: FieldKey) -> Option<FieldVal> {
+                    if !self.block_id().is_field_present(field) {
+                        return None;
+                    }
+                    match field {
+                        #(FieldKey::#fields_pascal_idents => Some(FieldVal::#fields_pascal_idents(self.#fields_snake_idents())),)*
+                    }
+                }
+
+                pub fn get_prop(self, prop: PropKey) -> Option<PropVal> {
+                    match prop {
+                        #( #get_prop_matches, )*
+                    }
                 }
 
                 #( #fields )*
