@@ -441,6 +441,10 @@ name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "serde",
+ "serde_core",
+]
 
 [[package]]
 name = "hmac"
@@ -878,10 +882,10 @@ dependencies = [
 name = "mcre_assets"
 version = "0.1.0"
 dependencies = [
- "indexmap",
+ "hashbrown",
  "mcje_downloader",
  "mcre_core",
- "mcre_data",
+ "rustc-hash",
  "serde",
  "serde_json",
  "tokio",
