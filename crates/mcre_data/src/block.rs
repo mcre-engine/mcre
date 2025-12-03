@@ -67,6 +67,13 @@ impl BlockStateFieldValues {
 }
 
 impl Block {
+    pub fn all_sync() -> io::Result<Box<[Self]>> {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let block_data_path = root.join("blocks.json");
+        let block_data_json = std::fs::read_to_string(block_data_path)?;
+        Ok(serde_json::from_str(&block_data_json)?)
+    }
+
     pub async fn all() -> io::Result<Vec<Self>> {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let block_data_path = root.join("blocks.json");
