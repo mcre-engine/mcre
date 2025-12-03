@@ -259,15 +259,10 @@ mod tests {
 
         // resolution
 
-        for state_id in 0..(StateId::MAX.into()) {
-            let state_id = StateId::from(state_id);
-
+        for state_id in StateId::all() {
             let definition = block_state_definitions
                 .get(state_id.block_id().name())
                 .unwrap();
-            state_id
-                .block_id()
-                .is_field_present(mcre_core::FieldKey::IsSnowy);
             let resolution = definition.resolve(state_id).unwrap();
 
             match resolution {

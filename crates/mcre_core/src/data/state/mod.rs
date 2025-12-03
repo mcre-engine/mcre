@@ -734,6 +734,9 @@ impl StateId {
             }
         }
     }
+    pub fn all() -> impl Iterator<Item = Self> {
+        StateIdIter::new(StateId(0), Self::MAX)
+    }
     pub fn is_snowy(self) -> bool {
         data::fields::is_snowy::get(self.0)
     }
@@ -1178,5 +1181,33 @@ impl StateId {
                 TestBlockMode,
             >(data::fields::testblock_mode::get(self.0))
         }
+    }
+}
+pub struct StateIdIter {
+    current: u16,
+    end: u16,
+}
+impl StateIdIter {
+    pub fn new(start: StateId, end: StateId) -> Self {
+        Self {
+            current: start.0,
+            end: end.0,
+        }
+    }
+}
+impl Iterator for StateIdIter {
+    type Item = StateId;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current > self.end {
+            None
+        } else {
+            let id = self.current;
+            self.current += 1;
+            Some(StateId(id))
+        }
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = (self.end - self.current) as usize;
+        (remaining, Some(remaining))
     }
 }
