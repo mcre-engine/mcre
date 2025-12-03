@@ -1,6 +1,6 @@
 mod data;
 use crate::{StateId, FieldKey};
-#[derive(Debug, Copy, Clone, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct BlockId(u16);
 impl From<u16> for BlockId {
     fn from(id: u16) -> Self {
