@@ -59,6 +59,12 @@ impl UnitGen for BlockRootUnit<'_> {
                 }
             }
 
+            impl From<BlockId> for StateId {
+                fn from(id: BlockId) -> Self {
+                    id.default_state_id()
+                }
+            }
+
             impl BlockId {
                 pub const MAX: Self = Self(#max);
 
@@ -121,10 +127,16 @@ impl UnitGen for BlockRootUnit<'_> {
                 }
 
                 fn size_hint(&self) -> (usize, Option<usize>) {
-                    let remaining = (self.end - self.current) as usize;
+                    let remaining = if self.current > self.end {
+                        0
+                    } else {
+                        (self.end - self.current + 1) as usize
+                    };
                     (remaining, Some(remaining))
                 }
             }
+
+            impl ExactSizeIterator for BlockIdIter {}
         };
 
         Unit {

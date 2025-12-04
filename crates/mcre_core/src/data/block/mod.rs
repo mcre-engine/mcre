@@ -13,6 +13,11 @@ impl From<BlockId> for u16 {
         id.0
     }
 }
+impl From<BlockId> for StateId {
+    fn from(id: BlockId) -> Self {
+        id.default_state_id()
+    }
+}
 impl BlockId {
     pub const MAX: Self = Self(1165u16);
     pub fn name(self) -> &'static str {
@@ -62,7 +67,12 @@ impl Iterator for BlockIdIter {
         }
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = (self.end - self.current) as usize;
+        let remaining = if self.current > self.end {
+            0
+        } else {
+            (self.end - self.current + 1) as usize
+        };
         (remaining, Some(remaining))
     }
 }
+impl ExactSizeIterator for BlockIdIter {}
