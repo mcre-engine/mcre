@@ -1,3 +1,8 @@
+pub mod asset;
+mod generate;
+pub mod loader;
+pub mod math;
+
 use bevy::{
     asset::RenderAssetUsages,
     color::palettes::css::{GREEN, WHITE},
@@ -5,70 +10,72 @@ use bevy::{
     prelude::*,
 };
 use mcre_core::{Block, BlockState};
+use serde::{Deserialize, Serialize};
 
-use crate::textures::BlockTextures;
+use crate::{
+    chunk::math::{pos::ChunkPosition, size::ChunkSize},
+    textures::BlockTextures,
+    utils::sparse::SparseArray,
+};
 
-pub const CHUNK_SIZE: usize = 4;
-
-#[derive(Component)]
+#[derive(Asset, Clone, Debug, TypePath, Deserialize, Serialize)]
 pub struct Chunk {
-    pub loc: UVec3,
-    // TODO: Consider sparse chunk?
-    pub blocks: [BlockState; CHUNK_SIZE.pow(3)],
+    pub loc: ChunkPosition,
+    pub blocks: SparseArray<BlockState>,
+    chunk_size: ChunkSize,
 }
 
 impl Chunk {
-    pub fn filled<B: Into<BlockState>>(loc: UVec3, block: B) -> Self {
+    pub fn empty<P: Into<ChunkPosition>>(chunk_size: ChunkSize, loc: P) -> Self {
         Chunk {
-            loc,
-            blocks: [block.into(); CHUNK_SIZE.pow(3)],
+            loc: loc.into(),
+            blocks: SparseArray::empty(chunk_size.full_size()),
+            chunk_size,
         }
     }
 
-    pub fn into_bundle(
-        self,
-        textures: &BlockTextures,
-        meshes: &mut ResMut<Assets<Mesh>>,
-        materials: &mut ResMut<Assets<StandardMaterial>>,
-    ) -> impl Bundle {
-        let mat = materials.add(StandardMaterial {
-            base_color_texture: textures.texture().cloned(),
-            alpha_mode: AlphaMode::Mask(0.5),
-            reflectance: 0.0,
-            // unlit: true,
-            ..default()
-        });
+    pub fn size(&self) -> &ChunkSize {
+        &self.chunk_size
+    }
 
-        let scale = Vec3::ONE;
-        let transform = Transform::from_xyz(
-            self.loc.x as f32 * CHUNK_SIZE as f32,
-            self.loc.y as f32 * CHUNK_SIZE as f32,
-            self.loc.z as f32 * CHUNK_SIZE as f32,
-        )
-        .with_scale(scale);
-        let mesh = meshes.add(self.generate_mesh(textures));
-        (self, transform, Mesh3d(mesh), MeshMaterial3d(mat))
+    pub fn transform(&self) -> Transform {
+        Transform::from_translation(self.loc.world_coord(self.chunk_size))
     }
 
     pub fn set_block<B: Into<BlockState>>(&mut self, pos: UVec3, new_block: B) {
-        if let Some(block) = self.get_mut(pos) {
+        let idx = self.chunk_size.chunk_index(pos);
+        if let Some(block) = self.blocks.get_mut(idx) {
             *block = new_block.into()
+        } else {
+            self.blocks.insert(idx, new_block.into());
         }
     }
 
-    pub fn get(&self, pos: UVec3) -> Option<&BlockState> {
-        self.blocks.get(
-            pos.x as usize * CHUNK_SIZE * CHUNK_SIZE + pos.y as usize * CHUNK_SIZE + pos.z as usize,
-        )
+    pub fn get(&self, pos: UVec3) -> Option<BlockState> {
+        self.blocks.get(self.chunk_size.chunk_index(pos)).copied()
     }
 
-    pub fn get_mut(&mut self, pos: UVec3) -> Option<&mut BlockState> {
-        self.blocks.get_mut(
-            pos.x as usize * CHUNK_SIZE * CHUNK_SIZE + pos.y as usize * CHUNK_SIZE + pos.z as usize,
-        )
+    fn cull_faces(&self, pos: UVec3) -> (BVec3, BVec3) {
+        fn check_occude(block: BlockState) -> bool {
+            block.is_air() || !block.can_occlude()
+        }
+
+        let bounds = self.chunk_size.in_bounds(pos + 1);
+        let positive_faces = BVec3::new(
+            !bounds.x || self.get(pos.with_x(pos.x + 1)).is_none_or(check_occude),
+            !bounds.y || self.get(pos.with_y(pos.y + 1)).is_none_or(check_occude),
+            !bounds.z || self.get(pos.with_z(pos.z + 1)).is_none_or(check_occude),
+        );
+
+        let negative_faces = BVec3::new(
+            pos.x < 1 || self.get(pos.with_x(pos.x - 1)).is_none_or(check_occude),
+            pos.y < 1 || self.get(pos.with_y(pos.y - 1)).is_none_or(check_occude),
+            pos.z < 1 || self.get(pos.with_z(pos.z - 1)).is_none_or(check_occude),
+        );
+        (positive_faces, negative_faces)
     }
 
-    fn generate_mesh(&self, textures: &BlockTextures) -> Mesh {
+    pub fn generate_mesh(&self, textures: &BlockTextures) -> Mesh {
         #[derive(Default)]
         struct VerticesBuilder {
             vertices: Vec<[f32; 3]>,
@@ -179,59 +186,43 @@ impl Chunk {
             }
         }
         let mut builder = VerticesBuilder::default();
-        fn check_occude(block: &BlockState) -> bool {
-            block.is_air() || !block.can_occlude()
-        }
 
-        for x in 0..CHUNK_SIZE {
-            for y in 0..CHUNK_SIZE {
-                for z in 0..CHUNK_SIZE {
-                    let cur = UVec3 {
-                        x: x as u32,
-                        y: y as u32,
-                        z: z as u32,
-                    };
-                    let Some(block) = self.get(cur) else {
-                        continue;
-                    };
-                    if block.is_air() {
-                        continue;
-                    }
-                    let Some(uv_rect) = textures.get_uv_rect(*block) else {
-                        continue;
-                    };
-                    //TODO: Fix to use known data about block states
-                    let block_color = match block.block() {
-                        Block::OAK_LEAVES => GREEN,
-                        _ => WHITE,
-                    };
-                    if z + 1 >= CHUNK_SIZE
-                        || self.get(cur.with_z(cur.z + 1)).is_none_or(check_occude)
-                    {
-                        builder.push_south(cur, uv_rect, block_color);
-                    }
-                    if z < 1 || self.get(cur.with_z(cur.z - 1)).is_none_or(check_occude) {
-                        builder.push_north(cur, uv_rect, block_color);
-                    }
-                    if x + 1 >= CHUNK_SIZE
-                        || self.get(cur.with_x(cur.x + 1)).is_none_or(check_occude)
-                    {
-                        builder.push_east(cur, uv_rect, block_color);
-                    }
-                    if x < 1 || self.get(cur.with_x(cur.x - 1)).is_none_or(check_occude) {
-                        builder.push_west(cur, uv_rect, block_color);
-                    }
-                    if y + 1 >= CHUNK_SIZE
-                        || self.get(cur.with_y(cur.y + 1)).is_none_or(check_occude)
-                    {
-                        builder.push_up(cur, uv_rect, block_color);
-                    }
-                    if y < 1 || self.get(cur.with_y(cur.y - 1)).is_none_or(check_occude) {
-                        builder.push_down(cur, uv_rect, block_color);
-                    }
-                }
+        for (i, block) in self.blocks.iter() {
+            if block.is_air() {
+                continue;
+            }
+            let Some(uv_rect) = textures.get_uv_rect(*block) else {
+                continue;
+            };
+            let cur = self.chunk_size.block_index(i);
+            //TODO: Fix to use known data about block states
+            let block_color = match block.block() {
+                Block::OAK_LEAVES => GREEN,
+                _ => WHITE,
+            };
+
+            let (positive, negative) = self.cull_faces(cur);
+
+            if positive.x {
+                builder.push_east(cur, uv_rect, block_color);
+            }
+            if positive.y {
+                builder.push_up(cur, uv_rect, block_color);
+            }
+            if positive.z {
+                builder.push_south(cur, uv_rect, block_color);
+            }
+            if negative.x {
+                builder.push_west(cur, uv_rect, block_color);
+            }
+            if negative.y {
+                builder.push_down(cur, uv_rect, block_color);
+            }
+            if negative.z {
+                builder.push_north(cur, uv_rect, block_color);
             }
         }
+
         Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
@@ -243,3 +234,33 @@ impl Chunk {
         .with_inserted_indices(Indices::U32(builder.indices))
     }
 }
+
+impl From<Chunk> for ChunkData {
+    fn from(value: Chunk) -> Self {
+        ChunkData {
+            loc: value.loc,
+            blocks: SparseArray::from(value.blocks),
+            chunk_size: value.chunk_size,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct ChunkData {
+    pub loc: ChunkPosition,
+    pub blocks: SparseArray<u16>,
+    chunk_size: ChunkSize,
+}
+
+impl From<ChunkData> for Chunk {
+    fn from(value: ChunkData) -> Self {
+        Chunk {
+            loc: value.loc,
+            blocks: SparseArray::from(value.blocks),
+            chunk_size: value.chunk_size,
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct ChunkComponent(pub Handle<Chunk>);
