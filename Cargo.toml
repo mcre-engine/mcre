@@ -49,3 +49,8 @@ prettyplease = "0.2"
 [workspace.metadata.cargo-shear]
 ignored = ["mcre_assets", "mcre_static_data"]
 
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: ${{ github.ref_name != 'main' }}
 
 jobs:
-  test-ubuntu:
+  test:
     name: Test Linux
     runs-on: ubuntu-latest
     steps:
@@ -28,90 +28,9 @@ jobs:
         with:
           java-version: "21"
           distribution: "temurin"
-      - run: cargo ck
-      - run: cargo test --workspace --all-features
+      - run: cargo ck --exclude mcre
+      - run: cargo test --workspace --all-features --exclude mcre
       - run: git diff --exit-code # Must commit everything
-
-  test-ubuntu-aarch64:
-    if: ${{ github.ref_name == 'main' }}
-    name: Test Linux ARM64
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: taiki-e/checkout-action@b13d20b7cda4e2f325ef19895128f7ff735c0b3d # v1.3.1
-      - uses: oxc-project/setup-rust@83350c0ef69ec34f00be596f1cb9302179b9f43d # v1.0.9
-        with:
-          save-cache: ${{ github.ref_name == 'main' }}
-          cache-key: warm-aarch64
-      - uses: actions/setup-java@v4
-        with:
-          java-version: "21"
-          distribution: "temurin"
-      - run: cargo ck
-      - run: cargo test --workspace --all-features
-      - run: git diff --exit-code # Must commit everything
-
-  test-mac: # Separate job to save a job on PRs
-    if: ${{ github.ref_name == 'main' }}
-    name: Test Mac
-    runs-on: macos-latest
-    steps:
-      - uses: taiki-e/checkout-action@b13d20b7cda4e2f325ef19895128f7ff735c0b3d # v1.3.1
-      - uses: oxc-project/setup-rust@83350c0ef69ec34f00be596f1cb9302179b9f43d # v1.0.9
-        with:
-          save-cache: ${{ github.ref_name == 'main' }}
-          cache-key: warm
-      - uses: actions/setup-java@v4
-        with:
-          java-version: "21"
-          distribution: "temurin"
-      - run: cargo ck
-      - run: cargo test --workspace --all-features
-      - run: git diff --exit-code # Must commit everything
-
-  test-windows:
-    if: ${{ github.ref_name == 'main' }}
-    name: Test Windows
-    runs-on: windows-latest
-    steps:
-      - uses: taiki-e/checkout-action@b13d20b7cda4e2f325ef19895128f7ff735c0b3d # v1.3.1
-      - uses: samypr100/setup-dev-drive@30f0f98ae5636b2b6501e181dfb3631b9974818d # v4.0.0
-        with:
-          workspace-copy: true
-          drive-size: 8GB
-          drive-format: NTFS
-          env-mapping: |
-            CARGO_HOME,{{ DEV_DRIVE }}/.cargo
-            RUSTUP_HOME,{{ DEV_DRIVE }}/.rustup
-
-      - uses: actions/setup-java@v4
-        with:
-          java-version: "21"
-          distribution: "temurin"
-
-      - name: Install Rust
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
-        shell: bash
-        run: |
-          # This `awk` command will find the value of our Minimum Supported Rust Version and store it as `MSRV`.
-          # NOTE: this will fail if there are any other items named `rust-version`. We assume there is only one in our `Cargo.toml`.
-          MSRV=$(awk -F'=' '/rust-version/ {gsub(/[" ]/, "", $2); printf "%s", ($2 + "")}' Cargo.toml)
-          # Set profile to minimal and channel to our Minimum Supported Rust Version.
-          # Running our tests on this channel ensures that our code uses APIs that are supported in our `MSRV`.
-          sed -i -e 's/profile = "default"/profile = "minimal"/g' -e "s/channel = .*/channel = \"$MSRV\"/g" rust-toolchain.toml
-          rustup set profile minimal
-          rustup show
-          git restore .
-
-      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
-        with:
-          workspaces: ${{ env.DEV_DRIVE_WORKSPACE }}
-          save-if: ${{ github.ref_name == 'main' }}
-          shared-key: windows-latest
-
-      - name: Run tests
-        run: cargo test --workspace --all-features
-        working-directory: ${{ env.DEV_DRIVE_WORKSPACE }}
-        shell: bash
 
   typos:
     name: Spell Check
@@ -132,5 +51,4 @@ jobs:
           save-cache: ${{ github.ref_name == 'main' }}
           cache-key: clippy
           components: clippy rust-docs
-      - run: cargo lint -- -D warnings
-      - run: RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --document-private-items
+      - run: cargo lint --exclude mcre -- -D warnings

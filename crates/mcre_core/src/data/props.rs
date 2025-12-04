@@ -1,6 +1,6 @@
 use super::state::*;
+use alloc::{boxed::Box, vec::Vec};
 use core::str::FromStr;
-use alloc::{vec::Vec, boxed::Box};
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ShapePropVal {
     NorthSouth,
@@ -1018,9 +1018,7 @@ impl PropVal {
             PropKey::Persistent => Some(Self::Persistent(bool::from_str(s).ok()?)),
             PropKey::Facing => Some(Self::Facing(Direction::from_str(s).ok()?)),
             PropKey::Triggered => Some(Self::Triggered(bool::from_str(s).ok()?)),
-            PropKey::Instrument => {
-                Some(Self::Instrument(NoteBlockInstrument::from_str(s).ok()?))
-            }
+            PropKey::Instrument => Some(Self::Instrument(NoteBlockInstrument::from_str(s).ok()?)),
             PropKey::Note => Some(Self::Note(u8::from_str(s).ok()?)),
             PropKey::Powered => Some(Self::Powered(bool::from_str(s).ok()?)),
             PropKey::Occupied => Some(Self::Occupied(bool::from_str(s).ok()?)),
@@ -1043,9 +1041,9 @@ impl PropVal {
             PropKey::South => Some(Self::South(SouthPropVal::from_str(s).ok()?)),
             PropKey::Up => Some(Self::Up(bool::from_str(s).ok()?)),
             PropKey::West => Some(Self::West(WestPropVal::from_str(s).ok()?)),
-            PropKey::CreakingHeartState => {
-                Some(Self::CreakingHeartState(CreakingHeartState::from_str(s).ok()?))
-            }
+            PropKey::CreakingHeartState => Some(Self::CreakingHeartState(
+                CreakingHeartState::from_str(s).ok()?,
+            )),
             PropKey::Natural => Some(Self::Natural(bool::from_str(s).ok()?)),
             PropKey::Power => Some(Self::Power(u8::from_str(s).ok()?)),
             PropKey::Moisture => Some(Self::Moisture(u8::from_str(s).ok()?)),
@@ -1079,13 +1077,9 @@ impl PropVal {
             PropKey::Drag => Some(Self::Drag(bool::from_str(s).ok()?)),
             PropKey::Bottom => Some(Self::Bottom(bool::from_str(s).ok()?)),
             PropKey::HasBook => Some(Self::HasBook(bool::from_str(s).ok()?)),
-            PropKey::Attachment => {
-                Some(Self::Attachment(BellAttachType::from_str(s).ok()?))
-            }
+            PropKey::Attachment => Some(Self::Attachment(BellAttachType::from_str(s).ok()?)),
             PropKey::SignalFire => Some(Self::SignalFire(bool::from_str(s).ok()?)),
-            PropKey::Orientation => {
-                Some(Self::Orientation(FrontAndTop::from_str(s).ok()?))
-            }
+            PropKey::Orientation => Some(Self::Orientation(FrontAndTop::from_str(s).ok()?)),
             PropKey::HoneyLevel => Some(Self::HoneyLevel(u8::from_str(s).ok()?)),
             PropKey::Charges => Some(Self::Charges(u8::from_str(s).ok()?)),
             PropKey::Candles => Some(Self::Candles(u8::from_str(s).ok()?)),
@@ -1095,12 +1089,8 @@ impl PropVal {
             PropKey::Bloom => Some(Self::Bloom(bool::from_str(s).ok()?)),
             PropKey::CanSummon => Some(Self::CanSummon(bool::from_str(s).ok()?)),
             PropKey::Shrieking => Some(Self::Shrieking(bool::from_str(s).ok()?)),
-            PropKey::CopperGolemPose => {
-                Some(Self::CopperGolemPose(Pose::from_str(s).ok()?))
-            }
-            PropKey::Thickness => {
-                Some(Self::Thickness(DripstoneThickness::from_str(s).ok()?))
-            }
+            PropKey::CopperGolemPose => Some(Self::CopperGolemPose(Pose::from_str(s).ok()?)),
+            PropKey::Thickness => Some(Self::Thickness(DripstoneThickness::from_str(s).ok()?)),
             PropKey::VerticalDirection => {
                 Some(Self::VerticalDirection(Direction::from_str(s).ok()?))
             }
@@ -1111,9 +1101,9 @@ impl PropVal {
             PropKey::Cracked => Some(Self::Cracked(bool::from_str(s).ok()?)),
             PropKey::Crafting => Some(Self::Crafting(bool::from_str(s).ok()?)),
             PropKey::Ominous => Some(Self::Ominous(bool::from_str(s).ok()?)),
-            PropKey::TrialSpawnerState => {
-                Some(Self::TrialSpawnerState(TrialSpawnerState::from_str(s).ok()?))
-            }
+            PropKey::TrialSpawnerState => Some(Self::TrialSpawnerState(
+                TrialSpawnerState::from_str(s).ok()?,
+            )),
             PropKey::VaultState => Some(Self::VaultState(VaultState::from_str(s).ok()?)),
             PropKey::Tip => Some(Self::Tip(bool::from_str(s).ok()?)),
         }
@@ -1223,22 +1213,14 @@ impl PropFilter {
             (Self::Stage(values), PropVal::Stage(value)) => values.contains(&value),
             (Self::Age(values), PropVal::Age(value)) => values.contains(&value),
             (Self::Hanging(values), PropVal::Hanging(value)) => values.contains(&value),
-            (Self::Waterlogged(values), PropVal::Waterlogged(value)) => {
-                values.contains(&value)
-            }
+            (Self::Waterlogged(values), PropVal::Waterlogged(value)) => values.contains(&value),
             (Self::Level(values), PropVal::Level(value)) => values.contains(&value),
             (Self::Dusted(values), PropVal::Dusted(value)) => values.contains(&value),
             (Self::Distance(values), PropVal::Distance(value)) => values.contains(&value),
-            (Self::Persistent(values), PropVal::Persistent(value)) => {
-                values.contains(&value)
-            }
+            (Self::Persistent(values), PropVal::Persistent(value)) => values.contains(&value),
             (Self::Facing(values), PropVal::Facing(value)) => values.contains(&value),
-            (Self::Triggered(values), PropVal::Triggered(value)) => {
-                values.contains(&value)
-            }
-            (Self::Instrument(values), PropVal::Instrument(value)) => {
-                values.contains(&value)
-            }
+            (Self::Triggered(values), PropVal::Triggered(value)) => values.contains(&value),
+            (Self::Instrument(values), PropVal::Instrument(value)) => values.contains(&value),
             (Self::Note(values), PropVal::Note(value)) => values.contains(&value),
             (Self::Powered(values), PropVal::Powered(value)) => values.contains(&value),
             (Self::Occupied(values), PropVal::Occupied(value)) => values.contains(&value),
@@ -1249,27 +1231,13 @@ impl PropFilter {
             (Self::Short(values), PropVal::Short(value)) => values.contains(&value),
             (Self::Type(values), PropVal::Type(value)) => values.contains(&value),
             (Self::Unstable(values), PropVal::Unstable(value)) => values.contains(&value),
-            (Self::Slot0Occupied(values), PropVal::Slot0Occupied(value)) => {
-                values.contains(&value)
-            }
-            (Self::Slot1Occupied(values), PropVal::Slot1Occupied(value)) => {
-                values.contains(&value)
-            }
-            (Self::Slot2Occupied(values), PropVal::Slot2Occupied(value)) => {
-                values.contains(&value)
-            }
-            (Self::Slot3Occupied(values), PropVal::Slot3Occupied(value)) => {
-                values.contains(&value)
-            }
-            (Self::Slot4Occupied(values), PropVal::Slot4Occupied(value)) => {
-                values.contains(&value)
-            }
-            (Self::Slot5Occupied(values), PropVal::Slot5Occupied(value)) => {
-                values.contains(&value)
-            }
-            (Self::SideChain(values), PropVal::SideChain(value)) => {
-                values.contains(&value)
-            }
+            (Self::Slot0Occupied(values), PropVal::Slot0Occupied(value)) => values.contains(&value),
+            (Self::Slot1Occupied(values), PropVal::Slot1Occupied(value)) => values.contains(&value),
+            (Self::Slot2Occupied(values), PropVal::Slot2Occupied(value)) => values.contains(&value),
+            (Self::Slot3Occupied(values), PropVal::Slot3Occupied(value)) => values.contains(&value),
+            (Self::Slot4Occupied(values), PropVal::Slot4Occupied(value)) => values.contains(&value),
+            (Self::Slot5Occupied(values), PropVal::Slot5Occupied(value)) => values.contains(&value),
+            (Self::SideChain(values), PropVal::SideChain(value)) => values.contains(&value),
             (Self::East(values), PropVal::East(value)) => values.contains(&value),
             (Self::North(values), PropVal::North(value)) => values.contains(&value),
             (Self::South(values), PropVal::South(value)) => values.contains(&value),
@@ -1288,81 +1256,51 @@ impl PropFilter {
             (Self::Attached(values), PropVal::Attached(value)) => values.contains(&value),
             (Self::Face(values), PropVal::Face(value)) => values.contains(&value),
             (Self::Layers(values), PropVal::Layers(value)) => values.contains(&value),
-            (Self::HasRecord(values), PropVal::HasRecord(value)) => {
-                values.contains(&value)
-            }
+            (Self::HasRecord(values), PropVal::HasRecord(value)) => values.contains(&value),
             (Self::Bites(values), PropVal::Bites(value)) => values.contains(&value),
             (Self::Delay(values), PropVal::Delay(value)) => values.contains(&value),
             (Self::Locked(values), PropVal::Locked(value)) => values.contains(&value),
             (Self::Down(values), PropVal::Down(value)) => values.contains(&value),
             (Self::InWall(values), PropVal::InWall(value)) => values.contains(&value),
-            (Self::HasBottle0(values), PropVal::HasBottle0(value)) => {
-                values.contains(&value)
-            }
-            (Self::HasBottle1(values), PropVal::HasBottle1(value)) => {
-                values.contains(&value)
-            }
-            (Self::HasBottle2(values), PropVal::HasBottle2(value)) => {
-                values.contains(&value)
-            }
+            (Self::HasBottle0(values), PropVal::HasBottle0(value)) => values.contains(&value),
+            (Self::HasBottle1(values), PropVal::HasBottle1(value)) => values.contains(&value),
+            (Self::HasBottle2(values), PropVal::HasBottle2(value)) => values.contains(&value),
             (Self::Eye(values), PropVal::Eye(value)) => values.contains(&value),
             (Self::Disarmed(values), PropVal::Disarmed(value)) => values.contains(&value),
-            (Self::Conditional(values), PropVal::Conditional(value)) => {
-                values.contains(&value)
-            }
+            (Self::Conditional(values), PropVal::Conditional(value)) => values.contains(&value),
             (Self::Mode(values), PropVal::Mode(value)) => values.contains(&value),
             (Self::Inverted(values), PropVal::Inverted(value)) => values.contains(&value),
             (Self::Enabled(values), PropVal::Enabled(value)) => values.contains(&value),
             (Self::Eggs(values), PropVal::Eggs(value)) => values.contains(&value),
             (Self::Hatch(values), PropVal::Hatch(value)) => values.contains(&value),
-            (Self::Hydration(values), PropVal::Hydration(value)) => {
-                values.contains(&value)
-            }
+            (Self::Hydration(values), PropVal::Hydration(value)) => values.contains(&value),
             (Self::Pickles(values), PropVal::Pickles(value)) => values.contains(&value),
             (Self::Leaves(values), PropVal::Leaves(value)) => values.contains(&value),
             (Self::Drag(values), PropVal::Drag(value)) => values.contains(&value),
             (Self::Bottom(values), PropVal::Bottom(value)) => values.contains(&value),
             (Self::HasBook(values), PropVal::HasBook(value)) => values.contains(&value),
-            (Self::Attachment(values), PropVal::Attachment(value)) => {
-                values.contains(&value)
-            }
-            (Self::SignalFire(values), PropVal::SignalFire(value)) => {
-                values.contains(&value)
-            }
-            (Self::Orientation(values), PropVal::Orientation(value)) => {
-                values.contains(&value)
-            }
-            (Self::HoneyLevel(values), PropVal::HoneyLevel(value)) => {
-                values.contains(&value)
-            }
+            (Self::Attachment(values), PropVal::Attachment(value)) => values.contains(&value),
+            (Self::SignalFire(values), PropVal::SignalFire(value)) => values.contains(&value),
+            (Self::Orientation(values), PropVal::Orientation(value)) => values.contains(&value),
+            (Self::HoneyLevel(values), PropVal::HoneyLevel(value)) => values.contains(&value),
             (Self::Charges(values), PropVal::Charges(value)) => values.contains(&value),
             (Self::Candles(values), PropVal::Candles(value)) => values.contains(&value),
             (Self::SculkSensorPhase(values), PropVal::SculkSensorPhase(value)) => {
                 values.contains(&value)
             }
             (Self::Bloom(values), PropVal::Bloom(value)) => values.contains(&value),
-            (Self::CanSummon(values), PropVal::CanSummon(value)) => {
-                values.contains(&value)
-            }
-            (Self::Shrieking(values), PropVal::Shrieking(value)) => {
-                values.contains(&value)
-            }
+            (Self::CanSummon(values), PropVal::CanSummon(value)) => values.contains(&value),
+            (Self::Shrieking(values), PropVal::Shrieking(value)) => values.contains(&value),
             (Self::CopperGolemPose(values), PropVal::CopperGolemPose(value)) => {
                 values.contains(&value)
             }
-            (Self::Thickness(values), PropVal::Thickness(value)) => {
-                values.contains(&value)
-            }
+            (Self::Thickness(values), PropVal::Thickness(value)) => values.contains(&value),
             (Self::VerticalDirection(values), PropVal::VerticalDirection(value)) => {
                 values.contains(&value)
             }
             (Self::Berries(values), PropVal::Berries(value)) => values.contains(&value),
-            (Self::FlowerAmount(values), PropVal::FlowerAmount(value)) => {
-                values.contains(&value)
-            }
-            (Self::SegmentAmount(values), PropVal::SegmentAmount(value)) => {
-                values.contains(&value)
-            }
+            (Self::FlowerAmount(values), PropVal::FlowerAmount(value)) => values.contains(&value),
+            (Self::SegmentAmount(values), PropVal::SegmentAmount(value)) => values.contains(&value),
             (Self::Tilt(values), PropVal::Tilt(value)) => values.contains(&value),
             (Self::Cracked(values), PropVal::Cracked(value)) => values.contains(&value),
             (Self::Crafting(values), PropVal::Crafting(value)) => values.contains(&value),
@@ -1370,9 +1308,7 @@ impl PropFilter {
             (Self::TrialSpawnerState(values), PropVal::TrialSpawnerState(value)) => {
                 values.contains(&value)
             }
-            (Self::VaultState(values), PropVal::VaultState(value)) => {
-                values.contains(&value)
-            }
+            (Self::VaultState(values), PropVal::VaultState(value)) => values.contains(&value),
             (Self::Tip(values), PropVal::Tip(value)) => values.contains(&value),
             _ => false,
         }
@@ -1380,834 +1316,466 @@ impl PropFilter {
     pub fn parse_with_key(key: PropKey, s: &str) -> Option<Self> {
         let parts = s.split("|");
         match key {
-            PropKey::Snowy => {
-                Some(
-                    Self::Snowy(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Axis => {
-                Some(
-                    Self::Axis(
-                        parts
-                            .map(|part| Axis::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Stage => {
-                Some(
-                    Self::Stage(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Age => {
-                Some(
-                    Self::Age(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Hanging => {
-                Some(
-                    Self::Hanging(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Waterlogged => {
-                Some(
-                    Self::Waterlogged(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Level => {
-                Some(
-                    Self::Level(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Dusted => {
-                Some(
-                    Self::Dusted(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Distance => {
-                Some(
-                    Self::Distance(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Persistent => {
-                Some(
-                    Self::Persistent(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Facing => {
-                Some(
-                    Self::Facing(
-                        parts
-                            .map(|part| Direction::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Triggered => {
-                Some(
-                    Self::Triggered(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Instrument => {
-                Some(
-                    Self::Instrument(
-                        parts
-                            .map(|part| NoteBlockInstrument::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Note => {
-                Some(
-                    Self::Note(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Powered => {
-                Some(
-                    Self::Powered(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Occupied => {
-                Some(
-                    Self::Occupied(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Part => {
-                Some(
-                    Self::Part(
-                        parts
-                            .map(|part| BedPart::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Shape => {
-                Some(
-                    Self::Shape(
-                        parts
-                            .map(|part| ShapePropVal::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Extended => {
-                Some(
-                    Self::Extended(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Half => {
-                Some(
-                    Self::Half(
-                        parts
-                            .map(|part| HalfPropVal::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Short => {
-                Some(
-                    Self::Short(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Type => {
-                Some(
-                    Self::Type(
-                        parts
-                            .map(|part| TypePropVal::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Unstable => {
-                Some(
-                    Self::Unstable(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Slot0Occupied => {
-                Some(
-                    Self::Slot0Occupied(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Slot1Occupied => {
-                Some(
-                    Self::Slot1Occupied(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Slot2Occupied => {
-                Some(
-                    Self::Slot2Occupied(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Slot3Occupied => {
-                Some(
-                    Self::Slot3Occupied(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Slot4Occupied => {
-                Some(
-                    Self::Slot4Occupied(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Slot5Occupied => {
-                Some(
-                    Self::Slot5Occupied(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::SideChain => {
-                Some(
-                    Self::SideChain(
-                        parts
-                            .map(|part| SideChainPart::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::East => {
-                Some(
-                    Self::East(
-                        parts
-                            .map(|part| EastPropVal::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::North => {
-                Some(
-                    Self::North(
-                        parts
-                            .map(|part| NorthPropVal::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::South => {
-                Some(
-                    Self::South(
-                        parts
-                            .map(|part| SouthPropVal::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Up => {
-                Some(
-                    Self::Up(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::West => {
-                Some(
-                    Self::West(
-                        parts
-                            .map(|part| WestPropVal::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::CreakingHeartState => {
-                Some(
-                    Self::CreakingHeartState(
-                        parts
-                            .map(|part| CreakingHeartState::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Natural => {
-                Some(
-                    Self::Natural(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Power => {
-                Some(
-                    Self::Power(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Moisture => {
-                Some(
-                    Self::Moisture(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Lit => {
-                Some(
-                    Self::Lit(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Rotation => {
-                Some(
-                    Self::Rotation(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Hinge => {
-                Some(
-                    Self::Hinge(
-                        parts
-                            .map(|part| DoorHingeSide::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Open => {
-                Some(
-                    Self::Open(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Attached => {
-                Some(
-                    Self::Attached(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Face => {
-                Some(
-                    Self::Face(
-                        parts
-                            .map(|part| AttachFace::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Layers => {
-                Some(
-                    Self::Layers(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::HasRecord => {
-                Some(
-                    Self::HasRecord(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Bites => {
-                Some(
-                    Self::Bites(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Delay => {
-                Some(
-                    Self::Delay(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Locked => {
-                Some(
-                    Self::Locked(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Down => {
-                Some(
-                    Self::Down(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::InWall => {
-                Some(
-                    Self::InWall(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::HasBottle0 => {
-                Some(
-                    Self::HasBottle0(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::HasBottle1 => {
-                Some(
-                    Self::HasBottle1(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::HasBottle2 => {
-                Some(
-                    Self::HasBottle2(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Eye => {
-                Some(
-                    Self::Eye(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Disarmed => {
-                Some(
-                    Self::Disarmed(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Conditional => {
-                Some(
-                    Self::Conditional(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Mode => {
-                Some(
-                    Self::Mode(
-                        parts
-                            .map(|part| ModePropVal::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Inverted => {
-                Some(
-                    Self::Inverted(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Enabled => {
-                Some(
-                    Self::Enabled(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Eggs => {
-                Some(
-                    Self::Eggs(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Hatch => {
-                Some(
-                    Self::Hatch(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Hydration => {
-                Some(
-                    Self::Hydration(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Pickles => {
-                Some(
-                    Self::Pickles(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Leaves => {
-                Some(
-                    Self::Leaves(
-                        parts
-                            .map(|part| BambooLeaves::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Drag => {
-                Some(
-                    Self::Drag(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Bottom => {
-                Some(
-                    Self::Bottom(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::HasBook => {
-                Some(
-                    Self::HasBook(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Attachment => {
-                Some(
-                    Self::Attachment(
-                        parts
-                            .map(|part| BellAttachType::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::SignalFire => {
-                Some(
-                    Self::SignalFire(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Orientation => {
-                Some(
-                    Self::Orientation(
-                        parts
-                            .map(|part| FrontAndTop::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::HoneyLevel => {
-                Some(
-                    Self::HoneyLevel(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Charges => {
-                Some(
-                    Self::Charges(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Candles => {
-                Some(
-                    Self::Candles(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::SculkSensorPhase => {
-                Some(
-                    Self::SculkSensorPhase(
-                        parts
-                            .map(|part| SculkSensorPhase::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Bloom => {
-                Some(
-                    Self::Bloom(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::CanSummon => {
-                Some(
-                    Self::CanSummon(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Shrieking => {
-                Some(
-                    Self::Shrieking(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::CopperGolemPose => {
-                Some(
-                    Self::CopperGolemPose(
-                        parts
-                            .map(|part| Pose::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Thickness => {
-                Some(
-                    Self::Thickness(
-                        parts
-                            .map(|part| DripstoneThickness::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::VerticalDirection => {
-                Some(
-                    Self::VerticalDirection(
-                        parts
-                            .map(|part| Direction::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Berries => {
-                Some(
-                    Self::Berries(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::FlowerAmount => {
-                Some(
-                    Self::FlowerAmount(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::SegmentAmount => {
-                Some(
-                    Self::SegmentAmount(
-                        parts
-                            .map(|part| u8::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Tilt => {
-                Some(
-                    Self::Tilt(
-                        parts
-                            .map(|part| Tilt::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Cracked => {
-                Some(
-                    Self::Cracked(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Crafting => {
-                Some(
-                    Self::Crafting(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Ominous => {
-                Some(
-                    Self::Ominous(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::TrialSpawnerState => {
-                Some(
-                    Self::TrialSpawnerState(
-                        parts
-                            .map(|part| TrialSpawnerState::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::VaultState => {
-                Some(
-                    Self::VaultState(
-                        parts
-                            .map(|part| VaultState::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
-            PropKey::Tip => {
-                Some(
-                    Self::Tip(
-                        parts
-                            .map(|part| bool::from_str(part).ok())
-                            .collect::<Option<Box<_>>>()?,
-                    ),
-                )
-            }
+            PropKey::Snowy => Some(Self::Snowy(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Axis => Some(Self::Axis(
+                parts
+                    .map(|part| Axis::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Stage => Some(Self::Stage(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Age => Some(Self::Age(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Hanging => Some(Self::Hanging(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Waterlogged => Some(Self::Waterlogged(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Level => Some(Self::Level(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Dusted => Some(Self::Dusted(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Distance => Some(Self::Distance(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Persistent => Some(Self::Persistent(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Facing => Some(Self::Facing(
+                parts
+                    .map(|part| Direction::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Triggered => Some(Self::Triggered(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Instrument => Some(Self::Instrument(
+                parts
+                    .map(|part| NoteBlockInstrument::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Note => Some(Self::Note(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Powered => Some(Self::Powered(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Occupied => Some(Self::Occupied(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Part => Some(Self::Part(
+                parts
+                    .map(|part| BedPart::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Shape => Some(Self::Shape(
+                parts
+                    .map(|part| ShapePropVal::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Extended => Some(Self::Extended(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Half => Some(Self::Half(
+                parts
+                    .map(|part| HalfPropVal::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Short => Some(Self::Short(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Type => Some(Self::Type(
+                parts
+                    .map(|part| TypePropVal::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Unstable => Some(Self::Unstable(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Slot0Occupied => Some(Self::Slot0Occupied(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Slot1Occupied => Some(Self::Slot1Occupied(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Slot2Occupied => Some(Self::Slot2Occupied(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Slot3Occupied => Some(Self::Slot3Occupied(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Slot4Occupied => Some(Self::Slot4Occupied(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Slot5Occupied => Some(Self::Slot5Occupied(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::SideChain => Some(Self::SideChain(
+                parts
+                    .map(|part| SideChainPart::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::East => Some(Self::East(
+                parts
+                    .map(|part| EastPropVal::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::North => Some(Self::North(
+                parts
+                    .map(|part| NorthPropVal::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::South => Some(Self::South(
+                parts
+                    .map(|part| SouthPropVal::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Up => Some(Self::Up(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::West => Some(Self::West(
+                parts
+                    .map(|part| WestPropVal::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::CreakingHeartState => Some(Self::CreakingHeartState(
+                parts
+                    .map(|part| CreakingHeartState::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Natural => Some(Self::Natural(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Power => Some(Self::Power(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Moisture => Some(Self::Moisture(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Lit => Some(Self::Lit(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Rotation => Some(Self::Rotation(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Hinge => Some(Self::Hinge(
+                parts
+                    .map(|part| DoorHingeSide::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Open => Some(Self::Open(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Attached => Some(Self::Attached(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Face => Some(Self::Face(
+                parts
+                    .map(|part| AttachFace::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Layers => Some(Self::Layers(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::HasRecord => Some(Self::HasRecord(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Bites => Some(Self::Bites(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Delay => Some(Self::Delay(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Locked => Some(Self::Locked(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Down => Some(Self::Down(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::InWall => Some(Self::InWall(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::HasBottle0 => Some(Self::HasBottle0(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::HasBottle1 => Some(Self::HasBottle1(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::HasBottle2 => Some(Self::HasBottle2(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Eye => Some(Self::Eye(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Disarmed => Some(Self::Disarmed(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Conditional => Some(Self::Conditional(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Mode => Some(Self::Mode(
+                parts
+                    .map(|part| ModePropVal::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Inverted => Some(Self::Inverted(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Enabled => Some(Self::Enabled(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Eggs => Some(Self::Eggs(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Hatch => Some(Self::Hatch(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Hydration => Some(Self::Hydration(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Pickles => Some(Self::Pickles(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Leaves => Some(Self::Leaves(
+                parts
+                    .map(|part| BambooLeaves::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Drag => Some(Self::Drag(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Bottom => Some(Self::Bottom(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::HasBook => Some(Self::HasBook(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Attachment => Some(Self::Attachment(
+                parts
+                    .map(|part| BellAttachType::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::SignalFire => Some(Self::SignalFire(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Orientation => Some(Self::Orientation(
+                parts
+                    .map(|part| FrontAndTop::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::HoneyLevel => Some(Self::HoneyLevel(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Charges => Some(Self::Charges(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Candles => Some(Self::Candles(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::SculkSensorPhase => Some(Self::SculkSensorPhase(
+                parts
+                    .map(|part| SculkSensorPhase::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Bloom => Some(Self::Bloom(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::CanSummon => Some(Self::CanSummon(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Shrieking => Some(Self::Shrieking(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::CopperGolemPose => Some(Self::CopperGolemPose(
+                parts
+                    .map(|part| Pose::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Thickness => Some(Self::Thickness(
+                parts
+                    .map(|part| DripstoneThickness::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::VerticalDirection => Some(Self::VerticalDirection(
+                parts
+                    .map(|part| Direction::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Berries => Some(Self::Berries(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::FlowerAmount => Some(Self::FlowerAmount(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::SegmentAmount => Some(Self::SegmentAmount(
+                parts
+                    .map(|part| u8::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Tilt => Some(Self::Tilt(
+                parts
+                    .map(|part| Tilt::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Cracked => Some(Self::Cracked(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Crafting => Some(Self::Crafting(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Ominous => Some(Self::Ominous(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::TrialSpawnerState => Some(Self::TrialSpawnerState(
+                parts
+                    .map(|part| TrialSpawnerState::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::VaultState => Some(Self::VaultState(
+                parts
+                    .map(|part| VaultState::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
+            PropKey::Tip => Some(Self::Tip(
+                parts
+                    .map(|part| bool::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
         }
     }
 }

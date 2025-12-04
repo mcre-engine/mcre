@@ -1,6 +1,6 @@
-mod data;
 mod consts;
-use crate::{StateId, FieldKey};
+mod data;
+use crate::{FieldKey, StateId};
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct BlockId(u16);
 impl From<u16> for BlockId {

@@ -1,6 +1,6 @@
 mod data;
 mod enums;
-use crate::{BlockId, OffsetType, FieldKey, FieldVal, PropKey, PropVal};
+use crate::{BlockId, FieldKey, FieldVal, OffsetType, PropKey, PropVal};
 pub use enums::*;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct StateId(u16);
@@ -77,9 +77,7 @@ impl StateId {
             FieldKey::Stage => Some(FieldVal::Stage(self.stage())),
             FieldKey::Age => Some(FieldVal::Age(self.age())),
             FieldKey::IsHanging => Some(FieldVal::IsHanging(self.is_hanging())),
-            FieldKey::IsWaterlogged => {
-                Some(FieldVal::IsWaterlogged(self.is_waterlogged()))
-            }
+            FieldKey::IsWaterlogged => Some(FieldVal::IsWaterlogged(self.is_waterlogged())),
             FieldKey::Level => Some(FieldVal::Level(self.level())),
             FieldKey::Dusted => Some(FieldVal::Dusted(self.dusted())),
             FieldKey::Distance => Some(FieldVal::Distance(self.distance())),
@@ -94,24 +92,12 @@ impl StateId {
             FieldKey::IsExtended => Some(FieldVal::IsExtended(self.is_extended())),
             FieldKey::IsShort => Some(FieldVal::IsShort(self.is_short())),
             FieldKey::IsUnstable => Some(FieldVal::IsUnstable(self.is_unstable())),
-            FieldKey::IsSlot0Occupied => {
-                Some(FieldVal::IsSlot0Occupied(self.is_slot_0_occupied()))
-            }
-            FieldKey::IsSlot1Occupied => {
-                Some(FieldVal::IsSlot1Occupied(self.is_slot_1_occupied()))
-            }
-            FieldKey::IsSlot2Occupied => {
-                Some(FieldVal::IsSlot2Occupied(self.is_slot_2_occupied()))
-            }
-            FieldKey::IsSlot3Occupied => {
-                Some(FieldVal::IsSlot3Occupied(self.is_slot_3_occupied()))
-            }
-            FieldKey::IsSlot4Occupied => {
-                Some(FieldVal::IsSlot4Occupied(self.is_slot_4_occupied()))
-            }
-            FieldKey::IsSlot5Occupied => {
-                Some(FieldVal::IsSlot5Occupied(self.is_slot_5_occupied()))
-            }
+            FieldKey::IsSlot0Occupied => Some(FieldVal::IsSlot0Occupied(self.is_slot_0_occupied())),
+            FieldKey::IsSlot1Occupied => Some(FieldVal::IsSlot1Occupied(self.is_slot_1_occupied())),
+            FieldKey::IsSlot2Occupied => Some(FieldVal::IsSlot2Occupied(self.is_slot_2_occupied())),
+            FieldKey::IsSlot3Occupied => Some(FieldVal::IsSlot3Occupied(self.is_slot_3_occupied())),
+            FieldKey::IsSlot4Occupied => Some(FieldVal::IsSlot4Occupied(self.is_slot_4_occupied())),
+            FieldKey::IsSlot5Occupied => Some(FieldVal::IsSlot5Occupied(self.is_slot_5_occupied())),
             FieldKey::SideChain => Some(FieldVal::SideChain(self.side_chain())),
             FieldKey::IsEast => Some(FieldVal::IsEast(self.is_east())),
             FieldKey::IsNorth => Some(FieldVal::IsNorth(self.is_north())),
@@ -137,20 +123,12 @@ impl StateId {
             FieldKey::IsLocked => Some(FieldVal::IsLocked(self.is_locked())),
             FieldKey::IsDown => Some(FieldVal::IsDown(self.is_down())),
             FieldKey::IsInWall => Some(FieldVal::IsInWall(self.is_in_wall())),
-            FieldKey::IsHasBottle0 => {
-                Some(FieldVal::IsHasBottle0(self.is_has_bottle_0()))
-            }
-            FieldKey::IsHasBottle1 => {
-                Some(FieldVal::IsHasBottle1(self.is_has_bottle_1()))
-            }
-            FieldKey::IsHasBottle2 => {
-                Some(FieldVal::IsHasBottle2(self.is_has_bottle_2()))
-            }
+            FieldKey::IsHasBottle0 => Some(FieldVal::IsHasBottle0(self.is_has_bottle_0())),
+            FieldKey::IsHasBottle1 => Some(FieldVal::IsHasBottle1(self.is_has_bottle_1())),
+            FieldKey::IsHasBottle2 => Some(FieldVal::IsHasBottle2(self.is_has_bottle_2())),
             FieldKey::IsEye => Some(FieldVal::IsEye(self.is_eye())),
             FieldKey::IsDisarmed => Some(FieldVal::IsDisarmed(self.is_disarmed())),
-            FieldKey::IsConditional => {
-                Some(FieldVal::IsConditional(self.is_conditional()))
-            }
+            FieldKey::IsConditional => Some(FieldVal::IsConditional(self.is_conditional())),
             FieldKey::IsInverted => Some(FieldVal::IsInverted(self.is_inverted())),
             FieldKey::IsEnabled => Some(FieldVal::IsEnabled(self.is_enabled())),
             FieldKey::Eggs => Some(FieldVal::Eggs(self.eggs())),
@@ -173,18 +151,14 @@ impl StateId {
             FieldKey::IsBloom => Some(FieldVal::IsBloom(self.is_bloom())),
             FieldKey::IsCanSummon => Some(FieldVal::IsCanSummon(self.is_can_summon())),
             FieldKey::IsShrieking => Some(FieldVal::IsShrieking(self.is_shrieking())),
-            FieldKey::CopperGolemPose => {
-                Some(FieldVal::CopperGolemPose(self.copper_golem_pose()))
-            }
+            FieldKey::CopperGolemPose => Some(FieldVal::CopperGolemPose(self.copper_golem_pose())),
             FieldKey::Thickness => Some(FieldVal::Thickness(self.thickness())),
             FieldKey::VerticalDirection => {
                 Some(FieldVal::VerticalDirection(self.vertical_direction()))
             }
             FieldKey::IsBerries => Some(FieldVal::IsBerries(self.is_berries())),
             FieldKey::FlowerAmount => Some(FieldVal::FlowerAmount(self.flower_amount())),
-            FieldKey::SegmentAmount => {
-                Some(FieldVal::SegmentAmount(self.segment_amount()))
-            }
+            FieldKey::SegmentAmount => Some(FieldVal::SegmentAmount(self.segment_amount())),
             FieldKey::Tilt => Some(FieldVal::Tilt(self.tilt())),
             FieldKey::IsCracked => Some(FieldVal::IsCracked(self.is_cracked())),
             FieldKey::IsCrafting => Some(FieldVal::IsCrafting(self.is_crafting())),
@@ -196,123 +170,94 @@ impl StateId {
             FieldKey::IsTip => Some(FieldVal::IsTip(self.is_tip())),
             FieldKey::RailShape => Some(FieldVal::RailShape(self.rail_shape())),
             FieldKey::StairsShape => Some(FieldVal::StairsShape(self.stairs_shape())),
-            FieldKey::DoubleblockHalf => {
-                Some(FieldVal::DoubleblockHalf(self.doubleblock_half()))
-            }
+            FieldKey::DoubleblockHalf => Some(FieldVal::DoubleblockHalf(self.doubleblock_half())),
             FieldKey::Half => Some(FieldVal::Half(self.half())),
             FieldKey::PistonType => Some(FieldVal::PistonType(self.piston_type())),
             FieldKey::ChestType => Some(FieldVal::ChestType(self.chest_type())),
             FieldKey::SlabType => Some(FieldVal::SlabType(self.slab_type())),
             FieldKey::RedstoneEast => Some(FieldVal::RedstoneEast(self.redstone_east())),
             FieldKey::WallEast => Some(FieldVal::WallEast(self.wall_east())),
-            FieldKey::RedstoneNorth => {
-                Some(FieldVal::RedstoneNorth(self.redstone_north()))
-            }
+            FieldKey::RedstoneNorth => Some(FieldVal::RedstoneNorth(self.redstone_north())),
             FieldKey::WallNorth => Some(FieldVal::WallNorth(self.wall_north())),
-            FieldKey::RedstoneSouth => {
-                Some(FieldVal::RedstoneSouth(self.redstone_south()))
-            }
+            FieldKey::RedstoneSouth => Some(FieldVal::RedstoneSouth(self.redstone_south())),
             FieldKey::WallSouth => Some(FieldVal::WallSouth(self.wall_south())),
             FieldKey::RedstoneWest => Some(FieldVal::RedstoneWest(self.redstone_west())),
             FieldKey::WallWest => Some(FieldVal::WallWest(self.wall_west())),
-            FieldKey::ComparatorMode => {
-                Some(FieldVal::ComparatorMode(self.comparator_mode()))
-            }
-            FieldKey::StructureMode => {
-                Some(FieldVal::StructureMode(self.structure_mode()))
-            }
-            FieldKey::TestblockMode => {
-                Some(FieldVal::TestblockMode(self.testblock_mode()))
-            }
+            FieldKey::ComparatorMode => Some(FieldVal::ComparatorMode(self.comparator_mode())),
+            FieldKey::StructureMode => Some(FieldVal::StructureMode(self.structure_mode())),
+            FieldKey::TestblockMode => Some(FieldVal::TestblockMode(self.testblock_mode())),
         }
     }
     pub fn get_prop(self, prop: PropKey) -> Option<PropVal> {
         match prop {
-            PropKey::Snowy => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsSnowy)
-                    .then_some(PropVal::Snowy(self.is_snowy()))
-            }
-            PropKey::Axis => {
-                self.block_id()
-                    .is_field_present(FieldKey::Axis)
-                    .then_some(PropVal::Axis(self.axis()))
-            }
-            PropKey::Stage => {
-                self.block_id()
-                    .is_field_present(FieldKey::Stage)
-                    .then_some(PropVal::Stage(self.stage()))
-            }
-            PropKey::Age => {
-                self.block_id()
-                    .is_field_present(FieldKey::Age)
-                    .then_some(PropVal::Age(self.age()))
-            }
-            PropKey::Hanging => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsHanging)
-                    .then_some(PropVal::Hanging(self.is_hanging()))
-            }
-            PropKey::Waterlogged => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsWaterlogged)
-                    .then_some(PropVal::Waterlogged(self.is_waterlogged()))
-            }
-            PropKey::Level => {
-                self.block_id()
-                    .is_field_present(FieldKey::Level)
-                    .then_some(PropVal::Level(self.level()))
-            }
-            PropKey::Dusted => {
-                self.block_id()
-                    .is_field_present(FieldKey::Dusted)
-                    .then_some(PropVal::Dusted(self.dusted()))
-            }
-            PropKey::Distance => {
-                self.block_id()
-                    .is_field_present(FieldKey::Distance)
-                    .then_some(PropVal::Distance(self.distance()))
-            }
-            PropKey::Persistent => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsPersistent)
-                    .then_some(PropVal::Persistent(self.is_persistent()))
-            }
-            PropKey::Facing => {
-                self.block_id()
-                    .is_field_present(FieldKey::Facing)
-                    .then_some(PropVal::Facing(self.facing()))
-            }
-            PropKey::Triggered => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsTriggered)
-                    .then_some(PropVal::Triggered(self.is_triggered()))
-            }
-            PropKey::Instrument => {
-                self.block_id()
-                    .is_field_present(FieldKey::Instrument)
-                    .then_some(PropVal::Instrument(self.instrument()))
-            }
-            PropKey::Note => {
-                self.block_id()
-                    .is_field_present(FieldKey::Note)
-                    .then_some(PropVal::Note(self.note()))
-            }
-            PropKey::Powered => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsPowered)
-                    .then_some(PropVal::Powered(self.is_powered()))
-            }
-            PropKey::Occupied => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsOccupied)
-                    .then_some(PropVal::Occupied(self.is_occupied()))
-            }
-            PropKey::Part => {
-                self.block_id()
-                    .is_field_present(FieldKey::Part)
-                    .then_some(PropVal::Part(self.part()))
-            }
+            PropKey::Snowy => self
+                .block_id()
+                .is_field_present(FieldKey::IsSnowy)
+                .then_some(PropVal::Snowy(self.is_snowy())),
+            PropKey::Axis => self
+                .block_id()
+                .is_field_present(FieldKey::Axis)
+                .then_some(PropVal::Axis(self.axis())),
+            PropKey::Stage => self
+                .block_id()
+                .is_field_present(FieldKey::Stage)
+                .then_some(PropVal::Stage(self.stage())),
+            PropKey::Age => self
+                .block_id()
+                .is_field_present(FieldKey::Age)
+                .then_some(PropVal::Age(self.age())),
+            PropKey::Hanging => self
+                .block_id()
+                .is_field_present(FieldKey::IsHanging)
+                .then_some(PropVal::Hanging(self.is_hanging())),
+            PropKey::Waterlogged => self
+                .block_id()
+                .is_field_present(FieldKey::IsWaterlogged)
+                .then_some(PropVal::Waterlogged(self.is_waterlogged())),
+            PropKey::Level => self
+                .block_id()
+                .is_field_present(FieldKey::Level)
+                .then_some(PropVal::Level(self.level())),
+            PropKey::Dusted => self
+                .block_id()
+                .is_field_present(FieldKey::Dusted)
+                .then_some(PropVal::Dusted(self.dusted())),
+            PropKey::Distance => self
+                .block_id()
+                .is_field_present(FieldKey::Distance)
+                .then_some(PropVal::Distance(self.distance())),
+            PropKey::Persistent => self
+                .block_id()
+                .is_field_present(FieldKey::IsPersistent)
+                .then_some(PropVal::Persistent(self.is_persistent())),
+            PropKey::Facing => self
+                .block_id()
+                .is_field_present(FieldKey::Facing)
+                .then_some(PropVal::Facing(self.facing())),
+            PropKey::Triggered => self
+                .block_id()
+                .is_field_present(FieldKey::IsTriggered)
+                .then_some(PropVal::Triggered(self.is_triggered())),
+            PropKey::Instrument => self
+                .block_id()
+                .is_field_present(FieldKey::Instrument)
+                .then_some(PropVal::Instrument(self.instrument())),
+            PropKey::Note => self
+                .block_id()
+                .is_field_present(FieldKey::Note)
+                .then_some(PropVal::Note(self.note())),
+            PropKey::Powered => self
+                .block_id()
+                .is_field_present(FieldKey::IsPowered)
+                .then_some(PropVal::Powered(self.is_powered())),
+            PropKey::Occupied => self
+                .block_id()
+                .is_field_present(FieldKey::IsOccupied)
+                .then_some(PropVal::Occupied(self.is_occupied())),
+            PropKey::Part => self
+                .block_id()
+                .is_field_present(FieldKey::Part)
+                .then_some(PropVal::Part(self.part())),
             PropKey::Shape => {
                 if self.block_id().is_field_present(FieldKey::RailShape) {
                     Some(PropVal::Shape(self.rail_shape().into()))
@@ -322,11 +267,10 @@ impl StateId {
                     None
                 }
             }
-            PropKey::Extended => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsExtended)
-                    .then_some(PropVal::Extended(self.is_extended()))
-            }
+            PropKey::Extended => self
+                .block_id()
+                .is_field_present(FieldKey::IsExtended)
+                .then_some(PropVal::Extended(self.is_extended())),
             PropKey::Half => {
                 if self.block_id().is_field_present(FieldKey::DoubleblockHalf) {
                     Some(PropVal::Half(self.doubleblock_half().into()))
@@ -336,11 +280,10 @@ impl StateId {
                     None
                 }
             }
-            PropKey::Short => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsShort)
-                    .then_some(PropVal::Short(self.is_short()))
-            }
+            PropKey::Short => self
+                .block_id()
+                .is_field_present(FieldKey::IsShort)
+                .then_some(PropVal::Short(self.is_short())),
             PropKey::Type => {
                 if self.block_id().is_field_present(FieldKey::PistonType) {
                     Some(PropVal::Type(self.piston_type().into()))
@@ -352,46 +295,38 @@ impl StateId {
                     None
                 }
             }
-            PropKey::Unstable => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsUnstable)
-                    .then_some(PropVal::Unstable(self.is_unstable()))
-            }
-            PropKey::Slot0Occupied => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsSlot0Occupied)
-                    .then_some(PropVal::Slot0Occupied(self.is_slot_0_occupied()))
-            }
-            PropKey::Slot1Occupied => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsSlot1Occupied)
-                    .then_some(PropVal::Slot1Occupied(self.is_slot_1_occupied()))
-            }
-            PropKey::Slot2Occupied => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsSlot2Occupied)
-                    .then_some(PropVal::Slot2Occupied(self.is_slot_2_occupied()))
-            }
-            PropKey::Slot3Occupied => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsSlot3Occupied)
-                    .then_some(PropVal::Slot3Occupied(self.is_slot_3_occupied()))
-            }
-            PropKey::Slot4Occupied => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsSlot4Occupied)
-                    .then_some(PropVal::Slot4Occupied(self.is_slot_4_occupied()))
-            }
-            PropKey::Slot5Occupied => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsSlot5Occupied)
-                    .then_some(PropVal::Slot5Occupied(self.is_slot_5_occupied()))
-            }
-            PropKey::SideChain => {
-                self.block_id()
-                    .is_field_present(FieldKey::SideChain)
-                    .then_some(PropVal::SideChain(self.side_chain()))
-            }
+            PropKey::Unstable => self
+                .block_id()
+                .is_field_present(FieldKey::IsUnstable)
+                .then_some(PropVal::Unstable(self.is_unstable())),
+            PropKey::Slot0Occupied => self
+                .block_id()
+                .is_field_present(FieldKey::IsSlot0Occupied)
+                .then_some(PropVal::Slot0Occupied(self.is_slot_0_occupied())),
+            PropKey::Slot1Occupied => self
+                .block_id()
+                .is_field_present(FieldKey::IsSlot1Occupied)
+                .then_some(PropVal::Slot1Occupied(self.is_slot_1_occupied())),
+            PropKey::Slot2Occupied => self
+                .block_id()
+                .is_field_present(FieldKey::IsSlot2Occupied)
+                .then_some(PropVal::Slot2Occupied(self.is_slot_2_occupied())),
+            PropKey::Slot3Occupied => self
+                .block_id()
+                .is_field_present(FieldKey::IsSlot3Occupied)
+                .then_some(PropVal::Slot3Occupied(self.is_slot_3_occupied())),
+            PropKey::Slot4Occupied => self
+                .block_id()
+                .is_field_present(FieldKey::IsSlot4Occupied)
+                .then_some(PropVal::Slot4Occupied(self.is_slot_4_occupied())),
+            PropKey::Slot5Occupied => self
+                .block_id()
+                .is_field_present(FieldKey::IsSlot5Occupied)
+                .then_some(PropVal::Slot5Occupied(self.is_slot_5_occupied())),
+            PropKey::SideChain => self
+                .block_id()
+                .is_field_present(FieldKey::SideChain)
+                .then_some(PropVal::SideChain(self.side_chain())),
             PropKey::East => {
                 if self.block_id().is_field_present(FieldKey::IsEast) {
                     Some(PropVal::East(self.is_east().into()))
@@ -425,11 +360,10 @@ impl StateId {
                     None
                 }
             }
-            PropKey::Up => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsUp)
-                    .then_some(PropVal::Up(self.is_up()))
-            }
+            PropKey::Up => self
+                .block_id()
+                .is_field_present(FieldKey::IsUp)
+                .then_some(PropVal::Up(self.is_up())),
             PropKey::West => {
                 if self.block_id().is_field_present(FieldKey::IsWest) {
                     Some(PropVal::West(self.is_west().into()))
@@ -441,121 +375,98 @@ impl StateId {
                     None
                 }
             }
-            PropKey::CreakingHeartState => {
-                self.block_id()
-                    .is_field_present(FieldKey::CreakingHeartState)
-                    .then_some(PropVal::CreakingHeartState(self.creaking_heart_state()))
-            }
-            PropKey::Natural => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsNatural)
-                    .then_some(PropVal::Natural(self.is_natural()))
-            }
-            PropKey::Power => {
-                self.block_id()
-                    .is_field_present(FieldKey::Power)
-                    .then_some(PropVal::Power(self.power()))
-            }
-            PropKey::Moisture => {
-                self.block_id()
-                    .is_field_present(FieldKey::Moisture)
-                    .then_some(PropVal::Moisture(self.moisture()))
-            }
-            PropKey::Lit => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsLit)
-                    .then_some(PropVal::Lit(self.is_lit()))
-            }
-            PropKey::Rotation => {
-                self.block_id()
-                    .is_field_present(FieldKey::Rotation)
-                    .then_some(PropVal::Rotation(self.rotation()))
-            }
-            PropKey::Hinge => {
-                self.block_id()
-                    .is_field_present(FieldKey::Hinge)
-                    .then_some(PropVal::Hinge(self.hinge()))
-            }
-            PropKey::Open => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsOpen)
-                    .then_some(PropVal::Open(self.is_open()))
-            }
-            PropKey::Attached => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsAttached)
-                    .then_some(PropVal::Attached(self.is_attached()))
-            }
-            PropKey::Face => {
-                self.block_id()
-                    .is_field_present(FieldKey::Face)
-                    .then_some(PropVal::Face(self.face()))
-            }
-            PropKey::Layers => {
-                self.block_id()
-                    .is_field_present(FieldKey::Layers)
-                    .then_some(PropVal::Layers(self.layers()))
-            }
-            PropKey::HasRecord => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsHasRecord)
-                    .then_some(PropVal::HasRecord(self.is_has_record()))
-            }
-            PropKey::Bites => {
-                self.block_id()
-                    .is_field_present(FieldKey::Bites)
-                    .then_some(PropVal::Bites(self.bites()))
-            }
-            PropKey::Delay => {
-                self.block_id()
-                    .is_field_present(FieldKey::Delay)
-                    .then_some(PropVal::Delay(self.delay()))
-            }
-            PropKey::Locked => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsLocked)
-                    .then_some(PropVal::Locked(self.is_locked()))
-            }
-            PropKey::Down => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsDown)
-                    .then_some(PropVal::Down(self.is_down()))
-            }
-            PropKey::InWall => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsInWall)
-                    .then_some(PropVal::InWall(self.is_in_wall()))
-            }
-            PropKey::HasBottle0 => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsHasBottle0)
-                    .then_some(PropVal::HasBottle0(self.is_has_bottle_0()))
-            }
-            PropKey::HasBottle1 => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsHasBottle1)
-                    .then_some(PropVal::HasBottle1(self.is_has_bottle_1()))
-            }
-            PropKey::HasBottle2 => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsHasBottle2)
-                    .then_some(PropVal::HasBottle2(self.is_has_bottle_2()))
-            }
-            PropKey::Eye => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsEye)
-                    .then_some(PropVal::Eye(self.is_eye()))
-            }
-            PropKey::Disarmed => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsDisarmed)
-                    .then_some(PropVal::Disarmed(self.is_disarmed()))
-            }
-            PropKey::Conditional => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsConditional)
-                    .then_some(PropVal::Conditional(self.is_conditional()))
-            }
+            PropKey::CreakingHeartState => self
+                .block_id()
+                .is_field_present(FieldKey::CreakingHeartState)
+                .then_some(PropVal::CreakingHeartState(self.creaking_heart_state())),
+            PropKey::Natural => self
+                .block_id()
+                .is_field_present(FieldKey::IsNatural)
+                .then_some(PropVal::Natural(self.is_natural())),
+            PropKey::Power => self
+                .block_id()
+                .is_field_present(FieldKey::Power)
+                .then_some(PropVal::Power(self.power())),
+            PropKey::Moisture => self
+                .block_id()
+                .is_field_present(FieldKey::Moisture)
+                .then_some(PropVal::Moisture(self.moisture())),
+            PropKey::Lit => self
+                .block_id()
+                .is_field_present(FieldKey::IsLit)
+                .then_some(PropVal::Lit(self.is_lit())),
+            PropKey::Rotation => self
+                .block_id()
+                .is_field_present(FieldKey::Rotation)
+                .then_some(PropVal::Rotation(self.rotation())),
+            PropKey::Hinge => self
+                .block_id()
+                .is_field_present(FieldKey::Hinge)
+                .then_some(PropVal::Hinge(self.hinge())),
+            PropKey::Open => self
+                .block_id()
+                .is_field_present(FieldKey::IsOpen)
+                .then_some(PropVal::Open(self.is_open())),
+            PropKey::Attached => self
+                .block_id()
+                .is_field_present(FieldKey::IsAttached)
+                .then_some(PropVal::Attached(self.is_attached())),
+            PropKey::Face => self
+                .block_id()
+                .is_field_present(FieldKey::Face)
+                .then_some(PropVal::Face(self.face())),
+            PropKey::Layers => self
+                .block_id()
+                .is_field_present(FieldKey::Layers)
+                .then_some(PropVal::Layers(self.layers())),
+            PropKey::HasRecord => self
+                .block_id()
+                .is_field_present(FieldKey::IsHasRecord)
+                .then_some(PropVal::HasRecord(self.is_has_record())),
+            PropKey::Bites => self
+                .block_id()
+                .is_field_present(FieldKey::Bites)
+                .then_some(PropVal::Bites(self.bites())),
+            PropKey::Delay => self
+                .block_id()
+                .is_field_present(FieldKey::Delay)
+                .then_some(PropVal::Delay(self.delay())),
+            PropKey::Locked => self
+                .block_id()
+                .is_field_present(FieldKey::IsLocked)
+                .then_some(PropVal::Locked(self.is_locked())),
+            PropKey::Down => self
+                .block_id()
+                .is_field_present(FieldKey::IsDown)
+                .then_some(PropVal::Down(self.is_down())),
+            PropKey::InWall => self
+                .block_id()
+                .is_field_present(FieldKey::IsInWall)
+                .then_some(PropVal::InWall(self.is_in_wall())),
+            PropKey::HasBottle0 => self
+                .block_id()
+                .is_field_present(FieldKey::IsHasBottle0)
+                .then_some(PropVal::HasBottle0(self.is_has_bottle_0())),
+            PropKey::HasBottle1 => self
+                .block_id()
+                .is_field_present(FieldKey::IsHasBottle1)
+                .then_some(PropVal::HasBottle1(self.is_has_bottle_1())),
+            PropKey::HasBottle2 => self
+                .block_id()
+                .is_field_present(FieldKey::IsHasBottle2)
+                .then_some(PropVal::HasBottle2(self.is_has_bottle_2())),
+            PropKey::Eye => self
+                .block_id()
+                .is_field_present(FieldKey::IsEye)
+                .then_some(PropVal::Eye(self.is_eye())),
+            PropKey::Disarmed => self
+                .block_id()
+                .is_field_present(FieldKey::IsDisarmed)
+                .then_some(PropVal::Disarmed(self.is_disarmed())),
+            PropKey::Conditional => self
+                .block_id()
+                .is_field_present(FieldKey::IsConditional)
+                .then_some(PropVal::Conditional(self.is_conditional())),
             PropKey::Mode => {
                 if self.block_id().is_field_present(FieldKey::ComparatorMode) {
                     Some(PropVal::Mode(self.comparator_mode().into()))
@@ -567,171 +478,138 @@ impl StateId {
                     None
                 }
             }
-            PropKey::Inverted => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsInverted)
-                    .then_some(PropVal::Inverted(self.is_inverted()))
-            }
-            PropKey::Enabled => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsEnabled)
-                    .then_some(PropVal::Enabled(self.is_enabled()))
-            }
-            PropKey::Eggs => {
-                self.block_id()
-                    .is_field_present(FieldKey::Eggs)
-                    .then_some(PropVal::Eggs(self.eggs()))
-            }
-            PropKey::Hatch => {
-                self.block_id()
-                    .is_field_present(FieldKey::Hatch)
-                    .then_some(PropVal::Hatch(self.hatch()))
-            }
-            PropKey::Hydration => {
-                self.block_id()
-                    .is_field_present(FieldKey::Hydration)
-                    .then_some(PropVal::Hydration(self.hydration()))
-            }
-            PropKey::Pickles => {
-                self.block_id()
-                    .is_field_present(FieldKey::Pickles)
-                    .then_some(PropVal::Pickles(self.pickles()))
-            }
-            PropKey::Leaves => {
-                self.block_id()
-                    .is_field_present(FieldKey::Leaves)
-                    .then_some(PropVal::Leaves(self.leaves()))
-            }
-            PropKey::Drag => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsDrag)
-                    .then_some(PropVal::Drag(self.is_drag()))
-            }
-            PropKey::Bottom => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsBottom)
-                    .then_some(PropVal::Bottom(self.is_bottom()))
-            }
-            PropKey::HasBook => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsHasBook)
-                    .then_some(PropVal::HasBook(self.is_has_book()))
-            }
-            PropKey::Attachment => {
-                self.block_id()
-                    .is_field_present(FieldKey::Attachment)
-                    .then_some(PropVal::Attachment(self.attachment()))
-            }
-            PropKey::SignalFire => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsSignalFire)
-                    .then_some(PropVal::SignalFire(self.is_signal_fire()))
-            }
-            PropKey::Orientation => {
-                self.block_id()
-                    .is_field_present(FieldKey::Orientation)
-                    .then_some(PropVal::Orientation(self.orientation()))
-            }
-            PropKey::HoneyLevel => {
-                self.block_id()
-                    .is_field_present(FieldKey::HoneyLevel)
-                    .then_some(PropVal::HoneyLevel(self.honey_level()))
-            }
-            PropKey::Charges => {
-                self.block_id()
-                    .is_field_present(FieldKey::Charges)
-                    .then_some(PropVal::Charges(self.charges()))
-            }
-            PropKey::Candles => {
-                self.block_id()
-                    .is_field_present(FieldKey::Candles)
-                    .then_some(PropVal::Candles(self.candles()))
-            }
-            PropKey::SculkSensorPhase => {
-                self.block_id()
-                    .is_field_present(FieldKey::SculkSensorPhase)
-                    .then_some(PropVal::SculkSensorPhase(self.sculk_sensor_phase()))
-            }
-            PropKey::Bloom => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsBloom)
-                    .then_some(PropVal::Bloom(self.is_bloom()))
-            }
-            PropKey::CanSummon => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsCanSummon)
-                    .then_some(PropVal::CanSummon(self.is_can_summon()))
-            }
-            PropKey::Shrieking => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsShrieking)
-                    .then_some(PropVal::Shrieking(self.is_shrieking()))
-            }
-            PropKey::CopperGolemPose => {
-                self.block_id()
-                    .is_field_present(FieldKey::CopperGolemPose)
-                    .then_some(PropVal::CopperGolemPose(self.copper_golem_pose()))
-            }
-            PropKey::Thickness => {
-                self.block_id()
-                    .is_field_present(FieldKey::Thickness)
-                    .then_some(PropVal::Thickness(self.thickness()))
-            }
-            PropKey::VerticalDirection => {
-                self.block_id()
-                    .is_field_present(FieldKey::VerticalDirection)
-                    .then_some(PropVal::VerticalDirection(self.vertical_direction()))
-            }
-            PropKey::Berries => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsBerries)
-                    .then_some(PropVal::Berries(self.is_berries()))
-            }
-            PropKey::FlowerAmount => {
-                self.block_id()
-                    .is_field_present(FieldKey::FlowerAmount)
-                    .then_some(PropVal::FlowerAmount(self.flower_amount()))
-            }
-            PropKey::SegmentAmount => {
-                self.block_id()
-                    .is_field_present(FieldKey::SegmentAmount)
-                    .then_some(PropVal::SegmentAmount(self.segment_amount()))
-            }
-            PropKey::Tilt => {
-                self.block_id()
-                    .is_field_present(FieldKey::Tilt)
-                    .then_some(PropVal::Tilt(self.tilt()))
-            }
-            PropKey::Cracked => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsCracked)
-                    .then_some(PropVal::Cracked(self.is_cracked()))
-            }
-            PropKey::Crafting => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsCrafting)
-                    .then_some(PropVal::Crafting(self.is_crafting()))
-            }
-            PropKey::Ominous => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsOminous)
-                    .then_some(PropVal::Ominous(self.is_ominous()))
-            }
-            PropKey::TrialSpawnerState => {
-                self.block_id()
-                    .is_field_present(FieldKey::TrialSpawnerState)
-                    .then_some(PropVal::TrialSpawnerState(self.trial_spawner_state()))
-            }
-            PropKey::VaultState => {
-                self.block_id()
-                    .is_field_present(FieldKey::VaultState)
-                    .then_some(PropVal::VaultState(self.vault_state()))
-            }
-            PropKey::Tip => {
-                self.block_id()
-                    .is_field_present(FieldKey::IsTip)
-                    .then_some(PropVal::Tip(self.is_tip()))
-            }
+            PropKey::Inverted => self
+                .block_id()
+                .is_field_present(FieldKey::IsInverted)
+                .then_some(PropVal::Inverted(self.is_inverted())),
+            PropKey::Enabled => self
+                .block_id()
+                .is_field_present(FieldKey::IsEnabled)
+                .then_some(PropVal::Enabled(self.is_enabled())),
+            PropKey::Eggs => self
+                .block_id()
+                .is_field_present(FieldKey::Eggs)
+                .then_some(PropVal::Eggs(self.eggs())),
+            PropKey::Hatch => self
+                .block_id()
+                .is_field_present(FieldKey::Hatch)
+                .then_some(PropVal::Hatch(self.hatch())),
+            PropKey::Hydration => self
+                .block_id()
+                .is_field_present(FieldKey::Hydration)
+                .then_some(PropVal::Hydration(self.hydration())),
+            PropKey::Pickles => self
+                .block_id()
+                .is_field_present(FieldKey::Pickles)
+                .then_some(PropVal::Pickles(self.pickles())),
+            PropKey::Leaves => self
+                .block_id()
+                .is_field_present(FieldKey::Leaves)
+                .then_some(PropVal::Leaves(self.leaves())),
+            PropKey::Drag => self
+                .block_id()
+                .is_field_present(FieldKey::IsDrag)
+                .then_some(PropVal::Drag(self.is_drag())),
+            PropKey::Bottom => self
+                .block_id()
+                .is_field_present(FieldKey::IsBottom)
+                .then_some(PropVal::Bottom(self.is_bottom())),
+            PropKey::HasBook => self
+                .block_id()
+                .is_field_present(FieldKey::IsHasBook)
+                .then_some(PropVal::HasBook(self.is_has_book())),
+            PropKey::Attachment => self
+                .block_id()
+                .is_field_present(FieldKey::Attachment)
+                .then_some(PropVal::Attachment(self.attachment())),
+            PropKey::SignalFire => self
+                .block_id()
+                .is_field_present(FieldKey::IsSignalFire)
+                .then_some(PropVal::SignalFire(self.is_signal_fire())),
+            PropKey::Orientation => self
+                .block_id()
+                .is_field_present(FieldKey::Orientation)
+                .then_some(PropVal::Orientation(self.orientation())),
+            PropKey::HoneyLevel => self
+                .block_id()
+                .is_field_present(FieldKey::HoneyLevel)
+                .then_some(PropVal::HoneyLevel(self.honey_level())),
+            PropKey::Charges => self
+                .block_id()
+                .is_field_present(FieldKey::Charges)
+                .then_some(PropVal::Charges(self.charges())),
+            PropKey::Candles => self
+                .block_id()
+                .is_field_present(FieldKey::Candles)
+                .then_some(PropVal::Candles(self.candles())),
+            PropKey::SculkSensorPhase => self
+                .block_id()
+                .is_field_present(FieldKey::SculkSensorPhase)
+                .then_some(PropVal::SculkSensorPhase(self.sculk_sensor_phase())),
+            PropKey::Bloom => self
+                .block_id()
+                .is_field_present(FieldKey::IsBloom)
+                .then_some(PropVal::Bloom(self.is_bloom())),
+            PropKey::CanSummon => self
+                .block_id()
+                .is_field_present(FieldKey::IsCanSummon)
+                .then_some(PropVal::CanSummon(self.is_can_summon())),
+            PropKey::Shrieking => self
+                .block_id()
+                .is_field_present(FieldKey::IsShrieking)
+                .then_some(PropVal::Shrieking(self.is_shrieking())),
+            PropKey::CopperGolemPose => self
+                .block_id()
+                .is_field_present(FieldKey::CopperGolemPose)
+                .then_some(PropVal::CopperGolemPose(self.copper_golem_pose())),
+            PropKey::Thickness => self
+                .block_id()
+                .is_field_present(FieldKey::Thickness)
+                .then_some(PropVal::Thickness(self.thickness())),
+            PropKey::VerticalDirection => self
+                .block_id()
+                .is_field_present(FieldKey::VerticalDirection)
+                .then_some(PropVal::VerticalDirection(self.vertical_direction())),
+            PropKey::Berries => self
+                .block_id()
+                .is_field_present(FieldKey::IsBerries)
+                .then_some(PropVal::Berries(self.is_berries())),
+            PropKey::FlowerAmount => self
+                .block_id()
+                .is_field_present(FieldKey::FlowerAmount)
+                .then_some(PropVal::FlowerAmount(self.flower_amount())),
+            PropKey::SegmentAmount => self
+                .block_id()
+                .is_field_present(FieldKey::SegmentAmount)
+                .then_some(PropVal::SegmentAmount(self.segment_amount())),
+            PropKey::Tilt => self
+                .block_id()
+                .is_field_present(FieldKey::Tilt)
+                .then_some(PropVal::Tilt(self.tilt())),
+            PropKey::Cracked => self
+                .block_id()
+                .is_field_present(FieldKey::IsCracked)
+                .then_some(PropVal::Cracked(self.is_cracked())),
+            PropKey::Crafting => self
+                .block_id()
+                .is_field_present(FieldKey::IsCrafting)
+                .then_some(PropVal::Crafting(self.is_crafting())),
+            PropKey::Ominous => self
+                .block_id()
+                .is_field_present(FieldKey::IsOminous)
+                .then_some(PropVal::Ominous(self.is_ominous())),
+            PropKey::TrialSpawnerState => self
+                .block_id()
+                .is_field_present(FieldKey::TrialSpawnerState)
+                .then_some(PropVal::TrialSpawnerState(self.trial_spawner_state())),
+            PropKey::VaultState => self
+                .block_id()
+                .is_field_present(FieldKey::VaultState)
+                .then_some(PropVal::VaultState(self.vault_state())),
+            PropKey::Tip => self
+                .block_id()
+                .is_field_present(FieldKey::IsTip)
+                .then_some(PropVal::Tip(self.is_tip())),
         }
     }
     pub fn all() -> impl Iterator<Item = Self> {
@@ -768,19 +646,14 @@ impl StateId {
         data::fields::is_persistent::get(self.0)
     }
     pub fn facing(self) -> Direction {
-        unsafe {
-            core::mem::transmute::<u8, Direction>(data::fields::facing::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, Direction>(data::fields::facing::get(self.0)) }
     }
     pub fn is_triggered(self) -> bool {
         data::fields::is_triggered::get(self.0)
     }
     pub fn instrument(self) -> NoteBlockInstrument {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                NoteBlockInstrument,
-            >(data::fields::instrument::get(self.0))
+            core::mem::transmute::<u8, NoteBlockInstrument>(data::fields::instrument::get(self.0))
         }
     }
     pub fn note(self) -> u8 {
@@ -823,12 +696,7 @@ impl StateId {
         data::fields::is_slot_5_occupied::get(self.0)
     }
     pub fn side_chain(self) -> SideChainPart {
-        unsafe {
-            core::mem::transmute::<
-                u8,
-                SideChainPart,
-            >(data::fields::side_chain::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, SideChainPart>(data::fields::side_chain::get(self.0)) }
     }
     pub fn is_east(self) -> bool {
         data::fields::is_east::get(self.0)
@@ -847,10 +715,9 @@ impl StateId {
     }
     pub fn creaking_heart_state(self) -> CreakingHeartState {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                CreakingHeartState,
-            >(data::fields::creaking_heart_state::get(self.0))
+            core::mem::transmute::<u8, CreakingHeartState>(data::fields::creaking_heart_state::get(
+                self.0,
+            ))
         }
     }
     pub fn is_natural(self) -> bool {
@@ -869,9 +736,7 @@ impl StateId {
         data::fields::rotation::get(self.0)
     }
     pub fn hinge(self) -> DoorHingeSide {
-        unsafe {
-            core::mem::transmute::<u8, DoorHingeSide>(data::fields::hinge::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, DoorHingeSide>(data::fields::hinge::get(self.0)) }
     }
     pub fn is_open(self) -> bool {
         data::fields::is_open::get(self.0)
@@ -880,9 +745,7 @@ impl StateId {
         data::fields::is_attached::get(self.0)
     }
     pub fn face(self) -> AttachFace {
-        unsafe {
-            core::mem::transmute::<u8, AttachFace>(data::fields::face::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, AttachFace>(data::fields::face::get(self.0)) }
     }
     pub fn layers(self) -> u8 {
         data::fields::layers::get(self.0)
@@ -942,9 +805,7 @@ impl StateId {
         data::fields::pickles::get(self.0)
     }
     pub fn leaves(self) -> BambooLeaves {
-        unsafe {
-            core::mem::transmute::<u8, BambooLeaves>(data::fields::leaves::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, BambooLeaves>(data::fields::leaves::get(self.0)) }
     }
     pub fn is_drag(self) -> bool {
         data::fields::is_drag::get(self.0)
@@ -956,23 +817,13 @@ impl StateId {
         data::fields::is_has_book::get(self.0)
     }
     pub fn attachment(self) -> BellAttachType {
-        unsafe {
-            core::mem::transmute::<
-                u8,
-                BellAttachType,
-            >(data::fields::attachment::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, BellAttachType>(data::fields::attachment::get(self.0)) }
     }
     pub fn is_signal_fire(self) -> bool {
         data::fields::is_signal_fire::get(self.0)
     }
     pub fn orientation(self) -> FrontAndTop {
-        unsafe {
-            core::mem::transmute::<
-                u8,
-                FrontAndTop,
-            >(data::fields::orientation::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, FrontAndTop>(data::fields::orientation::get(self.0)) }
     }
     pub fn honey_level(self) -> u8 {
         data::fields::honey_level::get(self.0)
@@ -985,10 +836,9 @@ impl StateId {
     }
     pub fn sculk_sensor_phase(self) -> SculkSensorPhase {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                SculkSensorPhase,
-            >(data::fields::sculk_sensor_phase::get(self.0))
+            core::mem::transmute::<u8, SculkSensorPhase>(data::fields::sculk_sensor_phase::get(
+                self.0,
+            ))
         }
     }
     pub fn is_bloom(self) -> bool {
@@ -1001,27 +851,16 @@ impl StateId {
         data::fields::is_shrieking::get(self.0)
     }
     pub fn copper_golem_pose(self) -> Pose {
-        unsafe {
-            core::mem::transmute::<
-                u8,
-                Pose,
-            >(data::fields::copper_golem_pose::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, Pose>(data::fields::copper_golem_pose::get(self.0)) }
     }
     pub fn thickness(self) -> DripstoneThickness {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                DripstoneThickness,
-            >(data::fields::thickness::get(self.0))
+            core::mem::transmute::<u8, DripstoneThickness>(data::fields::thickness::get(self.0))
         }
     }
     pub fn vertical_direction(self) -> Direction {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                Direction,
-            >(data::fields::vertical_direction::get(self.0))
+            core::mem::transmute::<u8, Direction>(data::fields::vertical_direction::get(self.0))
         }
     }
     pub fn is_berries(self) -> bool {
@@ -1047,139 +886,85 @@ impl StateId {
     }
     pub fn trial_spawner_state(self) -> TrialSpawnerState {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                TrialSpawnerState,
-            >(data::fields::trial_spawner_state::get(self.0))
+            core::mem::transmute::<u8, TrialSpawnerState>(data::fields::trial_spawner_state::get(
+                self.0,
+            ))
         }
     }
     pub fn vault_state(self) -> VaultState {
-        unsafe {
-            core::mem::transmute::<
-                u8,
-                VaultState,
-            >(data::fields::vault_state::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, VaultState>(data::fields::vault_state::get(self.0)) }
     }
     pub fn is_tip(self) -> bool {
         data::fields::is_tip::get(self.0)
     }
     pub fn rail_shape(self) -> RailShape {
-        unsafe {
-            core::mem::transmute::<u8, RailShape>(data::fields::rail_shape::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, RailShape>(data::fields::rail_shape::get(self.0)) }
     }
     pub fn stairs_shape(self) -> StairsShape {
-        unsafe {
-            core::mem::transmute::<
-                u8,
-                StairsShape,
-            >(data::fields::stairs_shape::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, StairsShape>(data::fields::stairs_shape::get(self.0)) }
     }
     pub fn doubleblock_half(self) -> DoubleBlockHalf {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                DoubleBlockHalf,
-            >(data::fields::doubleblock_half::get(self.0))
+            core::mem::transmute::<u8, DoubleBlockHalf>(data::fields::doubleblock_half::get(self.0))
         }
     }
     pub fn half(self) -> Half {
         unsafe { core::mem::transmute::<u8, Half>(data::fields::half::get(self.0)) }
     }
     pub fn piston_type(self) -> PistonType {
-        unsafe {
-            core::mem::transmute::<
-                u8,
-                PistonType,
-            >(data::fields::piston_type::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, PistonType>(data::fields::piston_type::get(self.0)) }
     }
     pub fn chest_type(self) -> ChestType {
-        unsafe {
-            core::mem::transmute::<u8, ChestType>(data::fields::chest_type::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, ChestType>(data::fields::chest_type::get(self.0)) }
     }
     pub fn slab_type(self) -> SlabType {
-        unsafe {
-            core::mem::transmute::<u8, SlabType>(data::fields::slab_type::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, SlabType>(data::fields::slab_type::get(self.0)) }
     }
     pub fn redstone_east(self) -> RedstoneSide {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                RedstoneSide,
-            >(data::fields::redstone_east::get(self.0))
+            core::mem::transmute::<u8, RedstoneSide>(data::fields::redstone_east::get(self.0))
         }
     }
     pub fn wall_east(self) -> WallSide {
-        unsafe {
-            core::mem::transmute::<u8, WallSide>(data::fields::wall_east::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, WallSide>(data::fields::wall_east::get(self.0)) }
     }
     pub fn redstone_north(self) -> RedstoneSide {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                RedstoneSide,
-            >(data::fields::redstone_north::get(self.0))
+            core::mem::transmute::<u8, RedstoneSide>(data::fields::redstone_north::get(self.0))
         }
     }
     pub fn wall_north(self) -> WallSide {
-        unsafe {
-            core::mem::transmute::<u8, WallSide>(data::fields::wall_north::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, WallSide>(data::fields::wall_north::get(self.0)) }
     }
     pub fn redstone_south(self) -> RedstoneSide {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                RedstoneSide,
-            >(data::fields::redstone_south::get(self.0))
+            core::mem::transmute::<u8, RedstoneSide>(data::fields::redstone_south::get(self.0))
         }
     }
     pub fn wall_south(self) -> WallSide {
-        unsafe {
-            core::mem::transmute::<u8, WallSide>(data::fields::wall_south::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, WallSide>(data::fields::wall_south::get(self.0)) }
     }
     pub fn redstone_west(self) -> RedstoneSide {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                RedstoneSide,
-            >(data::fields::redstone_west::get(self.0))
+            core::mem::transmute::<u8, RedstoneSide>(data::fields::redstone_west::get(self.0))
         }
     }
     pub fn wall_west(self) -> WallSide {
-        unsafe {
-            core::mem::transmute::<u8, WallSide>(data::fields::wall_west::get(self.0))
-        }
+        unsafe { core::mem::transmute::<u8, WallSide>(data::fields::wall_west::get(self.0)) }
     }
     pub fn comparator_mode(self) -> ComparatorMode {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                ComparatorMode,
-            >(data::fields::comparator_mode::get(self.0))
+            core::mem::transmute::<u8, ComparatorMode>(data::fields::comparator_mode::get(self.0))
         }
     }
     pub fn structure_mode(self) -> StructureMode {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                StructureMode,
-            >(data::fields::structure_mode::get(self.0))
+            core::mem::transmute::<u8, StructureMode>(data::fields::structure_mode::get(self.0))
         }
     }
     pub fn testblock_mode(self) -> TestBlockMode {
         unsafe {
-            core::mem::transmute::<
-                u8,
-                TestBlockMode,
-            >(data::fields::testblock_mode::get(self.0))
+            core::mem::transmute::<u8, TestBlockMode>(data::fields::testblock_mode::get(self.0))
         }
     }
 }
