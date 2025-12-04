@@ -13,6 +13,11 @@ impl From<BlockId> for u16 {
         id.0
     }
 }
+impl From<BlockId> for StateId {
+    fn from(id: BlockId) -> Self {
+        id.default_state_id()
+    }
+}
 impl BlockId {
     pub const MAX: Self = Self(1165u16);
     pub fn name(self) -> &'static str {

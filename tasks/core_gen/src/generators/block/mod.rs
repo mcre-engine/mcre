@@ -59,6 +59,12 @@ impl UnitGen for BlockRootUnit<'_> {
                 }
             }
 
+            impl From<BlockId> for StateId {
+                fn from(id: BlockId) -> Self {
+                    id.default_state_id()
+                }
+            }
+
             impl BlockId {
                 pub const MAX: Self = Self(#max);
 
