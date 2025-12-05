@@ -4,7 +4,7 @@ use alloc::{
     boxed::Box,
     vec::{self, Vec},
 };
-use mcre_core::{PropFilter, PropVal, StateId, Vec4f};
+use mcre_core::{BlockState, PropFilter, PropVal, Vec4f};
 use serde::{Deserialize, Deserializer};
 
 use crate::BlockModelId;
@@ -126,7 +126,7 @@ impl RotationDegrees {
 }
 
 impl Condition {
-    pub fn test(&self, state: StateId) -> bool {
+    pub fn test(&self, state: BlockState) -> bool {
         match self {
             Condition::KeyValue(filter) => {
                 if let Some(val) = state.get_prop(filter.key()) {
@@ -147,7 +147,7 @@ pub enum BlockModelResolution<'a> {
 }
 
 impl BlockStateDefinition {
-    pub fn resolve<'a>(&'a self, state: StateId) -> Option<BlockModelResolution<'a>> {
+    pub fn resolve<'a>(&'a self, state: BlockState) -> Option<BlockModelResolution<'a>> {
         match self {
             Self::Variants(variants) => {
                 'variant_loop: for variant in variants.iter() {
@@ -201,7 +201,7 @@ impl BlockStateDefinition {
 
 #[cfg(test)]
 mod tests {
-    use mcre_core::StateId;
+    use mcre_core::BlockState;
 
     use crate::blockstates::{BlockModelResolution, BlockStateDefinition};
     use std::{
@@ -259,24 +259,22 @@ mod tests {
 
         // resolution
 
-        for state_id in StateId::all() {
-            let definition = block_state_definitions
-                .get(state_id.block_id().name())
-                .unwrap();
-            let resolution = definition.resolve(state_id).unwrap();
+        for state in BlockState::all() {
+            let definition = block_state_definitions.get(state.block().name()).unwrap();
+            let resolution = definition.resolve(state).unwrap();
 
             match resolution {
                 BlockModelResolution::Unified(models) => assert!(
                     !models.is_empty(),
                     "Block: {}, StateId: {:?}",
-                    state_id.block_id().name(),
-                    state_id
+                    state.block().name(),
+                    state
                 ),
                 BlockModelResolution::Multipart(model_lists) => assert!(
-                    state_id.block_id().name().ends_with("wall") || !model_lists.is_empty(),
+                    state.block().name().ends_with("wall") || !model_lists.is_empty(),
                     "Block: {}, StateId: {:?}",
-                    state_id.block_id().name(),
-                    state_id
+                    state.block().name(),
+                    state
                 ),
             }
         }

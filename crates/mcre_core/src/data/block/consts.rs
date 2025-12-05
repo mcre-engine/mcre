@@ -1,5 +1,5 @@
-use super::BlockId;
-impl BlockId {
+use super::Block;
+impl Block {
     pub const AIR: Self = Self(0u16);
     pub const STONE: Self = Self(1u16);
     pub const GRANITE: Self = Self(2u16);

@@ -23,7 +23,7 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
             units: Box::new([
                 Box::new(StateDataRootUnit),
                 Box::new(MultiByteGen {
-                    name: "block_id".to_string(),
+                    name: "block".to_string(),
                     list: self.states,
                     mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.block_id),
                 }),
@@ -177,7 +177,7 @@ pub struct StateDataRootUnit;
 impl UnitGen for StateDataRootUnit {
     fn generate(&self, _analysis: &Analysis) -> Unit {
         let code = quote! {
-            pub(crate) mod block_id;
+            pub(crate) mod block;
             pub(crate) mod can_occlude;
             pub(crate) mod destroy_speed;
             pub(crate) mod ignited_by_lava;

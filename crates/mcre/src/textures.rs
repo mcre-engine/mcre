@@ -1,28 +1,28 @@
 use bevy::{asset::LoadState, platform::collections::HashMap, prelude::*};
-use mcre_core::BlockId;
+use mcre_core::{Block, BlockState};
 
-use crate::{AppState, chunk::BlockState};
+use crate::AppState;
 
 const BATCH_SIZE: usize = 10;
 
 #[derive(Resource)]
 pub enum BlockTextures {
     Loading {
-        all: Vec<(BlockId, Option<Handle<Image>>)>,
+        all: Vec<(Block, Option<Handle<Image>>)>,
         cur_index: usize,
         batch: Vec<(usize, Handle<Image>)>,
     },
     Loaded {
         texture: Handle<Image>,
         atlas: TextureAtlasLayout,
-        blocks: HashMap<BlockId, usize>,
+        blocks: HashMap<Block, usize>,
     },
 }
 
 impl Default for BlockTextures {
     fn default() -> Self {
         BlockTextures::Loading {
-            all: BlockId::all().map(|b| (b, None)).collect(),
+            all: Block::all().map(|b| (b, None)).collect(),
             cur_index: 0,
             batch: Vec::with_capacity(BATCH_SIZE),
         }
@@ -125,7 +125,7 @@ impl BlockTextures {
         match self {
             BlockTextures::Loading { .. } => None,
             BlockTextures::Loaded { atlas, blocks, .. } => {
-                let idx = blocks.get(&block.block_id())?;
+                let idx = blocks.get(&block.block())?;
                 let size = atlas.textures[*idx];
                 Some(Rect {
                     min: Vec2::new(

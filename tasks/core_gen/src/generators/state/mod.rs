@@ -85,14 +85,14 @@ impl UnitGen for StateRootUnit<'_> {
                         let field_variant = format_ident!("Is{}", ccase!(pascal, prop_name));
                         let method = format_ident!("is_{}", prop_name);
                         quote! {
-                            PropKey::#prop_variant => self.block_id().is_field_present(FieldKey::#field_variant).then_some(PropVal::#prop_variant(self.#method()))
+                            PropKey::#prop_variant => self.block().is_field_present(FieldKey::#field_variant).then_some(PropVal::#prop_variant(self.#method()))
                         }
                     }
                     PropSchema::Int(_, _) => {
                         let variant = format_ident!("{}", ccase!(pascal, prop_name));
                         let method = format_ident!("{}", prop_name);
                         quote! {
-                            PropKey::#variant => self.block_id().is_field_present(FieldKey::#variant).then_some(PropVal::#variant(self.#method()))
+                            PropKey::#variant => self.block().is_field_present(FieldKey::#variant).then_some(PropVal::#variant(self.#method()))
                         }
                     }
                     PropSchema::Enums { contains_bool, enums } => {
@@ -115,7 +115,7 @@ impl UnitGen for StateRootUnit<'_> {
                             let prop_variant = format_ident!("{}", ccase!(pascal, prop_name));
 
                             quote! {
-                                PropKey::#prop_variant => #(if self.block_id().is_field_present(FieldKey::#fields_variants) {
+                                PropKey::#prop_variant => #(if self.block().is_field_present(FieldKey::#fields_variants) {
                                     Some(PropVal::#prop_variant(self.#fields_methods().into()))
                                 } else)* {
                                     None
@@ -125,7 +125,7 @@ impl UnitGen for StateRootUnit<'_> {
                             let variant = format_ident!("{}", ccase!(pascal, prop_name));
                             let method = format_ident!("{}", prop_name);
                             quote! {
-                                PropKey::#variant => self.block_id().is_field_present(FieldKey::#variant).then_some(PropVal::#variant(self.#method()))
+                                PropKey::#variant => self.block().is_field_present(FieldKey::#variant).then_some(PropVal::#variant(self.#method()))
                             }
                         }
                     }
@@ -135,29 +135,30 @@ impl UnitGen for StateRootUnit<'_> {
             mod data;
             mod enums;
 
-            use crate::{BlockId, OffsetType, FieldKey, FieldVal, PropKey, PropVal};
+            use crate::{Block, OffsetType, FieldKey, FieldVal, PropKey, PropVal};
+            use serde::{Serialize, Deserialize};
             pub use enums::*;
 
-            #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-            pub struct StateId(u16);
+            #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+            pub struct BlockState(u16);
 
-            impl From<u16> for StateId {
+            impl From<u16> for BlockState {
                 fn from(id: u16) -> Self {
                     Self(id)
                 }
             }
 
-            impl From<StateId> for u16 {
-                fn from(id: StateId) -> Self {
+            impl From<BlockState> for u16 {
+                fn from(id: BlockState) -> Self {
                     id.0
                 }
             }
 
-            impl StateId {
+            impl BlockState {
                 pub const MAX: Self = Self(#max);
 
-                pub fn block_id(self) -> BlockId {
-                    data::block_id::get(self.0).into()
+                pub fn block(self) -> Block {
+                    data::block::get(self.0).into()
                 }
 
                 pub fn light_emission(self) -> u8 {
@@ -225,7 +226,7 @@ impl UnitGen for StateRootUnit<'_> {
                 }
 
                 pub fn get_field(self, field: FieldKey) -> Option<FieldVal> {
-                    if !self.block_id().is_field_present(field) {
+                    if !self.block().is_field_present(field) {
                         return None;
                     }
                     match field {
@@ -240,20 +241,20 @@ impl UnitGen for StateRootUnit<'_> {
                 }
 
                 pub fn all() -> impl Iterator<Item = Self> {
-                    StateIdIter::new(StateId(0), Self::MAX)
+                    BlockStateIter::new(BlockState(0), Self::MAX)
                 }
 
                 #( #fields )*
             }
 
-            pub struct StateIdIter {
+            pub struct BlockStateIter {
                 current: u16,
                 end: u16,
             }
 
-            impl StateIdIter {
+            impl BlockStateIter {
                 // inclusive range
-                pub fn new(start: StateId, end: StateId) -> Self {
+                pub fn new(start: BlockState, end: BlockState) -> Self {
                     Self {
                         current: start.0,
                         end: end.0,
@@ -261,8 +262,8 @@ impl UnitGen for StateRootUnit<'_> {
                 }
             }
 
-            impl Iterator for StateIdIter {
-                type Item = StateId;
+            impl Iterator for BlockStateIter {
+                type Item = BlockState;
 
                 fn next(&mut self) -> Option<Self::Item> {
                     if self.current > self.end {
@@ -270,7 +271,7 @@ impl UnitGen for StateRootUnit<'_> {
                     } else {
                         let id = self.current;
                         self.current += 1;
-                        Some(StateId(id))
+                        Some(BlockState(id))
                     }
                 }
 

@@ -30,17 +30,17 @@ impl<'a> ScopeGen<'a> for BlockDataScope<'a> {
                     mapping_fn: Box::new(|block| &block.display_name),
                 }),
                 Box::new(MultiByteGen {
-                    name: "default_state_id".to_string(),
+                    name: "default_state".to_string(),
                     list: self.blocks,
                     mapping_fn: Box::new(|block, _analysis: &Analysis<'_>| block.default_state_id),
                 }),
                 Box::new(MultiByteGen {
-                    name: "min_state_id".to_string(),
+                    name: "min_state".to_string(),
                     list: self.blocks,
                     mapping_fn: Box::new(|block, _analysis: &Analysis<'_>| block.min_state_id),
                 }),
                 Box::new(MultiByteGen {
-                    name: "max_state_id".to_string(),
+                    name: "max_state".to_string(),
                     list: self.blocks,
                     mapping_fn: Box::new(|block, _analysis: &Analysis<'_>| block.max_state_id),
                 }),
@@ -104,10 +104,10 @@ pub struct BlockDataRootUnit;
 impl UnitGen for BlockDataRootUnit {
     fn generate(&self, _analysis: &Analysis) -> Unit {
         let code = quote! {
-            pub(crate) mod default_state_id;
+            pub(crate) mod default_state;
             pub(crate) mod display_name;
-            pub(crate) mod max_state_id;
-            pub(crate) mod min_state_id;
+            pub(crate) mod max_state;
+            pub(crate) mod min_state;
             pub(crate) mod name;
             pub(crate) mod fields_present;
         };

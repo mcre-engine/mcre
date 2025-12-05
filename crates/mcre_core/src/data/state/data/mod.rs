@@ -1,4 +1,4 @@
-pub(crate) mod block_id;
+pub(crate) mod block;
 pub(crate) mod can_occlude;
 pub(crate) mod destroy_speed;
 pub(crate) mod fields;

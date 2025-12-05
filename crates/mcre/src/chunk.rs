@@ -4,13 +4,11 @@ use bevy::{
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
-use mcre_core::{BlockId, StateId};
+use mcre_core::{Block, BlockState};
 
 use crate::textures::BlockTextures;
 
 pub const CHUNK_SIZE: usize = 4;
-
-pub type BlockState = StateId;
 
 #[derive(Component)]
 pub struct Chunk {
@@ -203,8 +201,8 @@ impl Chunk {
                         continue;
                     };
                     //TODO: Fix to use known data about block states
-                    let block_color = match block.block_id() {
-                        BlockId::OAK_LEAVES => GREEN,
+                    let block_color = match block.block() {
+                        Block::OAK_LEAVES => GREEN,
                         _ => WHITE,
                     };
                     if z + 1 >= CHUNK_SIZE

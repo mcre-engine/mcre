@@ -8,7 +8,7 @@ use bevy::{
     prelude::*,
     window::{CursorOptions, WindowMode},
 };
-use mcre_core::BlockId;
+use mcre_core::Block;
 
 use crate::{
     camera::FirstPersonPlugin,
@@ -119,28 +119,25 @@ fn spawn_chunk(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let mut chunk = Chunk::filled(UVec3::new(0, 0, 0), BlockId::STONE.default_state_id());
-    chunk.set_block(UVec3::new(0, 0, 3), BlockId::AIR.default_state_id());
-    chunk.set_block(UVec3::new(0, 1, 3), BlockId::AIR.default_state_id());
-    chunk.set_block(UVec3::new(1, 0, 3), BlockId::AIR.default_state_id());
-    chunk.set_block(UVec3::new(1, 1, 3), BlockId::AIR.default_state_id());
+    let mut chunk = Chunk::filled(UVec3::new(0, 0, 0), Block::STONE);
+    chunk.set_block(UVec3::new(0, 0, 3), Block::AIR);
+    chunk.set_block(UVec3::new(0, 1, 3), Block::AIR);
+    chunk.set_block(UVec3::new(1, 0, 3), Block::AIR);
+    chunk.set_block(UVec3::new(1, 1, 3), Block::AIR);
 
-    chunk.set_block(UVec3::new(2, 1, 3), BlockId::DIAMOND_ORE.default_state_id());
+    chunk.set_block(UVec3::new(2, 1, 3), Block::DIAMOND_ORE);
 
     for x in 0..CHUNK_SIZE {
         for y in 0..CHUNK_SIZE {
             chunk.set_block(
                 UVec3::new(x as u32, CHUNK_SIZE as u32 - 1, y as u32),
-                BlockId::OAK_LEAVES.default_state_id(),
+                Block::OAK_LEAVES,
             );
             chunk.set_block(
                 UVec3::new(x as u32, CHUNK_SIZE as u32 - 2, y as u32),
-                BlockId::DIRT.default_state_id(),
+                Block::DIRT,
             );
-            chunk.set_block(
-                UVec3::new(x as u32, 0, y as u32),
-                BlockId::BEDROCK.default_state_id(),
-            );
+            chunk.set_block(UVec3::new(x as u32, 0, y as u32), Block::BEDROCK);
         }
     }
 

@@ -42,30 +42,31 @@ impl UnitGen for BlockRootUnit<'_> {
             mod data;
             mod consts;
 
-            use crate::{StateId, FieldKey};
+            use crate::{BlockState, FieldKey};
+            use serde::{Serialize, Deserialize};
 
-            #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-            pub struct BlockId(u16);
+            #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+            pub struct Block(u16);
 
-            impl From<u16> for BlockId {
+            impl From<u16> for Block {
                 fn from(id: u16) -> Self {
                     Self(id)
                 }
             }
 
-            impl From<BlockId> for u16 {
-                fn from(id: BlockId) -> Self {
+            impl From<Block> for u16 {
+                fn from(id: Block) -> Self {
                     id.0
                 }
             }
 
-            impl From<BlockId> for StateId {
-                fn from(id: BlockId) -> Self {
-                    id.default_state_id()
+            impl From<Block> for BlockState {
+                fn from(id: Block) -> Self {
+                    id.default_state()
                 }
             }
 
-            impl BlockId {
+            impl Block {
                 pub const MAX: Self = Self(#max);
 
                 pub fn name(self) -> &'static str {
@@ -76,16 +77,16 @@ impl UnitGen for BlockRootUnit<'_> {
                     data::display_name::get(self.0)
                 }
 
-                pub fn default_state_id(self) -> StateId {
-                    data::default_state_id::get(self.0).into()
+                pub fn default_state(self) -> BlockState {
+                    data::default_state::get(self.0).into()
                 }
 
-                pub fn min_state_id(self) -> StateId {
-                    data::min_state_id::get(self.0).into()
+                pub fn min_state(self) -> BlockState {
+                    data::min_state::get(self.0).into()
                 }
 
-                pub fn max_state_id(self) -> StateId {
-                    data::max_state_id::get(self.0).into()
+                pub fn max_state(self) -> BlockState {
+                    data::max_state::get(self.0).into()
                 }
 
                 pub fn is_field_present(self, field: FieldKey) -> bool {
@@ -94,18 +95,18 @@ impl UnitGen for BlockRootUnit<'_> {
                 }
 
                 pub fn all() -> impl Iterator<Item = Self> {
-                    BlockIdIter::new(BlockId(0), Self::MAX)
+                    BlockIter::new(Block(0), Self::MAX)
                 }
             }
 
-            pub struct BlockIdIter {
+            pub struct BlockIter {
                 current: u16,
                 end: u16,
             }
 
-            impl BlockIdIter {
+            impl BlockIter {
                 // inclusive range
-                pub fn new(start: BlockId, end: BlockId) -> Self {
+                pub fn new(start: Block, end: Block) -> Self {
                     Self {
                         current: start.0,
                         end: end.0,
@@ -113,8 +114,8 @@ impl UnitGen for BlockRootUnit<'_> {
                 }
             }
 
-            impl Iterator for BlockIdIter {
-                type Item = BlockId;
+            impl Iterator for BlockIter {
+                type Item = Block;
 
                 fn next(&mut self) -> Option<Self::Item> {
                     if self.current > self.end {
@@ -122,7 +123,7 @@ impl UnitGen for BlockRootUnit<'_> {
                     } else {
                         let id = self.current;
                         self.current += 1;
-                        Some(BlockId(id))
+                        Some(Block(id))
                     }
                 }
 
@@ -136,7 +137,7 @@ impl UnitGen for BlockRootUnit<'_> {
                 }
             }
 
-            impl ExactSizeIterator for BlockIdIter {}
+            impl ExactSizeIterator for BlockIter {}
         };
 
         Unit {
@@ -161,9 +162,9 @@ impl UnitGen for BlockConstsUnit<'_> {
             }
         });
         let code = quote! {
-            use super::BlockId;
+            use super::Block;
 
-            impl BlockId {
+            impl Block {
                 #( #consts )*
             }
         };
