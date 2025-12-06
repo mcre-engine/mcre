@@ -1,10 +1,11 @@
 mod camera;
+mod targeted_block;
 mod title;
 use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
 
 use crate::{
     AppState,
-    ui::debug::{camera::PlayerText, title::TitleText},
+    ui::debug::{camera::PlayerText, targeted_block::TargetedBlockText, title::TitleText},
 };
 
 pub struct DebugMenuPlugin;
@@ -23,6 +24,7 @@ impl Plugin for DebugMenuPlugin {
                 (
                     PlayerText::update_text_system.run_if(in_state(DebugState::On)),
                     TitleText::update_text_system.run_if(in_state(DebugState::On)),
+                    TargetedBlockText::update_text_system.run_if(in_state(DebugState::On)),
                 ),
             )
             .add_systems(OnExit(DebugState::On), Self::remove_debug_ui);
@@ -50,6 +52,7 @@ impl DebugMenuPlugin {
             .with_children(|parent| {
                 parent.spawn(TitleText.into_bundle());
                 parent.spawn(PlayerText.into_bundle(camera));
+                parent.spawn(TargetedBlockText.into_bundle());
             });
     }
 

@@ -1,0 +1,162 @@
+use crate::chunk::{CHUNK_SIZE, Chunk};
+use bevy::prelude::*;
+use mcre_core::{Block, BlockState};
+
+pub const MAX_REACH_DISTANCE: f32 = 5.0;
+
+#[derive(Debug, Clone, Copy)]
+pub struct BlockRaycastHit {
+    pub block_pos: IVec3,
+    pub chunk_local_pos: UVec3,
+    pub chunk_world_pos: IVec3,
+    pub distance: f32,
+    pub face: BlockFace,
+    pub block: Block,
+    #[allow(dead_code)]
+    pub block_state: BlockState,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BlockFace {
+    North,
+    South,
+    East,
+    West,
+    Up,
+    Down,
+}
+
+/// Raycast through blocks
+pub fn raycast_block_data(
+    origin: Vec3,
+    direction: Vec3,
+    chunks_data: &[(Chunk, IVec3)],
+) -> Option<BlockRaycastHit> {
+    let direction = direction.normalize();
+
+    let step = Vec3::new(
+        if direction.x > 0.0 { 1.0 } else { -1.0 },
+        if direction.y > 0.0 { 1.0 } else { -1.0 },
+        if direction.z > 0.0 { 1.0 } else { -1.0 },
+    );
+
+    let delta = Vec3::new(
+        (1.0 / direction.x).abs(),
+        (1.0 / direction.y).abs(),
+        (1.0 / direction.z).abs(),
+    );
+
+    let mut block_pos = origin.floor().as_ivec3();
+
+    // Distance along ray to next block boundary
+    let mut t_max = Vec3::new(
+        if direction.x > 0.0 {
+            (block_pos.x as f32 + 1.0 - origin.x) / direction.x
+        } else {
+            (origin.x - block_pos.x as f32) / -direction.x
+        },
+        if direction.y > 0.0 {
+            (block_pos.y as f32 + 1.0 - origin.y) / direction.y
+        } else {
+            (origin.y - block_pos.y as f32) / -direction.y
+        },
+        if direction.z > 0.0 {
+            (block_pos.z as f32 + 1.0 - origin.z) / direction.z
+        } else {
+            (origin.z - block_pos.z as f32) / -direction.z
+        },
+    );
+
+    let mut distance = 0.0;
+    let mut face = BlockFace::North;
+
+    // Step through blocks
+    while distance < MAX_REACH_DISTANCE {
+        // Check if current block is solid
+        if let Some((chunk_local_pos, chunk_world_pos, block_state)) =
+            check_block_at_position_data(block_pos, chunks_data)
+        {
+            return Some(BlockRaycastHit {
+                block_pos,
+                chunk_local_pos,
+                chunk_world_pos,
+                distance,
+                face,
+                block: block_state.block(),
+                block_state,
+            });
+        }
+
+        // Step to next block
+        if t_max.x < t_max.y && t_max.x < t_max.z {
+            block_pos.x += step.x as i32;
+            distance = t_max.x;
+            t_max.x += delta.x;
+            face = if step.x > 0.0 {
+                BlockFace::West
+            } else {
+                BlockFace::East
+            };
+        } else if t_max.y < t_max.z {
+            block_pos.y += step.y as i32;
+            distance = t_max.y;
+            t_max.y += delta.y;
+            face = if step.y > 0.0 {
+                BlockFace::Down
+            } else {
+                BlockFace::Up
+            };
+        } else {
+            block_pos.z += step.z as i32;
+            distance = t_max.z;
+            t_max.z += delta.z;
+            face = if step.z > 0.0 {
+                BlockFace::North
+            } else {
+                BlockFace::South
+            };
+        }
+    }
+
+    None
+}
+
+/// Checks if a block at world position is solid
+fn check_block_at_position_data(
+    world_pos: IVec3,
+    chunks_data: &[(Chunk, IVec3)],
+) -> Option<(UVec3, IVec3, BlockState)> {
+    for (chunk, chunk_world_pos) in chunks_data {
+        let relative_pos = world_pos - *chunk_world_pos;
+
+        if relative_pos.x >= 0
+            && relative_pos.x < CHUNK_SIZE as i32
+            && relative_pos.y >= 0
+            && relative_pos.y < CHUNK_SIZE as i32
+            && relative_pos.z >= 0
+            && relative_pos.z < CHUNK_SIZE as i32
+        {
+            let local_pos = relative_pos.as_uvec3();
+            if let Some(block_state) = chunk.get(local_pos) {
+                if !block_state.is_air() {
+                    return Some((local_pos, *chunk_world_pos, *block_state));
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Wrapper for raycasting with a Query
+pub fn raycast_block(
+    origin: Vec3,
+    direction: Vec3,
+    chunks: &Query<(&Chunk, &Transform)>,
+) -> Option<BlockRaycastHit> {
+    let chunks_data: Vec<_> = chunks
+        .iter()
+        .map(|(chunk, transform)| (chunk.clone(), transform.translation.as_ivec3()))
+        .collect();
+    raycast_block_data(origin, direction, &chunks_data)
+}

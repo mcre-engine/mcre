@@ -1,5 +1,6 @@
 mod camera;
 mod chunk;
+mod interaction;
 mod textures;
 mod ui;
 
@@ -13,6 +14,7 @@ use mcre_core::Block;
 use crate::{
     camera::FirstPersonPlugin,
     chunk::{CHUNK_SIZE, Chunk},
+    interaction::BlockInteractionPlugin,
     textures::BlockTextures,
     ui::{crosshair::CrosshairPlugin, debug::DebugMenuPlugin, load::LoadingUi},
 };
@@ -43,6 +45,7 @@ fn main() {
             },
             DebugMenuPlugin,
             CrosshairPlugin,
+            BlockInteractionPlugin,
         ))
         .init_state::<AppState>()
         .add_systems(Startup, (setup_light, BlockTextures::load_textures_system))

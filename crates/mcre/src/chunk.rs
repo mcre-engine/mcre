@@ -10,7 +10,7 @@ use crate::textures::BlockTextures;
 
 pub const CHUNK_SIZE: usize = 4;
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct Chunk {
     pub loc: UVec3,
     // TODO: Consider sparse chunk?
@@ -66,6 +66,14 @@ impl Chunk {
         self.blocks.get_mut(
             pos.x as usize * CHUNK_SIZE * CHUNK_SIZE + pos.y as usize * CHUNK_SIZE + pos.z as usize,
         )
+    }
+
+    pub fn regenerate_mesh(
+        &self,
+        textures: &BlockTextures,
+        meshes: &mut ResMut<Assets<Mesh>>,
+    ) -> Handle<Mesh> {
+        meshes.add(self.generate_mesh(textures))
     }
 
     fn generate_mesh(&self, textures: &BlockTextures) -> Mesh {
