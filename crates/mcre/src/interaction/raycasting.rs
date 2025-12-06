@@ -1,7 +1,7 @@
 use crate::chunk::{Chunk, world_pos_to_chunk_pos};
 use crate::chunk_map::ChunkMap;
 use bevy::prelude::*;
-use mcre_core::{Block, BlockState};
+use mcre_core::{Block, BlockState, Direction};
 
 pub const MAX_REACH_DISTANCE: f32 = 5.0;
 
@@ -13,20 +13,10 @@ pub struct BlockRaycastHit {
     pub chunk_world_pos: IVec3,
     pub chunk_entity: Entity,
     pub distance: f32,
-    pub face: BlockFace,
+    pub face: Direction,
     pub block: Block,
     #[allow(unused)] // todo maybe remvoe later if not needed
     pub block_state: BlockState,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum BlockFace {
-    North,
-    South,
-    East,
-    West,
-    Up,
-    Down,
 }
 
 pub fn raycast_block_data(
@@ -70,7 +60,7 @@ pub fn raycast_block_data(
     );
 
     let mut distance = 0.0;
-    let mut face = BlockFace::North;
+    let mut face = Direction::North;
 
     while distance < MAX_REACH_DISTANCE {
         if let Some((chunk_local_pos, chunk_world_pos, chunk_entity, block_state)) =
@@ -93,27 +83,27 @@ pub fn raycast_block_data(
             distance = t_max.x;
             t_max.x += delta.x;
             face = if step.x > 0.0 {
-                BlockFace::West
+                Direction::West
             } else {
-                BlockFace::East
+                Direction::East
             };
         } else if t_max.y < t_max.z {
             block_pos.y += step.y as i32;
             distance = t_max.y;
             t_max.y += delta.y;
             face = if step.y > 0.0 {
-                BlockFace::Down
+                Direction::Down
             } else {
-                BlockFace::Up
+                Direction::Up
             };
         } else {
             block_pos.z += step.z as i32;
             distance = t_max.z;
             t_max.z += delta.z;
             face = if step.z > 0.0 {
-                BlockFace::North
+                Direction::North
             } else {
-                BlockFace::South
+                Direction::South
             };
         }
     }
