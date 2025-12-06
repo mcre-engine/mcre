@@ -1,4 +1,5 @@
-use crate::chunk::{CHUNK_SIZE, Chunk};
+use crate::chunk::{Chunk, world_pos_to_chunk_pos};
+use crate::chunk_map::ChunkMap;
 use bevy::prelude::*;
 use mcre_core::{Block, BlockState};
 
@@ -8,11 +9,13 @@ pub const MAX_REACH_DISTANCE: f32 = 5.0;
 pub struct BlockRaycastHit {
     pub block_pos: IVec3,
     pub chunk_local_pos: UVec3,
+    #[allow(unused)] // todo maybe remvoe later if not needed
     pub chunk_world_pos: IVec3,
+    pub chunk_entity: Entity,
     pub distance: f32,
     pub face: BlockFace,
     pub block: Block,
-    #[allow(dead_code)]
+    #[allow(unused)] // todo maybe remvoe later if not needed
     pub block_state: BlockState,
 }
 
@@ -26,11 +29,11 @@ pub enum BlockFace {
     Down,
 }
 
-/// Raycast through blocks
 pub fn raycast_block_data(
     origin: Vec3,
     direction: Vec3,
-    chunks_data: &[(Chunk, IVec3)],
+    chunk_map: &ChunkMap,
+    chunk_query: &Query<&Chunk>,
 ) -> Option<BlockRaycastHit> {
     let direction = direction.normalize();
 
@@ -48,7 +51,6 @@ pub fn raycast_block_data(
 
     let mut block_pos = origin.floor().as_ivec3();
 
-    // Distance along ray to next block boundary
     let mut t_max = Vec3::new(
         if direction.x > 0.0 {
             (block_pos.x as f32 + 1.0 - origin.x) / direction.x
@@ -70,16 +72,15 @@ pub fn raycast_block_data(
     let mut distance = 0.0;
     let mut face = BlockFace::North;
 
-    // Step through blocks
     while distance < MAX_REACH_DISTANCE {
-        // Check if current block is solid
-        if let Some((chunk_local_pos, chunk_world_pos, block_state)) =
-            check_block_at_position_data(block_pos, chunks_data)
+        if let Some((chunk_local_pos, chunk_world_pos, chunk_entity, block_state)) =
+            check_block_at_position_data(block_pos, chunk_map, chunk_query)
         {
             return Some(BlockRaycastHit {
                 block_pos,
                 chunk_local_pos,
                 chunk_world_pos,
+                chunk_entity,
                 distance,
                 face,
                 block: block_state.block(),
@@ -87,7 +88,6 @@ pub fn raycast_block_data(
             });
         }
 
-        // Step to next block
         if t_max.x < t_max.y && t_max.x < t_max.z {
             block_pos.x += step.x as i32;
             distance = t_max.x;
@@ -121,42 +121,21 @@ pub fn raycast_block_data(
     None
 }
 
-/// Checks if a block at world position is solid
 fn check_block_at_position_data(
     world_pos: IVec3,
-    chunks_data: &[(Chunk, IVec3)],
-) -> Option<(UVec3, IVec3, BlockState)> {
-    for (chunk, chunk_world_pos) in chunks_data {
-        let relative_pos = world_pos - *chunk_world_pos;
+    chunk_map: &ChunkMap,
+    chunk_query: &Query<&Chunk>,
+) -> Option<(UVec3, IVec3, Entity, BlockState)> {
+    let (chunk_world_pos, chunk_local_pos) = world_pos_to_chunk_pos(world_pos);
 
-        if relative_pos.x >= 0
-            && relative_pos.x < CHUNK_SIZE as i32
-            && relative_pos.y >= 0
-            && relative_pos.y < CHUNK_SIZE as i32
-            && relative_pos.z >= 0
-            && relative_pos.z < CHUNK_SIZE as i32
-        {
-            let local_pos = relative_pos.as_uvec3();
-            if let Some(block_state) = chunk.get(local_pos) {
+    if let Some(&entity) = chunk_map.0.get(&chunk_world_pos) {
+        if let Ok(chunk) = chunk_query.get(entity) {
+            if let Some(block_state) = chunk.get(chunk_local_pos) {
                 if !block_state.is_air() {
-                    return Some((local_pos, *chunk_world_pos, *block_state));
+                    return Some((chunk_local_pos, chunk_world_pos, entity, *block_state));
                 }
             }
         }
     }
-
     None
-}
-
-/// Wrapper for raycasting with a Query
-pub fn raycast_block(
-    origin: Vec3,
-    direction: Vec3,
-    chunks: &Query<(&Chunk, &Transform)>,
-) -> Option<BlockRaycastHit> {
-    let chunks_data: Vec<_> = chunks
-        .iter()
-        .map(|(chunk, transform)| (chunk.clone(), transform.translation.as_ivec3()))
-        .collect();
-    raycast_block_data(origin, direction, &chunks_data)
 }

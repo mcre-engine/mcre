@@ -1,5 +1,6 @@
 mod camera;
 mod chunk;
+mod chunk_map;
 mod interaction;
 mod textures;
 mod ui;
@@ -9,6 +10,7 @@ use bevy::{
     prelude::*,
     window::{CursorOptions, WindowMode},
 };
+use chunk_map::{ChunkMap, update_chunk_map_system};
 use mcre_core::Block;
 
 use crate::{
@@ -48,8 +50,9 @@ fn main() {
             BlockInteractionPlugin,
         ))
         .init_state::<AppState>()
+        .init_resource::<ChunkMap>()
         .add_systems(Startup, (setup_light, BlockTextures::load_textures_system))
-        .add_systems(Update, handle_esc)
+        .add_systems(Update, (handle_esc, update_chunk_map_system))
         .add_systems(OnEnter(AppState::Loading), LoadingUi::add_ui_system)
         .add_systems(
             Update,

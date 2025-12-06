@@ -251,3 +251,14 @@ impl Chunk {
         .with_inserted_indices(Indices::U32(builder.indices))
     }
 }
+
+pub fn world_pos_to_chunk_pos(world_pos: IVec3) -> (IVec3, UVec3) {
+    let chunk_size = CHUNK_SIZE as i32;
+    let chunk_world_pos = IVec3::new(
+        (world_pos.x as f32 / chunk_size as f32).floor() as i32 * chunk_size,
+        (world_pos.y as f32 / chunk_size as f32).floor() as i32 * chunk_size,
+        (world_pos.z as f32 / chunk_size as f32).floor() as i32 * chunk_size,
+    );
+    let chunk_local_pos = (world_pos - chunk_world_pos).as_uvec3();
+    (chunk_world_pos, chunk_local_pos)
+}

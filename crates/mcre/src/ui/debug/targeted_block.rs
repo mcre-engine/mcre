@@ -1,6 +1,7 @@
 use crate::{
     chunk::Chunk,
-    interaction::raycasting::{BlockRaycastHit, raycast_block},
+    chunk_map::ChunkMap,
+    interaction::raycasting::{BlockRaycastHit, raycast_block_data},
 };
 use bevy::prelude::*;
 
@@ -39,7 +40,8 @@ impl TargetedBlockText {
     pub fn update_text_system(
         mut ui_query: Query<&mut Text, With<TargetedBlockText>>,
         camera_query: Query<&Transform, With<Camera>>,
-        chunks_query: Query<(&Chunk, &Transform)>,
+        chunk_map: Res<ChunkMap>,
+        chunks_query: Query<&Chunk>,
     ) {
         let Ok(mut ui) = ui_query.single_mut() else {
             return;
@@ -53,7 +55,7 @@ impl TargetedBlockText {
         let ray_origin = camera_transform.translation;
         let ray_direction = camera_transform.forward();
 
-        let hit = raycast_block(ray_origin, ray_direction.into(), &chunks_query);
+        let hit = raycast_block_data(ray_origin, *ray_direction, &chunk_map, &chunks_query);
         ui.0 = Self::format_text(hit);
     }
 }
