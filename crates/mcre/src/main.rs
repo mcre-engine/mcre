@@ -14,7 +14,7 @@ use crate::{
     camera::FirstPersonPlugin,
     chunk::{CHUNK_SIZE, Chunk},
     textures::BlockTextures,
-    ui::{debug::DebugMenuPlugin, load::LoadingUi},
+    ui::{crosshair::CrosshairPlugin, debug::DebugMenuPlugin, load::LoadingUi},
 };
 
 fn main() {
@@ -42,6 +42,7 @@ fn main() {
                 camera_rotation_speed: 0.3,
             },
             DebugMenuPlugin,
+            CrosshairPlugin,
         ))
         .init_state::<AppState>()
         .add_systems(Startup, (setup_light, BlockTextures::load_textures_system))
