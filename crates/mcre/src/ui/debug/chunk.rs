@@ -23,9 +23,10 @@ impl ChunkText {
     fn format_text(loader: &ChunkLoader) -> String {
         let mut output = "Chunks:\n".to_owned();
 
-        let _ = writeln!(&mut output, "\tUnloaded: {}", loader.unloaded_chunks(),);
-        let _ = writeln!(&mut output, "\tRendering: {}", loader.rendering_chunks(),);
-        let _ = writeln!(&mut output, "\tLoaded: {}", loader.loaded_chunks(),);
+        let _ = writeln!(&mut output, "\tUnloaded: {}", loader.unloaded_chunks());
+        let _ = writeln!(&mut output, "\tGenerating: {}", loader.generating_chunks());
+        let _ = writeln!(&mut output, "\tRendering: {}", loader.rendering_chunks());
+        let _ = writeln!(&mut output, "\tLoaded: {}", loader.loaded_chunks());
 
         output
     }

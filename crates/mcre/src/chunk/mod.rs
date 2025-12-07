@@ -13,15 +13,18 @@ use mcre_core::{Block, BlockState};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    chunk::math::{pos::ChunkPosition, size::ChunkSize},
+    chunk::math::{
+        pos::{BlockPosition, ChunkPosition},
+        size::ChunkSize,
+    },
     textures::BlockTextures,
-    utils::sparse::SparseArray,
+    utils::sparse::SparseVec,
 };
 
 #[derive(Asset, Clone, Debug, TypePath, Deserialize, Serialize)]
 pub struct Chunk {
     pub loc: ChunkPosition,
-    pub blocks: SparseArray<BlockState>,
+    pub blocks: SparseVec<BlockState>,
     chunk_size: ChunkSize,
 }
 
@@ -29,7 +32,7 @@ impl Chunk {
     pub fn empty<P: Into<ChunkPosition>>(chunk_size: ChunkSize, loc: P) -> Self {
         Chunk {
             loc: loc.into(),
-            blocks: SparseArray::empty(chunk_size.full_size()),
+            blocks: SparseVec::empty(),
             chunk_size,
         }
     }
@@ -42,35 +45,38 @@ impl Chunk {
         Transform::from_translation(self.loc.world_coord(self.chunk_size))
     }
 
-    pub fn set_block<B: Into<BlockState>>(&mut self, pos: UVec3, new_block: B) {
-        let idx = self.chunk_size.chunk_index(pos);
+    pub fn set<P: Into<BlockPosition>, B: Into<BlockState>>(&mut self, pos: P, new_block: B) {
+        let pos = pos.into();
+        let idx = pos.to_index(self.chunk_size);
+        let new_block = new_block.into();
         if let Some(block) = self.blocks.get_mut(idx) {
-            *block = new_block.into()
+            *block = new_block
         } else {
-            self.blocks.insert(idx, new_block.into());
+            self.blocks.insert(idx, new_block);
         }
     }
 
-    pub fn get(&self, pos: UVec3) -> Option<BlockState> {
-        self.blocks.get(self.chunk_size.chunk_index(pos)).copied()
+    pub fn get<P: Into<BlockPosition>>(&self, pos: P) -> Option<BlockState> {
+        let index = pos.into().to_index(self.chunk_size);
+        self.blocks.get(index).copied()
     }
 
-    fn cull_faces(&self, pos: UVec3) -> (BVec3, BVec3) {
+    fn cull_faces(&self, pos: BlockPosition) -> (BVec3, BVec3) {
         fn check_occude(block: BlockState) -> bool {
             block.is_air() || !block.can_occlude()
         }
 
-        let bounds = self.chunk_size.in_bounds(pos + 1);
+        let bounds = (pos + 1).in_bounds(self.chunk_size);
         let positive_faces = BVec3::new(
-            !bounds.x || self.get(pos.with_x(pos.x + 1)).is_none_or(check_occude),
-            !bounds.y || self.get(pos.with_y(pos.y + 1)).is_none_or(check_occude),
-            !bounds.z || self.get(pos.with_z(pos.z + 1)).is_none_or(check_occude),
+            !bounds.x || self.get(pos.east()).is_none_or(check_occude),
+            self.get(pos.up()).is_none_or(check_occude),
+            !bounds.y || self.get(pos.south()).is_none_or(check_occude),
         );
 
         let negative_faces = BVec3::new(
-            pos.x < 1 || self.get(pos.with_x(pos.x - 1)).is_none_or(check_occude),
-            pos.y < 1 || self.get(pos.with_y(pos.y - 1)).is_none_or(check_occude),
-            pos.z < 1 || self.get(pos.with_z(pos.z - 1)).is_none_or(check_occude),
+            pos.x < 1 || self.get(pos.west()).is_none_or(check_occude),
+            self.get(pos.down()).is_none_or(check_occude),
+            pos.z < 1 || self.get(pos.north()).is_none_or(check_occude),
         );
         (positive_faces, negative_faces)
     }
@@ -88,7 +94,7 @@ impl Chunk {
         // -Z is North, +Z is South
         // -X is West, +X is East
         impl VerticesBuilder {
-            fn push_north(&mut self, cur: UVec3, uv: Rect, face_color: Srgba) {
+            fn push_north(&mut self, cur: BlockPosition, uv: Rect, face_color: Srgba) {
                 self.push_indices();
                 self.push_face_color(face_color);
                 let (x, y, z) = (cur.x as f32, cur.y as f32, cur.z as f32);
@@ -99,7 +105,7 @@ impl Chunk {
                 self.push([x + 1., y + 0., z + 0.], normal, [uv.min.x, uv.max.y]);
             }
 
-            fn push_east(&mut self, cur: UVec3, uv: Rect, face_color: Srgba) {
+            fn push_east(&mut self, cur: BlockPosition, uv: Rect, face_color: Srgba) {
                 self.push_indices();
                 self.push_face_color(face_color);
                 let (x, y, z) = (cur.x as f32, cur.y as f32, cur.z as f32);
@@ -110,7 +116,7 @@ impl Chunk {
                 self.push([x + 1., y + 1., z + 0.], normal, [uv.min.x, uv.min.y]);
             }
 
-            fn push_south(&mut self, cur: UVec3, uv: Rect, face_color: Srgba) {
+            fn push_south(&mut self, cur: BlockPosition, uv: Rect, face_color: Srgba) {
                 self.push_indices();
                 self.push_face_color(face_color);
                 let (x, y, z) = (cur.x as f32, cur.y as f32, cur.z as f32);
@@ -121,7 +127,7 @@ impl Chunk {
                 self.push([x + 1., y + 0., z + 1.], normal, [uv.min.x, uv.max.y]);
             }
 
-            fn push_west(&mut self, cur: UVec3, uv: Rect, face_color: Srgba) {
+            fn push_west(&mut self, cur: BlockPosition, uv: Rect, face_color: Srgba) {
                 self.push_indices();
                 self.push_face_color(face_color);
                 let (x, y, z) = (cur.x as f32, cur.y as f32, cur.z as f32);
@@ -132,7 +138,7 @@ impl Chunk {
                 self.push([x + 0., y + 1., z + 0.], normal, [uv.min.x, uv.min.y]);
             }
 
-            fn push_up(&mut self, cur: UVec3, uv: Rect, face_color: Srgba) {
+            fn push_up(&mut self, cur: BlockPosition, uv: Rect, face_color: Srgba) {
                 self.push_indices();
                 self.push_face_color(face_color);
                 let (x, y, z) = (cur.x as f32, cur.y as f32, cur.z as f32);
@@ -143,7 +149,7 @@ impl Chunk {
                 self.push([x + 0., y + 1., z + 1.], normal, [uv.max.x, uv.max.y]);
             }
 
-            fn push_down(&mut self, cur: UVec3, uv: Rect, face_color: Srgba) {
+            fn push_down(&mut self, cur: BlockPosition, uv: Rect, face_color: Srgba) {
                 self.push_indices();
                 self.push_face_color(face_color);
                 let (x, y, z) = (cur.x as f32, cur.y as f32, cur.z as f32);
@@ -194,7 +200,7 @@ impl Chunk {
             let Some(uv_rect) = textures.get_uv_rect(*block) else {
                 continue;
             };
-            let cur = self.chunk_size.block_index(i);
+            let cur = BlockPosition::from_index(i, self.chunk_size);
             //TODO: Fix to use known data about block states
             let block_color = match block.block() {
                 Block::OAK_LEAVES => GREEN,
@@ -239,7 +245,7 @@ impl From<Chunk> for ChunkData {
     fn from(value: Chunk) -> Self {
         ChunkData {
             loc: value.loc,
-            blocks: SparseArray::from(value.blocks),
+            blocks: SparseVec::from(value.blocks),
             chunk_size: value.chunk_size,
         }
     }
@@ -248,7 +254,7 @@ impl From<Chunk> for ChunkData {
 #[derive(Deserialize, Serialize)]
 struct ChunkData {
     pub loc: ChunkPosition,
-    pub blocks: SparseArray<u16>,
+    pub blocks: SparseVec<u16>,
     chunk_size: ChunkSize,
 }
 
@@ -256,7 +262,7 @@ impl From<ChunkData> for Chunk {
     fn from(value: ChunkData) -> Self {
         Chunk {
             loc: value.loc,
-            blocks: SparseArray::from(value.blocks),
+            blocks: SparseVec::from(value.blocks),
             chunk_size: value.chunk_size,
         }
     }

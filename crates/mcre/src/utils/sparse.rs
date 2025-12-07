@@ -7,15 +7,13 @@ use bevy::reflect::Reflect;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Reflect, Deserialize, Serialize)]
-pub struct SparseArray<T> {
-    len: usize,
+pub struct SparseVec<T> {
     data: HashMap<usize, T, BuildHasherDefault<SparseHasher>>,
 }
 
-impl<T> SparseArray<T> {
-    pub fn empty(len: usize) -> Self {
-        SparseArray {
-            len,
+impl<T> SparseVec<T> {
+    pub fn empty() -> Self {
+        SparseVec {
             data: HashMap::default(),
         }
     }
@@ -23,11 +21,7 @@ impl<T> SparseArray<T> {
     /// Inserts into sparse array as long as the index is less than `N`
     /// Replaces old value if there
     pub fn insert(&mut self, idx: usize, value: T) -> Option<T> {
-        if idx < self.len {
-            self.data.insert(idx, value)
-        } else {
-            None
-        }
+        self.data.insert(idx, value)
     }
 
     pub fn get(&self, idx: usize) -> Option<&T> {
@@ -41,9 +35,8 @@ impl<T> SparseArray<T> {
     pub fn iter(&self) -> impl Iterator<Item = (usize, &T)> {
         self.data.iter().map(|(i, t)| (*i, t))
     }
-    pub fn from<U: Into<T>>(value: SparseArray<U>) -> Self {
-        SparseArray {
-            len: value.len,
+    pub fn from<U: Into<T>>(value: SparseVec<U>) -> Self {
+        SparseVec {
             data: value.data.into_iter().map(|(i, v)| (i, v.into())).collect(),
         }
     }
@@ -65,12 +58,9 @@ impl Hasher for SparseHasher {
     }
 }
 
-impl<T> FromIterator<(usize, T)> for SparseArray<T> {
+impl<T> FromIterator<(usize, T)> for SparseVec<T> {
     fn from_iter<I: IntoIterator<Item = (usize, T)>>(iter: I) -> Self {
         let data = HashMap::from_iter(iter);
-        SparseArray {
-            len: data.len(),
-            data,
-        }
+        SparseVec { data }
     }
 }
