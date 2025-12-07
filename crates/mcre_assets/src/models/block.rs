@@ -1,13 +1,14 @@
-use core::array;
+use core::{array, error, fmt};
 
 use alloc::{
+    boxed::Box,
     string::{String, ToString},
     vec::Vec,
 };
 use mcre_core::{Axis, Direction, Vec3f, Vec4f};
 use serde::Deserialize;
 
-use crate::{BlockModelId, FxHashMap, RefOr, ReferenceId, RotationDegrees, TextureId};
+use crate::{BlockModelId, FxHashMap, Quadrant, RefOr, ReferenceId, TextureId};
 
 #[derive(Debug, Clone)]
 pub struct BlockModelDefinition {
@@ -68,7 +69,7 @@ pub struct BlockModelElementRotation {
 pub struct BlockModelFace {
     pub texture: RefOr<TextureId>,
     #[serde(default)]
-    pub rotation: RotationDegrees,
+    pub rotation: Quadrant,
     pub uv: Option<Vec4f>,
     pub tintindex: Option<u8>,
     pub cullface: Option<Direction>,
@@ -165,19 +166,31 @@ pub struct BakedQuad {
     pub light_emission: u8,
 }
 
+#[derive(Debug, Clone)]
 pub enum ModelBakeError {
     TextureNotFound(String),
     ParentNotFound(String),
 }
 
+impl fmt::Display for ModelBakeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ModelBakeError::TextureNotFound(name) => write!(f, "Texture not found: {}", name),
+            ModelBakeError::ParentNotFound(id) => write!(f, "Parent not found: {}", id),
+        }
+    }
+}
+
+impl error::Error for ModelBakeError {}
+
 impl BlockModelDefinition {
-    fn _build_texture_map<F>(
+    fn _build_texture_map<'a, F>(
         &self,
         parent_resolver: F,
         texture_map: &mut FxHashMap<ReferenceId, TextureId>,
     ) -> Result<(), ModelBakeError>
     where
-        F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
+        F: Fn(&BlockModelId) -> Option<&'a Self>,
     {
         for (name, texture) in &self.textures {
             if let RefOr::Value(texture_id) = texture {
@@ -192,21 +205,21 @@ impl BlockModelDefinition {
         })
     }
 
-    pub fn build_texture_map<F>(
+    pub fn build_texture_map<'a, F>(
         &self,
         parent_resolver: F,
     ) -> Result<FxHashMap<ReferenceId, TextureId>, ModelBakeError>
     where
-        F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
+        F: Fn(&BlockModelId) -> Option<&'a Self>,
     {
         let mut texture_map = FxHashMap::default();
         self._build_texture_map(parent_resolver, &mut texture_map)?;
         Ok(texture_map)
     }
 
-    pub fn bake<F, E>(&self, parent_resolver: F) -> Result<(), ModelBakeError>
+    pub fn bake<'a, F>(&self, parent_resolver: F) -> Result<Box<[BakedQuad]>, ModelBakeError>
     where
-        F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
+        F: Fn(&BlockModelId) -> Option<&'a Self>,
     {
         let texture_map = self.build_texture_map(parent_resolver)?;
 
@@ -257,9 +270,62 @@ impl BlockModelDefinition {
             }
         }
 
-        Ok(())
+        Ok(quads.into_boxed_slice())
     }
 }
+
+pub struct BlockModelRegistry {
+    baked_quads: Box<[Box<[BakedQuad]>]>,
+    definitions: Box<[BlockModelDefinition]>,
+    id_mappings: FxHashMap<String, u16>,
+}
+
+impl BlockModelRegistry {
+    pub fn new(
+        named_definitions: Box<[(String, BlockModelDefinition)]>,
+    ) -> Result<Self, ModelBakeError> {
+        let mut id_mappings = FxHashMap::default();
+        let mut definitions = Vec::with_capacity(named_definitions.len());
+        let mut baked_quads = Vec::with_capacity(named_definitions.len());
+
+        for (i, (name, definition)) in named_definitions.into_iter().enumerate() {
+            id_mappings.insert(name, i as u16);
+            definitions.push(definition);
+        }
+
+        for definition in &definitions {
+            let baked = definition.bake(|id| {
+                id_mappings
+                    .get(&id.id)
+                    .map(|&idx| &definitions[idx as usize])
+            })?;
+            baked_quads.push(baked);
+        }
+
+        Ok(Self {
+            baked_quads: baked_quads.into_boxed_slice(),
+            definitions: definitions.into_boxed_slice(),
+            id_mappings,
+        })
+    }
+
+    pub fn get_definition(&self, id: BlockModelRegistryKey) -> &BlockModelDefinition {
+        &self.definitions[id.0 as usize]
+    }
+
+    pub fn get_quads(&self, id: BlockModelRegistryKey) -> &[BakedQuad] {
+        &self.baked_quads[id.0 as usize]
+    }
+
+    pub fn get_key_by_id(&self, id: &BlockModelId) -> Option<BlockModelRegistryKey> {
+        self.id_mappings
+            .get(&id.id)
+            .map(|&id| BlockModelRegistryKey(id))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BlockModelRegistryKey(u16);
 
 #[cfg(test)]
 mod tests {
