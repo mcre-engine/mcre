@@ -1,5 +1,6 @@
 mod camera;
 mod chunk;
+mod player;
 mod textures;
 mod ui;
 mod utils;
@@ -14,6 +15,7 @@ use bevy::{
 use crate::{
     camera::FirstPersonPlugin,
     chunk::loader::ChunkLoaderPlugin,
+    player::PlayerInteractionPlugin,
     textures::BlockTextures,
     ui::{debug::DebugMenuPlugin, load::LoadingUi},
 };
@@ -47,12 +49,12 @@ fn main() {
                 camera_rotation_speed: 0.3,
             },
             DebugMenuPlugin,
+            PlayerInteractionPlugin,
         ))
         .add_plugins(ChunkLoaderPlugin::default())
         .init_state::<AppState>()
         .add_sub_state::<LoadingState>()
         .add_systems(Startup, setup_light)
-        .add_systems(Update, handle_esc)
         .add_systems(OnEnter(AppState::Loading), LoadingUi::add_ui_system)
         .add_systems(
             OnEnter(LoadingState::Textures),
@@ -67,8 +69,6 @@ fn main() {
             LoadingUi::update_ui_system.run_if(in_state(AppState::Loading)),
         )
         .add_systems(OnExit(AppState::Loading), LoadingUi::remove_ui_system)
-        .add_systems(OnEnter(AppState::InGame), lock_cursor)
-        .add_systems(OnExit(AppState::InGame), unlock_cursor)
         .run();
 }
 
@@ -102,30 +102,4 @@ fn setup_light(mut commands: Commands) {
         },
         Transform::from_xyz(20.0, 10.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-}
-
-fn handle_esc(
-    app_state: Res<State<AppState>>,
-    mut next_app_state: ResMut<NextState<AppState>>,
-    key: Res<ButtonInput<KeyCode>>,
-) {
-    if key.just_released(KeyCode::Escape) {
-        match app_state.get() {
-            AppState::InGame => next_app_state.set(AppState::Paused),
-            AppState::Paused => next_app_state.set(AppState::InGame),
-            _ => {}
-        }
-    }
-}
-
-fn unlock_cursor(mut opts: Query<&mut CursorOptions, With<Window>>) {
-    let mut opts = opts.single_mut().expect("A window to be attached");
-    opts.visible = true;
-    opts.grab_mode = bevy::window::CursorGrabMode::None;
-}
-
-fn lock_cursor(mut opts: Query<&mut CursorOptions, With<Window>>) {
-    let mut opts = opts.single_mut().expect("A window to be attached");
-    opts.visible = false;
-    opts.grab_mode = bevy::window::CursorGrabMode::Locked;
 }

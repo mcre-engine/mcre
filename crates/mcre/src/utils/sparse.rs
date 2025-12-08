@@ -35,6 +35,7 @@ impl<T> SparseVec<T> {
     pub fn iter(&self) -> impl Iterator<Item = (usize, &T)> {
         self.data.iter().map(|(i, t)| (*i, t))
     }
+
     pub fn from<U: Into<T>>(value: SparseVec<U>) -> Self {
         SparseVec {
             data: value.data.into_iter().map(|(i, v)| (i, v.into())).collect(),
