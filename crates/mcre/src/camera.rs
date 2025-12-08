@@ -1,6 +1,6 @@
 use bevy::{input::mouse::MouseMotion, prelude::*};
 
-use crate::AppState;
+use crate::{AppState, LoadingState};
 
 pub struct FirstPersonPlugin {
     pub transform: Transform,
@@ -13,14 +13,18 @@ impl Plugin for FirstPersonPlugin {
         let transform = self.transform;
         let rot_speed = self.camera_rotation_speed;
         let move_speed = self.camera_movement_speed;
-        app.add_systems(Startup, move |mut commands: Commands| {
-            commands.spawn(FirstPersonCamera {
-                rotation_speed: CameraRotationSpeed(rot_speed),
-                movement_speed: CameraMovementSpeed(move_speed),
-                transform,
-                camera: Camera3d::default(),
-            });
-        })
+        app.add_systems(
+            OnEnter(LoadingState::Camera),
+            move |mut commands: Commands, mut next: ResMut<NextState<LoadingState>>| {
+                commands.spawn(FirstPersonCamera {
+                    rotation_speed: CameraRotationSpeed(rot_speed),
+                    movement_speed: CameraMovementSpeed(move_speed),
+                    transform,
+                    camera: Camera3d::default(),
+                });
+                next.set(LoadingState::Textures);
+            },
+        )
         .add_systems(
             Update,
             (camera_rotation, camera_movement).run_if(in_state(AppState::InGame)),

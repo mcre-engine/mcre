@@ -1,10 +1,12 @@
 mod camera;
+mod chunk;
 mod title;
 use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
 
 use crate::{
     AppState,
-    ui::debug::{camera::PlayerText, title::TitleText},
+    chunk::loader::ChunkLoader,
+    ui::debug::{camera::PlayerText, chunk::ChunkText, title::TitleText},
 };
 
 pub struct DebugMenuPlugin;
@@ -23,6 +25,7 @@ impl Plugin for DebugMenuPlugin {
                 (
                     PlayerText::update_text_system.run_if(in_state(DebugState::On)),
                     TitleText::update_text_system.run_if(in_state(DebugState::On)),
+                    ChunkText::update_text_system.run_if(in_state(DebugState::On)),
                 ),
             )
             .add_systems(OnExit(DebugState::On), Self::remove_debug_ui);
@@ -43,13 +46,18 @@ impl DebugMenuPlugin {
         }
     }
 
-    fn add_debug_ui(mut commands: Commands, camera: Query<&Transform, With<Camera>>) {
+    fn add_debug_ui(
+        mut commands: Commands,
+        camera: Query<&Transform, With<Camera>>,
+        loader: Res<ChunkLoader>,
+    ) {
         let camera = camera.single().unwrap();
         commands
             .spawn(DebugUi.into_bundle())
             .with_children(|parent| {
                 parent.spawn(TitleText.into_bundle());
                 parent.spawn(PlayerText.into_bundle(camera));
+                parent.spawn(ChunkText.into_bundle(&loader));
             });
     }
 

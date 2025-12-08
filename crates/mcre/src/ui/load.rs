@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::textures::BlockTextures;
+use crate::{LoadingState, chunk::loader::ChunkLoader, textures::BlockTextures};
 
 const MARGIN: Val = Val::Px(12.);
 
@@ -36,6 +36,7 @@ impl LoadingUi {
                     ..Default::default()
                 },
                 TextColor(Color::WHITE),
+                LoadText,
             ));
             parent
                 .spawn((
@@ -53,11 +54,29 @@ impl LoadingUi {
     }
 
     pub fn update_ui_system(
+        mut text: Query<&mut Text, With<LoadText>>,
         mut load: Query<&mut Node, With<LoadBar>>,
+        state: Res<State<LoadingState>>,
         textures: Res<BlockTextures>,
+        loader: Res<ChunkLoader>,
     ) {
-        let mut load = load.single_mut().unwrap();
-        load.width = Val::Vw(LOAD_BAR_MAX * textures.loading_percent());
+        match state.get() {
+            LoadingState::Camera => {}
+            LoadingState::Textures => {
+                let mut load = load.single_mut().unwrap();
+                let mut text = text.single_mut().unwrap();
+                text.0 = "Loading Textures...".to_owned();
+                load.width = Val::Vw(LOAD_BAR_MAX * textures.loading_percent());
+            }
+            LoadingState::Chunks => {
+                let mut text = text.single_mut().unwrap();
+                text.0 = format!(
+                    "Loading Chunks: Unloaded - {}, Rendering - {}",
+                    loader.unloaded_chunks(),
+                    loader.rendering_chunks()
+                );
+            }
+        }
     }
 
     pub fn remove_ui_system(mut commands: Commands, ui: Query<Entity, With<Self>>) {
@@ -71,6 +90,9 @@ const LOAD_BAR_MAX: f32 = 60.;
 
 #[derive(Component)]
 pub struct LoadBar;
+
+#[derive(Component)]
+pub struct LoadText;
 
 impl LoadBar {
     fn into_bundle(self) -> impl Bundle {

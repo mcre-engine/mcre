@@ -13,4 +13,15 @@ rust-version.workspace = true
 
 [dependencies]
 bevy = "0.17.3"
+thiserror = "2.0.17"
+bincode = { version = "2.0.1", features = ["serde"] }
+serde = { workspace = true }
 mcre_core = { path = "../mcre_core/" }
+
+# Used to support tracy 0.11.0
+tracy-client-sys = { version = "=0.24.3" }
+tracy-client = { version = "=0.18.0" }
+tracing-tracy = { version = "=0.11.4" }
+
+[dev-dependencies]
+bevy = { version = "0.17.3", features = ["trace"] }
