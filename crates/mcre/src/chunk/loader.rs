@@ -11,6 +11,7 @@ use crate::{
         asset::ChunkAssetLoader,
         generate::spawn_test_chunk,
         math::{pos::ChunkPosition, size::ChunkSize},
+        mesh::ChunkMeshBuilder,
     },
     textures::BlockTextures,
 };
@@ -204,7 +205,7 @@ impl ChunkLoader {
                     ChunkComponent(new_chunk),
                     chunk.transform(),
                     MeshMaterial3d(textures.texture().unwrap().clone()),
-                    Mesh3d(meshes.add(chunk.generate_mesh(&textures))),
+                    Mesh3d(meshes.add(ChunkMeshBuilder::new(chunk).build(&textures))),
                 ));
             }
         });
