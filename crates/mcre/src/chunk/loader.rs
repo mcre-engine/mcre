@@ -1,7 +1,13 @@
+use std::{
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicUsize},
+};
+
 use bevy::{
-    asset::LoadState,
+    asset::{AssetLoadError, AssetPath, LoadState, io::AssetReaderError},
     platform::collections::{HashMap, HashSet},
     prelude::*,
+    tasks::IoTaskPool,
 };
 
 use crate::{
@@ -62,10 +68,12 @@ impl Plugin for ChunkLoaderPlugin {
 #[derive(Resource, Default, Debug)]
 pub struct ChunkLoader {
     //TODO: Convert to some faster lookups
-    unloaded_chunks: HashMap<ChunkPosition, Handle<Chunk>>,
+    unloaded_chunks: HashSet<ChunkPosition>,
+    reading_chunks: HashMap<ChunkPosition, Handle<Chunk>>,
     generating_chunks: HashSet<ChunkPosition>,
     rendering_chunks: HashMap<ChunkPosition, Handle<Chunk>>,
     loaded_chunks: HashMap<ChunkPosition, Handle<Chunk>>,
+    saving_chunks: Arc<AtomicUsize>,
 }
 
 impl ChunkLoader {
@@ -85,8 +93,14 @@ impl ChunkLoader {
         self.loaded_chunks.len()
     }
 
+    pub fn saving_chunks(&self) -> usize {
+        self.saving_chunks
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     fn contains(&self, pos: &ChunkPosition) -> bool {
-        self.unloaded_chunks.contains_key(pos)
+        self.unloaded_chunks.contains(pos)
+            || self.reading_chunks.contains_key(pos)
             || self.generating_chunks.contains(pos)
             || self.rendering_chunks.contains_key(pos)
             || self.loaded_chunks.contains_key(pos)
@@ -94,7 +108,6 @@ impl ChunkLoader {
 
     pub fn read_chunks(
         camera: Query<&Transform, With<Camera>>,
-        assets: Res<AssetServer>,
         config: Res<ChunkLoaderConfig>,
         mut loader: ResMut<ChunkLoader>,
     ) {
@@ -102,9 +115,7 @@ impl ChunkLoader {
         let cur_chunk = config.chunk_size.chunk_coord(camera_loc);
         for loc in cur_chunk.iter_around(config.chunk_radius as u64) {
             if !loader.contains(&loc) {
-                loader
-                    .unloaded_chunks
-                    .insert(loc, assets.load(format!("chunks/{}_{}.mcra", loc.x, loc.y)));
+                loader.unloaded_chunks.insert(loc);
             }
         }
     }
@@ -113,10 +124,11 @@ impl ChunkLoader {
         mut loader: ResMut<ChunkLoader>,
         chunks: Res<Assets<Chunk>>,
         assets: Res<AssetServer>,
+        config: Res<ChunkLoaderConfig>,
     ) {
         let mut generate_chunks = Vec::new();
         let mut file_chunks = Vec::new();
-        loader.unloaded_chunks.retain(|loc, handle| {
+        loader.reading_chunks.retain(|loc, handle| {
             match assets.get_load_state(handle.id()) {
                 None => {
                     if chunks.get(handle.id()).is_some() {
@@ -124,7 +136,13 @@ impl ChunkLoader {
                         return false;
                     }
                 }
-                Some(LoadState::Failed(_)) => {
+                Some(LoadState::Failed(err)) => {
+                    match &*err {
+                        AssetLoadError::AssetReaderError(AssetReaderError::NotFound(_)) => {}
+                        err => {
+                            warn!("Error loading chunk ({}, {}): {err:?}", loc.x, loc.y);
+                        }
+                    }
                     // Chunk failed to load so we regenerate chunk
                     generate_chunks.push(*loc);
                     // new_chunks.push((*loc, chunks.add(spawn_test_chunk(config.chunk_size, *loc))));
@@ -140,6 +158,22 @@ impl ChunkLoader {
             }
             true
         });
+        let batch_size =
+            config.batching.reading.min(loader.unloaded_chunks.len()) - loader.reading_chunks.len();
+        if batch_size > 0 {
+            let iter = loader
+                .unloaded_chunks
+                .iter()
+                .copied()
+                .take(batch_size)
+                .collect::<Vec<_>>();
+            for loc in iter {
+                loader.unloaded_chunks.remove(&loc);
+                loader
+                    .reading_chunks
+                    .insert(loc, assets.load(format!("chunks/{}_{}.mcra", loc.x, loc.y)));
+            }
+        }
         if !file_chunks.is_empty() {
             loader.rendering_chunks.extend(file_chunks);
         }
@@ -218,6 +252,7 @@ impl ChunkLoader {
         mut chunks: ResMut<Assets<Chunk>>,
         config: Res<ChunkLoaderConfig>,
         mut loader: ResMut<ChunkLoader>,
+        server: Res<AssetServer>,
     ) {
         if components.is_empty() {
             return;
@@ -236,11 +271,74 @@ impl ChunkLoader {
                     .then_some((entity, chunk.loc, id))
             })
             .collect::<Vec<_>>();
+        let mut file_batches = Vec::new();
         for (entity, loc, id) in remove_chunks {
             //TODO: Save to disk
             loader.loaded_chunks.remove(&loc);
             commands.entity(entity).despawn();
-            chunks.remove(id);
+            let chunk = chunks.remove(id).unwrap();
+            let loc = chunk.loc;
+            let asset_loader = ChunkAssetLoader::default();
+            let chunk = asset_loader.to_bytes(&chunk).unwrap();
+            file_batches.push((loc, chunk))
+        }
+        loader.save_chunk_data(file_batches, &config, &server);
+    }
+
+    pub fn save_all_chunks(
+        &mut self,
+        chunks: &Assets<Chunk>,
+        config: &ChunkLoaderConfig,
+        server: &AssetServer,
+    ) {
+        let ids = self
+            .loaded_chunks
+            .values()
+            .map(|v| v.id())
+            .collect::<Vec<_>>();
+        let mut file_batches = Vec::new();
+        for id in ids {
+            let chunk = chunks.get(id).unwrap();
+            let loc = chunk.loc;
+            let asset_loader = ChunkAssetLoader::default();
+            let chunk = asset_loader.to_bytes(chunk).unwrap();
+            file_batches.push((loc, chunk))
+        }
+        self.save_chunk_data(file_batches, config, server);
+    }
+
+    fn save_chunk_data(
+        &mut self,
+        mut data: Vec<(ChunkPosition, Vec<u8>)>,
+        config: &ChunkLoaderConfig,
+        server: &AssetServer,
+    ) {
+        while !data.is_empty() {
+            let batch_size = config.batching.saving.min(data.len());
+            let values = data.drain(..batch_size).collect::<Vec<_>>();
+            if values.is_empty() {
+                break;
+            }
+            let server = server.clone();
+            let size = values.len();
+            let saving_chunks = self.saving_chunks.clone();
+            IoTaskPool::get()
+                .spawn(async move {
+                    for (loc, chunk) in values {
+                        let path = AssetPath::from_path_buf(PathBuf::from(format!(
+                            "chunks/{}_{}.mcra",
+                            loc.x, loc.y
+                        )));
+
+                        let source = server.get_source(path.source()).unwrap();
+                        let writer = source.writer().unwrap();
+                        writer.write_bytes(path.path(), &chunk).await.unwrap();
+                    }
+                    saving_chunks.fetch_sub(size, std::sync::atomic::Ordering::Relaxed);
+                })
+                .detach();
+            self.saving_chunks
+                .fetch_add(size, std::sync::atomic::Ordering::Relaxed);
         }
     }
 }
@@ -265,9 +363,11 @@ impl Default for ChunkLoaderConfig {
 
 #[derive(Clone)]
 pub struct Batching {
+    reading: usize,
     loading: usize,
     generating: usize,
     rendering: usize,
+    saving: usize,
 }
 
 impl Batching {
@@ -283,9 +383,11 @@ impl Batching {
 impl Default for Batching {
     fn default() -> Self {
         Self {
+            reading: 50,
             loading: 100,
             generating: 50,
             rendering: 50,
+            saving: 10,
         }
     }
 }
