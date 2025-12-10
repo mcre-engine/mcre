@@ -459,26 +459,26 @@ fn get_block_display_name(env: &mut JNIEnv, block: &JObject) -> String {
 }
 
 fn get_block_name(block: &JObject, block_registry: &JObject, env: &mut JNIEnv) -> String {
-    let block_resource_key = env
+    let block_identifier = env
         .call_method(
             block_registry,
             "getKey",
-            "(Ljava/lang/Object;)Lnet/minecraft/resources/ResourceLocation;",
+            "(Ljava/lang/Object;)Lnet/minecraft/resources/Identifier;",
             &[JValueGen::Object(block)],
         )
         .unwrap()
         .l()
         .unwrap();
-    get_resource_location_key_name(&block_resource_key, env)
+    get_identifier_path(&block_identifier, env)
 }
 
-fn get_resource_location_key_name(resource_location: &JObject, env: &mut JNIEnv) -> String {
-    let name_obj = env
-        .get_field(resource_location, "path", "Ljava/lang/String;")
+fn get_identifier_path(identifier: &JObject, env: &mut JNIEnv) -> String {
+    let path = env
+        .get_field(identifier, "path", "Ljava/lang/String;")
         .unwrap()
         .l()
         .unwrap();
-    obj_to_str(name_obj, env)
+    obj_to_str(path, env)
 }
 
 fn obj_to_str(obj: JObject, env: &mut JNIEnv) -> String {
