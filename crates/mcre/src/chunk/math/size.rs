@@ -5,24 +5,24 @@ use serde::{Deserialize, Serialize};
 use crate::chunk::math::pos::ChunkPosition;
 
 #[derive(Clone, Debug, PartialEq, Copy, Deserialize, Serialize)]
-pub struct ChunkSize(usize);
+pub struct ChunkSize(u8);
 
 impl ChunkSize {
     // Should probably check for above zero
-    pub const fn new(size: usize) -> Self {
+    pub const fn new(size: u8) -> Self {
         ChunkSize(size)
     }
 
-    pub const fn iter(self) -> impl Iterator<Item = usize> {
+    pub const fn iter(self) -> impl Iterator<Item = u8> {
         0..self.0
     }
 
     pub const fn as_u8(self) -> u8 {
-        self.0 as u8
+        self.0
     }
 
     pub const fn as_usize(self) -> usize {
-        self.0
+        self.0 as usize
     }
 
     pub const fn as_vec(self) -> Vec3 {

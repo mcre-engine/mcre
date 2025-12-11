@@ -1,5 +1,5 @@
 pub mod asset;
-mod generate;
+pub mod generate;
 pub mod loader;
 pub mod math;
 pub mod mesh;

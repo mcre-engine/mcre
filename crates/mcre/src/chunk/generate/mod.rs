@@ -1,21 +1,56 @@
-use bevy::math::U8Vec2;
+pub mod rng;
+
+use bevy::{math::U8Vec2, prelude::*};
 use mcre_core::Block;
 
 use crate::chunk::{
     Chunk,
+    generate::rng::{ChunkRng, FractalNoiseSettings},
     math::{pos::ChunkPosition, size::ChunkSize},
 };
 
-// TODO: Create procedural
+pub fn generate_chunk(chunk_size: ChunkSize, loc: ChunkPosition, rng: &ChunkRng) -> Chunk {
+    let mut chunk = Chunk::empty(chunk_size, loc);
+    for x in chunk.size().iter() {
+        for z in chunk.size().iter() {
+            chunk.set((x, -64, z), Block::BEDROCK);
+        }
+    }
+
+    let world = loc.world_coord(chunk_size);
+    let world = Vec2::new(world.x, world.z);
+
+    let settings = FractalNoiseSettings {
+        freq: 0.007,
+        amplitude: 20.0,
+        octaves: 4,
+        persistence: 0.5,
+    };
+    for x in chunk.size().iter() {
+        for z in chunk.size().iter() {
+            for y in -63..50 {
+                let cur = world + Vec2::new(x as f32, z as f32);
+                let surface_y = rng.fractal_noise(cur, settings);
+                if (y as f64) < surface_y {
+                    chunk.set((x, y, z), Block::STONE);
+                }
+            }
+        }
+    }
+
+    chunk
+}
+
+#[allow(unused)]
 pub fn spawn_test_chunk(chunk_size: ChunkSize, loc: ChunkPosition) -> Chunk {
     let mut chunk = Chunk::empty(chunk_size, loc);
 
     for x in chunk.size().iter() {
         for y in chunk.size().iter() {
-            chunk.set((x as u8, 3, y as u8), Block::DIRT);
-            chunk.set((x as u8, 2, y as u8), Block::DIRT);
-            chunk.set((x as u8, 1, y as u8), Block::DIRT);
-            chunk.set((x as u8, 0, y as u8), Block::BEDROCK);
+            chunk.set((x, 3, y), Block::DIRT);
+            chunk.set((x, 2, y), Block::DIRT);
+            chunk.set((x, 1, y), Block::DIRT);
+            chunk.set((x, 0, y), Block::BEDROCK);
         }
     }
 

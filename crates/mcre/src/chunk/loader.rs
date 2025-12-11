@@ -15,7 +15,10 @@ use crate::{
     chunk::{
         Chunk, ChunkComponent,
         asset::ChunkAssetLoader,
-        generate::spawn_test_chunk,
+        generate::{
+            generate_chunk,
+            rng::{ChunkRng, SeedRng},
+        },
         math::{pos::ChunkPosition, size::ChunkSize},
         mesh::ChunkMeshBuilder,
     },
@@ -31,6 +34,7 @@ impl Plugin for ChunkLoaderPlugin {
     fn build(&self, app: &mut App) {
         app.init_asset::<Chunk>()
             .init_resource::<ChunkLoader>()
+            .init_resource::<SeedRng>()
             .init_asset_loader::<ChunkAssetLoader>()
             .insert_resource(self.config.clone())
             .insert_resource(Time::from_seconds(1. / 20.))
@@ -62,6 +66,8 @@ impl Plugin for ChunkLoaderPlugin {
                     .chain()
                     .run_if(in_state(AppState::InGame)),
             );
+        let seed = app.world_mut().resource_mut::<SeedRng>().generate();
+        app.insert_resource(ChunkRng::new(seed));
     }
 }
 
@@ -158,8 +164,11 @@ impl ChunkLoader {
             }
             true
         });
-        let batch_size =
-            config.batching.reading.min(loader.unloaded_chunks.len()) - loader.reading_chunks.len();
+        let batch_size = config
+            .batching
+            .reading
+            .min(loader.unloaded_chunks.len())
+            .saturating_sub(loader.reading_chunks.len());
         if batch_size > 0 {
             let iter = loader
                 .unloaded_chunks
@@ -186,16 +195,22 @@ impl ChunkLoader {
         mut loader: ResMut<ChunkLoader>,
         mut chunks: ResMut<Assets<Chunk>>,
         config: Res<ChunkLoaderConfig>,
+        state: Res<State<AppState>>,
+        rng: Res<ChunkRng>,
     ) {
         let batch = loader
             .generating_chunks
             .iter()
-            .take(config.batching.generating)
+            .take(match state.get() {
+                AppState::Loading => config.batching.loading,
+                _ => config.batching.generating,
+            })
             .copied()
             .collect::<Vec<_>>();
         for loc in batch {
             if loader.generating_chunks.remove(&loc) {
-                let handle = chunks.add(spawn_test_chunk(config.chunk_size, loc));
+                let handle = chunks.add(generate_chunk(config.chunk_size, loc, &rng));
+                // let handle = chunks.add(spawn_test_chunk(config.chunk_size, loc));
                 loader.rendering_chunks.insert(loc, handle);
             }
         }
@@ -313,6 +328,9 @@ impl ChunkLoader {
         config: &ChunkLoaderConfig,
         server: &AssetServer,
     ) {
+        if !config.enable_saving {
+            return;
+        }
         while !data.is_empty() {
             let batch_size = config.batching.saving.min(data.len());
             let values = data.drain(..batch_size).collect::<Vec<_>>();
@@ -348,6 +366,7 @@ pub struct ChunkLoaderConfig {
     /// Number of chunks rendered around the camera in the x, y, z directions
     pub chunk_radius: usize,
     pub chunk_size: ChunkSize,
+    pub enable_saving: bool,
     pub batching: Batching,
 }
 
@@ -355,6 +374,7 @@ impl Default for ChunkLoaderConfig {
     fn default() -> Self {
         ChunkLoaderConfig {
             chunk_radius: 10,
+            enable_saving: false,
             chunk_size: ChunkSize::new(16),
             batching: Default::default(),
         }
@@ -385,7 +405,7 @@ impl Default for Batching {
         Self {
             reading: 50,
             loading: 100,
-            generating: 50,
+            generating: 10,
             rendering: 50,
             saving: 10,
         }
