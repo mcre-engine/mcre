@@ -33,6 +33,7 @@ impl<'a> ChunkMeshBuilder<'a> {
 
     fn cull_faces(&self, pos: BlockPosition) -> (BVec3, BVec3) {
         fn check_occude(block: BlockState) -> bool {
+            // If it's an air block or if the block does NOT Occlude
             block.is_air() || !block.can_occlude()
         }
 

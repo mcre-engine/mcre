@@ -97,9 +97,9 @@ fn setup_light(mut commands: Commands) {
     });
     commands.spawn((
         DirectionalLight {
-            illuminance: 5000.0,
+            illuminance: 1000.0,
             ..Default::default()
         },
-        Transform::from_xyz(20.0, 10.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(20.0, 100.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
