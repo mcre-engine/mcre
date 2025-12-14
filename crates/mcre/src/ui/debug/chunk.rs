@@ -27,6 +27,7 @@ impl ChunkText {
         let _ = writeln!(&mut output, "\tGenerating: {}", loader.generating_chunks());
         let _ = writeln!(&mut output, "\tRendering: {}", loader.rendering_chunks());
         let _ = writeln!(&mut output, "\tLoaded: {}", loader.loaded_chunks());
+        let _ = writeln!(&mut output, "\tSaving: {}", loader.saving_chunks());
 
         output
     }

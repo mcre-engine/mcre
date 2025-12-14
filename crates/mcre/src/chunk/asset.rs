@@ -18,6 +18,12 @@ impl Default for ChunkAssetLoader<bincode::config::Configuration> {
     }
 }
 
+impl<C: bincode::config::Config> ChunkAssetLoader<C> {
+    pub fn to_bytes(&self, chunk: &Chunk) -> Result<Vec<u8>, bincode::error::EncodeError> {
+        bincode::serde::encode_to_vec(chunk, self.bincode_config)
+    }
+}
+
 impl<C: bincode::config::Config + Send + Sync + 'static> AssetLoader for ChunkAssetLoader<C> {
     type Asset = Chunk;
 
@@ -57,7 +63,7 @@ impl<C: bincode::config::Config + Send + Sync + 'static> AssetSaver for ChunkAss
         asset: bevy::asset::saver::SavedAsset<'_, Self::Asset>,
         _settings: &Self::Settings,
     ) -> std::result::Result<<Self::OutputLoader as AssetLoader>::Settings, Self::Error> {
-        let v = bincode::serde::encode_to_vec(asset.get(), self.bincode_config)?;
+        let v = self.to_bytes(asset.get())?;
         Ok(writer.write_all(&v).await?)
     }
 }

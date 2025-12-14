@@ -3,7 +3,12 @@ use mcre_core::Block;
 
 use crate::{
     AppState,
-    chunk::{Chunk, ChunkComponent, math::pos::BlockPosition, mesh::ChunkMeshBuilder},
+    chunk::{
+        Chunk, ChunkComponent,
+        loader::{ChunkLoader, ChunkLoaderConfig},
+        math::pos::BlockPosition,
+        mesh::ChunkMeshBuilder,
+    },
     textures::BlockTextures,
     ui::player::PlayerUi,
 };
@@ -30,10 +35,17 @@ impl PlayerInteractionPlugin {
         app_state: Res<State<AppState>>,
         mut next_app_state: ResMut<NextState<AppState>>,
         key: Res<ButtonInput<KeyCode>>,
+        mut loader: ResMut<ChunkLoader>,
+        config: Res<ChunkLoaderConfig>,
+        chunks: Res<Assets<Chunk>>,
+        server: Res<AssetServer>,
     ) {
         if key.just_released(KeyCode::Escape) {
             match app_state.get() {
-                AppState::InGame => next_app_state.set(AppState::Paused),
+                AppState::InGame => {
+                    next_app_state.set(AppState::Paused);
+                    loader.save_all_chunks(&chunks, &config, &server);
+                }
                 AppState::Paused => next_app_state.set(AppState::InGame),
                 _ => {}
             }
