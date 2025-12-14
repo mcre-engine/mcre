@@ -4,6 +4,8 @@ use bevy::{
 };
 use std::fmt::Write;
 
+use crate::chunk::generate::rng::ChunkRng;
+
 const TITLE: &str = concat!("MCRE ", env!("CARGO_PKG_VERSION"));
 
 #[derive(Component)]
@@ -22,7 +24,7 @@ impl TitleText {
         )
     }
 
-    fn format_text(diagnostics: &DiagnosticsStore) -> String {
+    fn format_text(diagnostics: &DiagnosticsStore, rng: &ChunkRng) -> String {
         let mut output = TITLE.to_owned();
         output.push('\n');
 
@@ -32,14 +34,16 @@ impl TitleText {
         {
             let _ = writeln!(&mut output, "FPS: {fps:.2}",);
         }
+        let _ = writeln!(&mut output, "Seed: {}", rng.seed());
         output
     }
 
     pub fn update_text_system(
         diagnostics: Res<DiagnosticsStore>,
+        rng: Res<ChunkRng>,
         mut text: Query<&mut Text, With<TitleText>>,
     ) {
         let mut text = text.single_mut().unwrap();
-        **text = Self::format_text(&diagnostics);
+        **text = Self::format_text(&diagnostics, &rng);
     }
 }
