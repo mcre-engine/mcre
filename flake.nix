@@ -2,7 +2,7 @@
   description = "MCRE Dev shell";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
@@ -28,7 +28,7 @@
 
               pkgs.clang
               pkgs.pkg-config
-              pkgs.jdk21
+              pkgs.jdk25
               pkgs.git
             ];
 

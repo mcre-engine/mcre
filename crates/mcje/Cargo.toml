@@ -21,5 +21,3 @@ jni = { workspace = true }
 mcje_downloader = { workspace = true }
 
 tokio = { workspace = true }
-
-java-locator = { workspace = true }

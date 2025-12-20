@@ -20,7 +20,7 @@ async fn main() {
     let version_release = root_manifest
         .versions
         .into_iter()
-        .find(|ver| ver.id == "1.21.11")
+        .find(|ver| ver.id == "26.1-snapshot-1")
         .unwrap();
 
     let version_manifest = version_release.fetch_manifest().await.unwrap();
@@ -32,6 +32,9 @@ async fn main() {
 
     for i in 0..jar_archive.len() {
         let mut entry = jar_archive.by_index(i).unwrap();
+        if !entry.is_file() {
+            continue;
+        }
         let name = entry.name();
 
         if name.starts_with("assets/minecraft") {
