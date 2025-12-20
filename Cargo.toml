@@ -36,8 +36,6 @@ url          = { version = "2", features = ["serde"] }
 futures-core = "0.3"
 bytes        = "1"
 zip          = "6"
-
-java-locator = "0.1"
 jni          = { version = "0.21", features = ["invocation"] }
 
 syn          = { version = "2.0", features = ["full"] }

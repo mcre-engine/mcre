@@ -20,7 +20,7 @@ async fn main() {
     let version_release = root_manifest
         .versions
         .into_iter()
-        .find(|ver| ver.id == "1.21.11")
+        .find(|ver| ver.id == "26.1-snapshot-1")
         .unwrap();
 
     let version_manifest = version_release.fetch_manifest().await.unwrap();

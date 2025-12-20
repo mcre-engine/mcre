@@ -52,9 +52,7 @@ pub struct VersionManifest {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct VersionDownloads {
     pub client: DownloadInfo,
-    pub client_mappings: DownloadInfo,
     pub server: DownloadInfo,
-    pub server_mappings: DownloadInfo,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
