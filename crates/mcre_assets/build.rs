@@ -32,6 +32,9 @@ async fn main() {
 
     for i in 0..jar_archive.len() {
         let mut entry = jar_archive.by_index(i).unwrap();
+        if !entry.is_file() {
+            continue;
+        }
         let name = entry.name();
 
         if name.starts_with("assets/minecraft") {
