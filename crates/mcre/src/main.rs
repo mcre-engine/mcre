@@ -3,7 +3,6 @@ mod chunk;
 mod player;
 mod textures;
 mod ui;
-mod utils;
 
 use bevy::{
     color::palettes::css::WHITE,
@@ -89,6 +88,9 @@ enum LoadingState {
     Chunks,
 }
 
+#[derive(Component)]
+struct Sun;
+
 fn setup_light(mut commands: Commands) {
     commands.insert_resource(AmbientLight {
         color: WHITE.into(),
@@ -96,6 +98,7 @@ fn setup_light(mut commands: Commands) {
         ..default()
     });
     commands.spawn((
+        Sun,
         DirectionalLight {
             illuminance: 1000.0,
             ..Default::default()

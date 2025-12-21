@@ -53,40 +53,38 @@ impl<'a> ChunkMeshBuilder<'a> {
     }
 
     fn update_mesh_attributes(&self, builder: &mut MeshBuilder, textures: &BlockTextures) {
-        let chunk_size = self.chunk.size();
-        for (i, block) in self.chunk.iter() {
+        for (pos, block) in self.chunk.iter() {
             if block.is_air() {
                 continue;
             }
-            let Some(uv_rect) = textures.get_uv_rect(*block) else {
+            let Some(uv_rect) = textures.get_uv_rect(block) else {
                 continue;
             };
-            let cur = BlockPosition::from_index(i, *chunk_size);
             //TODO: Fix to use known data about block states
             let block_color = match block.block() {
                 Block::OAK_LEAVES => GREEN,
                 _ => WHITE,
             };
 
-            let (positive, negative) = self.cull_faces(cur);
+            let (positive, negative) = self.cull_faces(pos);
 
             if positive.x {
-                builder.push_east(cur, uv_rect, block_color);
+                builder.push_east(pos, uv_rect, block_color);
             }
             if positive.y {
-                builder.push_up(cur, uv_rect, block_color);
+                builder.push_up(pos, uv_rect, block_color);
             }
             if positive.z {
-                builder.push_south(cur, uv_rect, block_color);
+                builder.push_south(pos, uv_rect, block_color);
             }
             if negative.x {
-                builder.push_west(cur, uv_rect, block_color);
+                builder.push_west(pos, uv_rect, block_color);
             }
             if negative.y {
-                builder.push_down(cur, uv_rect, block_color);
+                builder.push_down(pos, uv_rect, block_color);
             }
             if negative.z {
-                builder.push_north(cur, uv_rect, block_color);
+                builder.push_north(pos, uv_rect, block_color);
             }
         }
     }

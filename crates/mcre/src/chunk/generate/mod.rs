@@ -17,7 +17,7 @@ pub fn generate_chunk(chunk_size: ChunkSize, loc: ChunkPosition, rng: &ChunkRng)
         }
     }
 
-    let world = loc.world_coord(chunk_size);
+    let world = loc.into_world_coord(chunk_size);
     let world = Vec2::new(world.x, world.z);
 
     let settings = FractalNoiseSettings {
