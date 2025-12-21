@@ -118,7 +118,7 @@ impl ChunkLoader {
         mut loader: ResMut<ChunkLoader>,
     ) {
         let camera_loc = camera.single().unwrap().translation;
-        let cur_chunk = config.chunk_size.chunk_coord(camera_loc);
+        let cur_chunk = ChunkPosition::from_world_coord(camera_loc, config.chunk_size);
         for loc in cur_chunk.iter_around(config.chunk_radius as u64) {
             if !loader.contains(&loc) {
                 loader.unloaded_chunks.insert(loc);
@@ -273,7 +273,7 @@ impl ChunkLoader {
             return;
         }
         let camera_loc = camera.single().unwrap().translation;
-        let cur_chunk = config.chunk_size.chunk_coord(camera_loc);
+        let cur_chunk = ChunkPosition::from_world_coord(camera_loc, config.chunk_size);
         let radius = config.chunk_radius as u64;
         let remove_chunks = components
             .iter()

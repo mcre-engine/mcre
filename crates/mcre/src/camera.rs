@@ -1,6 +1,8 @@
+use std::f32::consts::PI;
+
 use bevy::{input::mouse::MouseMotion, prelude::*};
 
-use crate::{AppState, LoadingState};
+use crate::{AppState, LoadingState, Sun};
 
 pub struct FirstPersonPlugin {
     pub transform: Transform,
@@ -56,38 +58,57 @@ fn camera_rotation(
         .expect("must have camera with the use of this system");
 
     for event in mouse_motion_events.read() {
-        let yaw_quat = Quat::from_axis_angle(Vec3::Y, (-event.delta.x * rot_speed.0).to_radians());
-        let pitch_quat =
-            Quat::from_axis_angle(Vec3::X, (-event.delta.y * rot_speed.0).to_radians());
-        transform.rotation = yaw_quat * transform.rotation * pitch_quat;
+        let yaw_rotation = Quat::from_rotation_y((-event.delta.x * rot_speed.0).to_radians());
+        let mut pitch_delta = (-event.delta.y * rot_speed.0).to_radians();
+        // Clamp to up and down
+        if pitch_delta > 0. {
+            pitch_delta = pitch_delta.min(transform.forward().angle_between(Vec3::Y));
+        } else {
+            pitch_delta = pitch_delta.max(-transform.forward().angle_between(-Vec3::Y));
+        }
+        transform.rotation = yaw_rotation * transform.rotation * Quat::from_rotation_x(pitch_delta);
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn camera_movement(
-    mut camera: Query<(&mut Transform, &CameraMovementSpeed), With<Camera>>,
+    mut params: ParamSet<(
+        Query<&mut Transform, With<Sun>>,
+        Query<(&mut Transform, &CameraMovementSpeed), With<Camera>>,
+    )>,
     key: Res<ButtonInput<KeyCode>>,
 ) {
+    let mut camera = params.p1();
     let (mut transform, movement_speed) = camera
         .single_mut()
         .expect("must have camera with the use of this system");
+
     if key.pressed(KeyCode::KeyW) {
-        let mut v = Vec3::from(transform.forward());
-        v.y = 0.0;
-        transform.translation += v.normalize() * movement_speed.0;
+        let dot = transform.forward().dot(Vec3::Y).abs();
+        let forward = if ((1. - 0.1)..=(1. + 0.1)).contains(&dot) {
+            Vec3::from(transform.right()).rotate_y(PI / 2.).with_y(0.)
+        } else {
+            Vec3::from(transform.forward()).with_y(0.)
+        }
+        .normalize();
+        transform.translation += forward * movement_speed.0;
     }
     if key.pressed(KeyCode::KeyS) {
-        let mut v = Vec3::from(transform.back());
-        v.y = 0.0;
-        transform.translation += v.normalize() * movement_speed.0;
+        let dot = transform.back().dot(Vec3::Y).abs();
+        let back = if ((1. - 0.1)..=(1. + 0.1)).contains(&dot) {
+            Vec3::from(transform.right()).rotate_y(-PI / 2.).with_y(0.)
+        } else {
+            Vec3::from(transform.back()).with_y(0.)
+        }
+        .normalize();
+        transform.translation += back * movement_speed.0;
     }
     if key.pressed(KeyCode::KeyA) {
-        let mut v = Vec3::from(transform.left());
-        v.y = 0.0;
+        let v = Vec3::from(transform.left()).with_y(0.);
         transform.translation += v.normalize() * movement_speed.0;
     }
     if key.pressed(KeyCode::KeyD) {
-        let mut v = Vec3::from(transform.right());
-        v.y = 0.0;
+        let v = Vec3::from(transform.right()).with_y(0.);
         transform.translation += v.normalize() * movement_speed.0;
     }
     if key.pressed(KeyCode::Space) {
@@ -96,4 +117,8 @@ fn camera_movement(
     if key.pressed(KeyCode::ShiftLeft) {
         transform.translation += Vec3::new(0.0, -movement_speed.0, 0.0);
     }
+    let current = transform.translation;
+    let mut sun = params.p0();
+    let mut sun = sun.single_mut().unwrap();
+    *sun = sun.looking_at(current, Vec3::Y);
 }

@@ -120,7 +120,7 @@ impl ChunkUpdates {
     }
 
     /// Returns the block position in the chunk that is associated with entity
-    fn cast_ray(
+    pub fn cast_ray(
         camera: &Transform,
         ray_cast: &mut MeshRayCast,
         components: &Query<&Transform, With<ChunkComponent>>,

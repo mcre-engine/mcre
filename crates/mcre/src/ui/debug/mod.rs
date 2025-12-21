@@ -3,11 +3,20 @@ mod chunk;
 mod title;
 use std::f32::consts::PI;
 
-use bevy::{color::palettes::css::RED, diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
+use bevy::{
+    color::palettes::css::{BLACK, GREEN, RED},
+    diagnostic::FrameTimeDiagnosticsPlugin,
+    prelude::*,
+};
 
 use crate::{
     AppState,
-    chunk::loader::{ChunkLoader, ChunkLoaderConfig},
+    chunk::{
+        ChunkComponent,
+        loader::{ChunkLoader, ChunkLoaderConfig},
+        math::pos::ChunkPosition,
+    },
+    player::ChunkUpdates,
     ui::debug::{camera::PlayerText, chunk::ChunkText, title::TitleText},
 };
 
@@ -54,13 +63,14 @@ impl DebugMenuPlugin {
         mut commands: Commands,
         camera: Query<&Transform, With<Camera>>,
         loader: Res<ChunkLoader>,
+        config: Res<ChunkLoaderConfig>,
     ) {
         let camera = camera.single().unwrap();
         commands
             .spawn(DebugUi.into_bundle())
             .with_children(|parent| {
                 parent.spawn(TitleText.into_bundle());
-                parent.spawn(PlayerText.into_bundle(camera));
+                parent.spawn(PlayerText.into_bundle(camera, config.chunk_size));
                 parent.spawn(ChunkText.into_bundle(&loader));
             });
     }
@@ -104,19 +114,19 @@ fn draw_gizmos(
     mut gizmos: Gizmos,
     config: Res<ChunkLoaderConfig>,
     camera: Query<&Transform, With<Camera>>,
+    components: Query<&Transform, With<ChunkComponent>>,
     mut ray_cast: MeshRayCast,
 ) {
     let camera = camera.single().unwrap();
     let pos = camera.translation;
-    let chunk_coord = config.chunk_size.chunk_coord(pos);
-
-    let size = config.chunk_size.as_usize();
+    let chunk_coord = ChunkPosition::from_world_coord(pos, config.chunk_size);
+    let size = config.chunk_size.as_f32();
 
     gizmos.grid(
         Isometry3d::from_translation(Vec3::new(
-            chunk_coord.x as f32 * size as f32 + (size / 2) as f32,
-            (size / 2) as f32,
-            chunk_coord.y as f32 * size as f32,
+            chunk_coord.x as f32 * size + (size / 2.),
+            size / 2.,
+            chunk_coord.y as f32 * size,
         )),
         UVec2::new(16, 100),
         Vec2::splat(1.),
@@ -126,9 +136,9 @@ fn draw_gizmos(
     gizmos.grid(
         Isometry3d::new(
             Vec3::new(
-                chunk_coord.x as f32 * size as f32,
-                (size / 2) as f32,
-                chunk_coord.y as f32 * size as f32 + (size / 2) as f32,
+                chunk_coord.x as f32 * size,
+                size / 2.,
+                chunk_coord.y as f32 * size + (size / 2.),
             ),
             Quat::from_rotation_y(PI / 2.),
         ),
@@ -140,9 +150,9 @@ fn draw_gizmos(
     gizmos.grid(
         Isometry3d::new(
             Vec3::new(
-                chunk_coord.x as f32 * size as f32 + (size / 2) as f32,
-                (size / 2) as f32,
-                chunk_coord.y as f32 * size as f32 + size as f32,
+                chunk_coord.x as f32 * size + (size / 2.),
+                size / 2.,
+                chunk_coord.y as f32 * size + size,
             ),
             Quat::from_rotation_y(0.),
         ),
@@ -154,9 +164,9 @@ fn draw_gizmos(
     gizmos.grid(
         Isometry3d::new(
             Vec3::new(
-                chunk_coord.x as f32 * size as f32 + size as f32,
-                (size / 2) as f32,
-                chunk_coord.y as f32 * size as f32 + (size / 2) as f32,
+                chunk_coord.x as f32 * size + size,
+                size / 2.,
+                chunk_coord.y as f32 * size + (size / 2.),
             ),
             Quat::from_rotation_y(PI / 2.),
         ),
@@ -173,10 +183,18 @@ fn draw_gizmos(
         .filter(|(_, hit)| hit.distance < 5.)
     {
         gizmos.sphere(hit.point, 0.2, RED);
+        gizmos.line(
+            hit.point - hit.normal / 2.,
+            hit.point + hit.normal / 2.,
+            GREEN,
+        );
     }
 
-    // gizmos.cuboid(
-    //     Transform::from_translation(Vec3::Y * 0.5).with_scale(Vec3::splat(1.)),
-    //     BLACK,
-    // );
+    if let Some((pos, _entity)) = ChunkUpdates::cast_ray(camera, &mut ray_cast, &components, 1.) {
+        let world = pos.into_world_coord(chunk_coord, config.chunk_size) + Vec3::splat(0.5);
+        gizmos.cuboid(
+            Transform::from_translation(world).with_scale(Vec3::splat(1.0)),
+            BLACK,
+        );
+    }
 }
