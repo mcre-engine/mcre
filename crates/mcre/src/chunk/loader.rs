@@ -49,8 +49,18 @@ impl Plugin for ChunkLoaderPlugin {
                     ChunkLoader::handle_generation_tasks,
                     ChunkLoader::queue_mesh_tasks,
                     ChunkLoader::handle_mesh_tasks,
-                    |loader: Res<ChunkLoader>, mut next_state: ResMut<NextState<AppState>>| {
-                        if loader.unloaded_chunks.is_empty() && loader.rendering_chunks.is_empty() {
+                    |loader: Res<ChunkLoader>,
+                     gen_tasks: Query<&GenerationTask>,
+                     mesh_tasks: Query<&MeshingTask>,
+                     mut next_state: ResMut<NextState<AppState>>| {
+                        // Only transition when all chunks are fully loaded
+                        if loader.unloaded_chunks.is_empty()
+                            && loader.generating_chunks.is_empty()
+                            && loader.rendering_chunks.is_empty()
+                            && loader.meshing_chunks.is_empty()
+                            && gen_tasks.is_empty()
+                            && mesh_tasks.is_empty()
+                        {
                             next_state.set(AppState::InGame);
                         }
                     },
@@ -210,26 +220,41 @@ impl ChunkLoader {
         config: Res<ChunkLoaderConfig>,
         state: Res<State<AppState>>,
         rng: Res<ChunkRng>,
+        existing_tasks: Query<&GenerationTask>,
+        camera: Query<&Transform, With<Camera>>,
     ) {
         if loader.generating_chunks.is_empty() {
             return;
         }
 
+        let current_tasks = existing_tasks.iter().count();
+        if current_tasks >= config.batching.max_generating_tasks {
+            return;
+        }
+        let available_slots = config.batching.max_generating_tasks - current_tasks;
+
         let batch_size = match state.get() {
             AppState::Loading => config.batching.loading,
             _ => config.batching.generating,
-        };
+        }
+        .min(available_slots);
 
-        let batch: Vec<ChunkPosition> = loader
-            .generating_chunks
-            .iter()
-            .take(batch_size)
-            .copied()
-            .collect();
+        let camera_loc = camera.single().unwrap().translation;
+        let camera_chunk = ChunkPosition::from_world_coord(camera_loc, config.chunk_size);
+
+        let mut chunks_to_generate: Vec<ChunkPosition> =
+            loader.generating_chunks.iter().copied().collect();
+        chunks_to_generate.sort_by_key(|pos| {
+            let dx = pos.x - camera_chunk.x;
+            let dy = pos.y - camera_chunk.y;
+            dx * dx + dy * dy
+        });
+
+        let batch: Vec<ChunkPosition> = chunks_to_generate.into_iter().take(batch_size).collect();
 
         let task_pool = AsyncComputeTaskPool::get();
         let chunk_size = config.chunk_size;
-        let rng = rng.clone(); // ChunkRng is now Clone (cheap - just copies the Perlin seed)
+        let rng = rng.clone();
 
         for loc in batch {
             loader.generating_chunks.remove(&loc);
@@ -260,7 +285,7 @@ impl ChunkLoader {
     pub fn despawn_chunks(
         mut commands: Commands,
         camera: Query<&Transform, With<Camera>>,
-        components: Query<(Entity, &ChunkComponent)>,
+        components: Query<(Entity, &ChunkComponent), (With<Mesh3d>, Without<MeshingTask>)>,
         mut chunks: ResMut<Assets<Chunk>>,
         config: Res<ChunkLoaderConfig>,
         mut loader: ResMut<ChunkLoader>,
@@ -364,23 +389,43 @@ impl ChunkLoader {
         textures: Res<BlockTextures>,
         config: Res<ChunkLoaderConfig>,
         state: Res<State<AppState>>,
+        existing_tasks: Query<&MeshingTask>,
+        camera: Query<&Transform, With<Camera>>,
     ) {
         if loader.rendering_chunks.is_empty() {
             return;
         }
 
+        // Limit concurrent meshing tasks
+        let current_tasks = existing_tasks.iter().count();
+        if current_tasks >= config.batching.max_meshing_tasks {
+            return;
+        }
+        let available_slots = config.batching.max_meshing_tasks - current_tasks;
+
         let Some(texture_lookup) = textures.lookup() else {
             return;
         };
 
-        let length = loader.rendering_chunks.len();
-        let batch_size = config.batching.rendering(state.get()).min(length);
-        let batch_keys: Vec<ChunkPosition> = loader
-            .rendering_chunks
-            .keys()
-            .take(batch_size)
-            .copied()
-            .collect();
+        // Get camera chunk position for distance sorting
+        let camera_loc = camera.single().unwrap().translation;
+        let camera_chunk = ChunkPosition::from_world_coord(camera_loc, config.chunk_size);
+
+        // Sort chunks by distance to camera (closest first)
+        let mut chunks_to_mesh: Vec<ChunkPosition> =
+            loader.rendering_chunks.keys().copied().collect();
+        chunks_to_mesh.sort_by_key(|pos| {
+            let dx = pos.x - camera_chunk.x;
+            let dy = pos.y - camera_chunk.y;
+            dx * dx + dy * dy
+        });
+
+        let batch_size = config
+            .batching
+            .rendering(state.get())
+            .min(chunks_to_mesh.len())
+            .min(available_slots);
+        let batch_keys: Vec<ChunkPosition> = chunks_to_mesh.into_iter().take(batch_size).collect();
 
         let task_pool = AsyncComputeTaskPool::get();
 
@@ -463,6 +508,10 @@ pub struct Batching {
     generating: usize,
     rendering: usize,
     saving: usize,
+    /// Maximum concurrent generation tasks
+    pub max_generating_tasks: usize,
+    /// Maximum concurrent meshing tasks
+    pub max_meshing_tasks: usize,
 }
 
 impl Batching {
@@ -480,9 +529,11 @@ impl Default for Batching {
         Self {
             reading: 50,
             loading: 100,
-            generating: 10,
+            generating: 20,
             rendering: 50,
             saving: 10,
+            max_generating_tasks: 8,
+            max_meshing_tasks: 16,
         }
     }
 }
