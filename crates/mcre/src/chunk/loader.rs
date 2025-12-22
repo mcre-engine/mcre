@@ -45,7 +45,8 @@ impl Plugin for ChunkLoaderPlugin {
                 (
                     ChunkLoader::read_chunks,
                     ChunkLoader::load_chunks,
-                    ChunkLoader::generate_chunks,
+                    ChunkLoader::queue_generation_tasks,
+                    ChunkLoader::handle_generation_tasks,
                     ChunkLoader::queue_mesh_tasks,
                     ChunkLoader::handle_mesh_tasks,
                     |loader: Res<ChunkLoader>, mut next_state: ResMut<NextState<AppState>>| {
@@ -62,7 +63,8 @@ impl Plugin for ChunkLoaderPlugin {
                 (
                     ChunkLoader::read_chunks,
                     ChunkLoader::load_chunks,
-                    ChunkLoader::generate_chunks,
+                    ChunkLoader::queue_generation_tasks,
+                    ChunkLoader::handle_generation_tasks,
                     ChunkLoader::queue_mesh_tasks,
                     ChunkLoader::handle_mesh_tasks,
                     ChunkLoader::despawn_chunks,
@@ -202,27 +204,55 @@ impl ChunkLoader {
         }
     }
 
-    pub fn generate_chunks(
+    pub fn queue_generation_tasks(
+        mut commands: Commands,
         mut loader: ResMut<ChunkLoader>,
-        mut chunks: ResMut<Assets<Chunk>>,
         config: Res<ChunkLoaderConfig>,
         state: Res<State<AppState>>,
         rng: Res<ChunkRng>,
     ) {
-        let batch = loader
+        if loader.generating_chunks.is_empty() {
+            return;
+        }
+
+        let batch_size = match state.get() {
+            AppState::Loading => config.batching.loading,
+            _ => config.batching.generating,
+        };
+
+        let batch: Vec<ChunkPosition> = loader
             .generating_chunks
             .iter()
-            .take(match state.get() {
-                AppState::Loading => config.batching.loading,
-                _ => config.batching.generating,
-            })
+            .take(batch_size)
             .copied()
-            .collect::<Vec<_>>();
+            .collect();
+
+        let task_pool = AsyncComputeTaskPool::get();
+        let chunk_size = config.chunk_size;
+        let rng = rng.clone(); // ChunkRng is now Clone (cheap - just copies the Perlin seed)
+
         for loc in batch {
-            if loader.generating_chunks.remove(&loc) {
-                let handle = chunks.add(generate_chunk(config.chunk_size, loc, &rng));
-                // let handle = chunks.add(spawn_test_chunk(config.chunk_size, loc));
+            loader.generating_chunks.remove(&loc);
+
+            let rng = rng.clone();
+            let task = task_pool.spawn(async move { generate_chunk(chunk_size, loc, &rng) });
+
+            commands.spawn(GenerationTask { pos: loc, task });
+        }
+    }
+
+    pub fn handle_generation_tasks(
+        mut commands: Commands,
+        mut chunks: ResMut<Assets<Chunk>>,
+        mut loader: ResMut<ChunkLoader>,
+        mut query: Query<(Entity, &mut GenerationTask)>,
+    ) {
+        for (entity, mut gen_task) in &mut query {
+            if let Some(chunk) = future::block_on(future::poll_once(&mut gen_task.task)) {
+                let loc = gen_task.pos;
+                let handle = chunks.add(chunk);
                 loader.rendering_chunks.insert(loc, handle);
+                commands.entity(entity).despawn();
             }
         }
     }
@@ -459,3 +489,9 @@ impl Default for Batching {
 
 #[derive(Component)]
 pub struct MeshingTask(Task<Mesh>);
+
+#[derive(Component)]
+pub struct GenerationTask {
+    pos: ChunkPosition,
+    task: Task<Chunk>,
+}
