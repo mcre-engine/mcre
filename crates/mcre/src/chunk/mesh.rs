@@ -8,7 +8,7 @@ use mcre_core::{Block, BlockState};
 
 use crate::{
     chunk::{Chunk, math::pos::BlockPosition},
-    textures::BlockTextures,
+    textures::TextureLookup,
 };
 
 pub struct ChunkMeshBuilder<'a> {
@@ -20,7 +20,7 @@ impl<'a> ChunkMeshBuilder<'a> {
         ChunkMeshBuilder { chunk }
     }
 
-    pub fn update_mesh(&self, mesh: &mut Mesh, textures: &BlockTextures) {
+    pub fn update_mesh(&self, mesh: &mut Mesh, textures: &TextureLookup) {
         let mut builder = MeshBuilder::default();
         self.update_mesh_attributes(&mut builder, textures);
         //TODO Optimize in place?
@@ -52,7 +52,7 @@ impl<'a> ChunkMeshBuilder<'a> {
         (positive_faces, negative_faces)
     }
 
-    fn update_mesh_attributes(&self, builder: &mut MeshBuilder, textures: &BlockTextures) {
+    fn update_mesh_attributes(&self, builder: &mut MeshBuilder, textures: &TextureLookup) {
         for (pos, block) in self.chunk.iter() {
             if block.is_air() {
                 continue;
@@ -89,7 +89,7 @@ impl<'a> ChunkMeshBuilder<'a> {
         }
     }
 
-    pub fn build(self, textures: &BlockTextures) -> Mesh {
+    pub fn build(self, textures: &TextureLookup) -> Mesh {
         let mut builder = MeshBuilder::default();
         self.update_mesh_attributes(&mut builder, textures);
 

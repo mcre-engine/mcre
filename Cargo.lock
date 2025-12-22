@@ -3534,6 +3534,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bincode",
+ "futures-lite",
  "mcre_core",
  "noise",
  "rand 0.9.2",

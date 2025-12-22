@@ -1,9 +1,41 @@
+use std::sync::Arc;
+
 use bevy::{asset::LoadState, platform::collections::HashMap, prelude::*};
 use mcre_core::{Block, BlockState};
 
 use crate::LoadingState;
 
 const BATCH_SIZE: usize = 10;
+
+/// Lightweight, cheaply cloneable texture lookup for async mesh building.
+/// Contains only the data needed for UV calculations.
+#[derive(Clone)]
+pub struct TextureLookup {
+    inner: Arc<TextureLookupInner>,
+}
+
+struct TextureLookupInner {
+    atlas_textures: Vec<URect>,
+    atlas_size: UVec2,
+    blocks: HashMap<Block, usize>,
+}
+
+impl TextureLookup {
+    pub fn get_uv_rect(&self, block: BlockState) -> Option<Rect> {
+        let idx = self.inner.blocks.get(&block.block())?;
+        let size = self.inner.atlas_textures[*idx];
+        Some(Rect {
+            min: Vec2::new(
+                size.min.x as f32 / self.inner.atlas_size.x as f32,
+                size.min.y as f32 / self.inner.atlas_size.y as f32,
+            ),
+            max: Vec2::new(
+                size.max.x as f32 / self.inner.atlas_size.x as f32,
+                size.max.y as f32 / self.inner.atlas_size.y as f32,
+            ),
+        })
+    }
+}
 
 #[derive(Resource)]
 pub enum BlockTextures {
@@ -15,8 +47,7 @@ pub enum BlockTextures {
     },
     Loaded {
         texture: Handle<StandardMaterial>,
-        atlas: TextureAtlasLayout,
-        blocks: HashMap<Block, usize>,
+        lookup: TextureLookup,
     },
 }
 
@@ -113,11 +144,15 @@ impl BlockTextures {
             ..default()
         });
 
-        *self = BlockTextures::Loaded {
-            atlas,
-            blocks,
-            texture,
+        let lookup = TextureLookup {
+            inner: Arc::new(TextureLookupInner {
+                atlas_textures: atlas.textures,
+                atlas_size: atlas.size,
+                blocks,
+            }),
         };
+
+        *self = BlockTextures::Loaded { texture, lookup };
         true
     }
 
@@ -135,23 +170,10 @@ impl BlockTextures {
         }
     }
 
-    pub fn get_uv_rect(&self, block: BlockState) -> Option<Rect> {
+    pub fn lookup(&self) -> Option<TextureLookup> {
         match self {
             BlockTextures::Loading { .. } => None,
-            BlockTextures::Loaded { atlas, blocks, .. } => {
-                let idx = blocks.get(&block.block())?;
-                let size = atlas.textures[*idx];
-                Some(Rect {
-                    min: Vec2::new(
-                        size.min.x as f32 / atlas.size.x as f32,
-                        size.min.y as f32 / atlas.size.y as f32,
-                    ),
-                    max: Vec2::new(
-                        size.max.x as f32 / atlas.size.x as f32,
-                        size.max.y as f32 / atlas.size.y as f32,
-                    ),
-                })
-            }
+            BlockTextures::Loaded { lookup, .. } => Some(lookup.clone()),
         }
     }
 
