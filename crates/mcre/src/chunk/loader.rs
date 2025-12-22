@@ -1,13 +1,11 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, atomic::AtomicUsize},
-};
+use std::path::PathBuf;
 
 use bevy::{
     asset::{AssetLoadError, AssetPath, LoadState, io::AssetReaderError},
-    platform::collections::{HashMap, HashSet},
+    ecs::{system::SystemState, world::CommandQueue},
+    platform::collections::HashMap,
     prelude::*,
-    tasks::IoTaskPool,
+    tasks::{AsyncComputeTaskPool, IoTaskPool, Task, TaskPool, futures},
 };
 
 use crate::{
@@ -37,16 +35,13 @@ impl Plugin for ChunkLoaderPlugin {
             .init_resource::<SeedRng>()
             .init_asset_loader::<ChunkAssetLoader>()
             .insert_resource(self.config.clone())
-            .insert_resource(Time::from_seconds(1. / 20.))
             .add_systems(
-                FixedUpdate,
+                Update,
                 (
                     ChunkLoader::read_chunks,
                     ChunkLoader::load_chunks,
-                    ChunkLoader::generate_chunks,
-                    ChunkLoader::spawn_chunks,
                     |loader: Res<ChunkLoader>, mut next_state: ResMut<NextState<AppState>>| {
-                        if loader.unloaded_chunks.is_empty() && loader.rendering_chunks.is_empty() {
+                        if loader.has_loaded() {
                             next_state.set(AppState::InGame);
                         }
                     },
@@ -55,12 +50,10 @@ impl Plugin for ChunkLoaderPlugin {
                     .run_if(in_state(LoadingState::Chunks)),
             )
             .add_systems(
-                FixedUpdate,
+                Update,
                 (
                     ChunkLoader::read_chunks,
                     ChunkLoader::load_chunks,
-                    ChunkLoader::generate_chunks,
-                    ChunkLoader::spawn_chunks,
                     ChunkLoader::despawn_chunks,
                 )
                     .chain()
@@ -73,190 +66,145 @@ impl Plugin for ChunkLoaderPlugin {
 
 #[derive(Resource, Default, Debug)]
 pub struct ChunkLoader {
-    //TODO: Convert to some faster lookups
-    unloaded_chunks: HashSet<ChunkPosition>,
-    reading_chunks: HashMap<ChunkPosition, Handle<Chunk>>,
-    generating_chunks: HashSet<ChunkPosition>,
-    rendering_chunks: HashMap<ChunkPosition, Handle<Chunk>>,
-    loaded_chunks: HashMap<ChunkPosition, Handle<Chunk>>,
-    saving_chunks: Arc<AtomicUsize>,
+    chunk_states: HashMap<ChunkPosition, ChunkState>,
 }
 
 impl ChunkLoader {
+    pub fn has_loaded(&self) -> bool {
+        self.chunk_states
+            .values()
+            .all(|s| matches!(s, ChunkState::Loaded(_)))
+    }
+
     pub fn unloaded_chunks(&self) -> usize {
-        self.unloaded_chunks.len()
+        self.chunk_states
+            .values()
+            .filter(|s| matches!(s, ChunkState::Reading(_)))
+            .count()
     }
 
     pub fn generating_chunks(&self) -> usize {
-        self.generating_chunks.len()
+        self.chunk_states
+            .values()
+            .filter(|s| matches!(s, ChunkState::Generating(_)))
+            .count()
     }
 
     pub fn rendering_chunks(&self) -> usize {
-        self.rendering_chunks.len()
+        self.chunk_states
+            .values()
+            .filter(|s| matches!(s, ChunkState::Render(_)))
+            .count()
     }
 
     pub fn loaded_chunks(&self) -> usize {
-        self.loaded_chunks.len()
+        self.chunk_states
+            .values()
+            .filter(|s| matches!(s, ChunkState::Loaded(_)))
+            .count()
     }
 
     pub fn saving_chunks(&self) -> usize {
-        self.saving_chunks
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    fn contains(&self, pos: &ChunkPosition) -> bool {
-        self.unloaded_chunks.contains(pos)
-            || self.reading_chunks.contains_key(pos)
-            || self.generating_chunks.contains(pos)
-            || self.rendering_chunks.contains_key(pos)
-            || self.loaded_chunks.contains_key(pos)
+        self.chunk_states
+            .values()
+            .filter(|s| matches!(s, ChunkState::Saving))
+            .count()
     }
 
     pub fn read_chunks(
         camera: Query<&Transform, With<Camera>>,
         config: Res<ChunkLoaderConfig>,
+        assets: Res<AssetServer>,
         mut loader: ResMut<ChunkLoader>,
     ) {
         let camera_loc = camera.single().unwrap().translation;
         let cur_chunk = ChunkPosition::from_world_coord(camera_loc, config.chunk_size);
         for loc in cur_chunk.iter_around(config.chunk_radius as u64) {
-            if !loader.contains(&loc) {
-                loader.unloaded_chunks.insert(loc);
+            if !loader.chunk_states.contains_key(&loc) {
+                let handle = assets.load(format!("chunks/{}_{}.mcra", loc.x, loc.y));
+                loader.chunk_states.insert(loc, ChunkState::Reading(handle));
             }
         }
     }
 
     pub fn load_chunks(
-        mut loader: ResMut<ChunkLoader>,
-        chunks: Res<Assets<Chunk>>,
-        assets: Res<AssetServer>,
-        config: Res<ChunkLoaderConfig>,
-    ) {
-        let mut generate_chunks = Vec::new();
-        let mut file_chunks = Vec::new();
-        loader.reading_chunks.retain(|loc, handle| {
-            match assets.get_load_state(handle.id()) {
-                None => {
-                    if chunks.get(handle.id()).is_some() {
-                        // Chunk is already loaded as an asset
-                        return false;
-                    }
-                }
-                Some(LoadState::Failed(err)) => {
-                    match &*err {
-                        AssetLoadError::AssetReaderError(AssetReaderError::NotFound(_)) => {}
-                        err => {
-                            warn!("Error loading chunk ({}, {}): {err:?}", loc.x, loc.y);
-                        }
-                    }
-                    // Chunk failed to load so we regenerate chunk
-                    generate_chunks.push(*loc);
-                    // new_chunks.push((*loc, chunks.add(spawn_test_chunk(config.chunk_size, *loc))));
-                    return false;
-                }
-                Some(LoadState::Loaded) => {
-                    file_chunks.push((*loc, handle.clone()));
-                    return false;
-                }
-                _ => {
-                    // waiting to finish loading
-                }
-            }
-            true
-        });
-        let batch_size = config
-            .batching
-            .reading
-            .min(loader.unloaded_chunks.len())
-            .saturating_sub(loader.reading_chunks.len());
-        if batch_size > 0 {
-            let iter = loader
-                .unloaded_chunks
-                .iter()
-                .copied()
-                .take(batch_size)
-                .collect::<Vec<_>>();
-            for loc in iter {
-                loader.unloaded_chunks.remove(&loc);
-                loader
-                    .reading_chunks
-                    .insert(loc, assets.load(format!("chunks/{}_{}.mcra", loc.x, loc.y)));
-            }
-        }
-        if !file_chunks.is_empty() {
-            loader.rendering_chunks.extend(file_chunks);
-        }
-        if !generate_chunks.is_empty() {
-            loader.generating_chunks.extend(generate_chunks);
-        }
-    }
-
-    pub fn generate_chunks(
-        mut loader: ResMut<ChunkLoader>,
-        mut chunks: ResMut<Assets<Chunk>>,
-        config: Res<ChunkLoaderConfig>,
-        state: Res<State<AppState>>,
-        rng: Res<ChunkRng>,
-    ) {
-        let batch = loader
-            .generating_chunks
-            .iter()
-            .take(match state.get() {
-                AppState::Loading => config.batching.loading,
-                _ => config.batching.generating,
-            })
-            .copied()
-            .collect::<Vec<_>>();
-        for loc in batch {
-            if loader.generating_chunks.remove(&loc) {
-                let handle = chunks.add(generate_chunk(config.chunk_size, loc, &rng));
-                // let handle = chunks.add(spawn_test_chunk(config.chunk_size, loc));
-                loader.rendering_chunks.insert(loc, handle);
-            }
-        }
-    }
-
-    /// Spawn chunks that are in the `UnloadedChunk` state
-    pub fn spawn_chunks(
         mut commands: Commands,
         mut loader: ResMut<ChunkLoader>,
-        mut meshes: ResMut<Assets<Mesh>>,
-        state: Res<State<AppState>>,
-        textures: Res<BlockTextures>,
+        mut chunks: ResMut<Assets<Chunk>>,
+        assets: Res<AssetServer>,
         config: Res<ChunkLoaderConfig>,
-        chunks: Res<Assets<Chunk>>,
+        textures: Res<BlockTextures>,
+        rng: Res<ChunkRng>,
     ) {
-        if loader.rendering_chunks.is_empty() {
-            return;
-        }
-        let length = loader.rendering_chunks.len();
-        let batch_size = config.batching.rendering(state.get()).min(length);
-        let batch = loader
-            .rendering_chunks
-            .keys()
-            .copied()
-            .take(batch_size)
-            .collect::<Vec<_>>();
-        if batch.is_empty() {
-            return;
-        }
-
-        let span = info_span!("chunk_spawning");
-        span.in_scope(|| {
-            let batch = batch
-                .into_iter()
-                .filter_map(|i| loader.rendering_chunks.remove(&i))
-                .collect::<Vec<_>>();
-            for new_chunk in batch {
-                let chunk = chunks.get(new_chunk.id()).unwrap();
-                loader.loaded_chunks.insert(chunk.loc, new_chunk.clone());
-                commands.spawn((
-                    ChunkComponent(new_chunk),
-                    chunk.transform(),
-                    MeshMaterial3d(textures.texture().unwrap().clone()),
-                    Mesh3d(meshes.add(ChunkMeshBuilder::new(chunk).build(&textures))),
-                ));
+        let task_pool = AsyncComputeTaskPool::get();
+        loader.chunk_states.retain(|pos, chunk| {
+            let mut next_chunk = None;
+            match chunk {
+                ChunkState::Reading(handle) => {
+                    match assets.get_load_state(handle.id()) {
+                        None => {
+                            if chunks.get(handle.id()).is_some() {
+                                next_chunk =
+                                    Some(ChunkState::render(task_pool, &chunks, handle, &textures));
+                            } else {
+                                warn!(
+                                    "Attempting to load invalid chunk, reverting to regenerating"
+                                );
+                                next_chunk = Some(ChunkState::generate(
+                                    task_pool,
+                                    config.chunk_size,
+                                    *pos,
+                                    &rng,
+                                ));
+                            }
+                        }
+                        Some(LoadState::Failed(err)) => {
+                            match &*err {
+                                AssetLoadError::AssetReaderError(AssetReaderError::NotFound(_)) => {
+                                }
+                                err => {
+                                    warn!("Error loading chunk ({}, {}): {err:?}", pos.x, pos.y);
+                                }
+                            }
+                            // Chunk failed to load so we regenerate chunk
+                            next_chunk = Some(ChunkState::generate(
+                                task_pool,
+                                config.chunk_size,
+                                *pos,
+                                &rng,
+                            ));
+                        }
+                        Some(LoadState::Loaded) => {
+                            next_chunk =
+                                Some(ChunkState::render(task_pool, &chunks, handle, &textures));
+                        }
+                        _ => {
+                            // waiting to finish loading
+                        }
+                    }
+                }
+                ChunkState::Generating(task) => {
+                    if let Some(chunk) = futures::check_ready(task) {
+                        let handle = chunks.add(chunk);
+                        next_chunk =
+                            Some(ChunkState::render(task_pool, &chunks, &handle, &textures));
+                    }
+                }
+                ChunkState::Render(task) => {
+                    if let Some((handle, mut queue)) = futures::check_ready(task) {
+                        commands.append(&mut queue);
+                        next_chunk = Some(ChunkState::Loaded(handle));
+                    }
+                }
+                ChunkState::Saving => {
+                    return false;
+                }
+                _ => {}
             }
+            if let Some(next_chunk) = next_chunk {
+                *chunk = next_chunk;
+            }
+            true
         });
     }
 
@@ -288,8 +236,7 @@ impl ChunkLoader {
             .collect::<Vec<_>>();
         let mut file_batches = Vec::new();
         for (entity, loc, id) in remove_chunks {
-            //TODO: Save to disk
-            loader.loaded_chunks.remove(&loc);
+            *loader.chunk_states.get_mut(&loc).unwrap() = ChunkState::Saving;
             commands.entity(entity).despawn();
             let chunk = chunks.remove(id).unwrap();
             let loc = chunk.loc;
@@ -307,9 +254,12 @@ impl ChunkLoader {
         server: &AssetServer,
     ) {
         let ids = self
-            .loaded_chunks
+            .chunk_states
             .values()
-            .map(|v| v.id())
+            .filter_map(|s| match s {
+                ChunkState::Loaded(h) => Some(h.id()),
+                _ => None,
+            })
             .collect::<Vec<_>>();
         let mut file_batches = Vec::new();
         for id in ids {
@@ -332,14 +282,12 @@ impl ChunkLoader {
             return;
         }
         while !data.is_empty() {
-            let batch_size = config.batching.saving.min(data.len());
+            let batch_size = config.save_batch.min(data.len());
             let values = data.drain(..batch_size).collect::<Vec<_>>();
             if values.is_empty() {
                 break;
             }
             let server = server.clone();
-            let size = values.len();
-            let saving_chunks = self.saving_chunks.clone();
             IoTaskPool::get()
                 .spawn(async move {
                     for (loc, chunk) in values {
@@ -352,12 +300,68 @@ impl ChunkLoader {
                         let writer = source.writer().unwrap();
                         writer.write_bytes(path.path(), &chunk).await.unwrap();
                     }
-                    saving_chunks.fetch_sub(size, std::sync::atomic::Ordering::Relaxed);
                 })
                 .detach();
-            self.saving_chunks
-                .fetch_add(size, std::sync::atomic::Ordering::Relaxed);
         }
+    }
+}
+
+#[derive(Debug)]
+pub enum ChunkState {
+    Reading(Handle<Chunk>),
+    Generating(Task<Chunk>),
+    Render(Task<(Handle<Chunk>, CommandQueue)>),
+    Loaded(Handle<Chunk>),
+    Saving,
+}
+
+impl ChunkState {
+    fn generate(
+        task_pool: &TaskPool,
+        chunk_size: ChunkSize,
+        pos: ChunkPosition,
+        rng: &ChunkRng,
+    ) -> Self {
+        let rng = rng.clone();
+        ChunkState::Generating(
+            task_pool.spawn(async move { generate_chunk(chunk_size, pos, &rng) }),
+        )
+    }
+
+    fn render(
+        task_pool: &TaskPool,
+        chunks: &Assets<Chunk>,
+        handle: &Handle<Chunk>,
+        block_textures: &BlockTextures,
+    ) -> Self {
+        let chunk = chunks
+            .get(handle.id())
+            .expect("Handle to correspond to chunk resource")
+            .clone();
+        let atlas = block_textures.atlas.clone();
+        let handle = handle.clone();
+        let task = task_pool.spawn(async move {
+            let mesh = ChunkMeshBuilder::new(&chunk).build(&atlas);
+            let mut commands = CommandQueue::default();
+
+            let component = ChunkComponent(handle.clone());
+            commands.push(move |world: &mut World| {
+                let (mesh_handle, texture_handle) = {
+                    let mut system_state =
+                        SystemState::<(ResMut<Assets<Mesh>>, Res<BlockTextures>)>::new(world);
+                    let (mut meshes, textures) = system_state.get_mut(world);
+                    (meshes.add(mesh), textures.texture.clone())
+                };
+                world.spawn((
+                    component,
+                    chunk.transform(),
+                    MeshMaterial3d(texture_handle),
+                    Mesh3d(mesh_handle),
+                ));
+            });
+            (handle, commands)
+        });
+        ChunkState::Render(task)
     }
 }
 
@@ -367,7 +371,7 @@ pub struct ChunkLoaderConfig {
     pub chunk_radius: usize,
     pub chunk_size: ChunkSize,
     pub enable_saving: bool,
-    pub batching: Batching,
+    pub save_batch: usize,
 }
 
 impl Default for ChunkLoaderConfig {
@@ -376,38 +380,7 @@ impl Default for ChunkLoaderConfig {
             chunk_radius: 10,
             enable_saving: false,
             chunk_size: ChunkSize::new(16),
-            batching: Default::default(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct Batching {
-    reading: usize,
-    loading: usize,
-    generating: usize,
-    rendering: usize,
-    saving: usize,
-}
-
-impl Batching {
-    fn rendering(&self, state: &AppState) -> usize {
-        if let AppState::Loading = state {
-            self.loading
-        } else {
-            self.rendering
-        }
-    }
-}
-
-impl Default for Batching {
-    fn default() -> Self {
-        Self {
-            reading: 50,
-            loading: 100,
-            generating: 10,
-            rendering: 50,
-            saving: 10,
+            save_batch: 10,
         }
     }
 }

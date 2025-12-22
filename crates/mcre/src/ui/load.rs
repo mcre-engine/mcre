@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::{LoadingState, chunk::loader::ChunkLoader, textures::BlockTextures};
+use crate::{LoadingState, chunk::loader::ChunkLoader, textures::BlockTexturesBuilder};
 
 const MARGIN: Val = Val::Px(12.);
 
@@ -57,7 +57,7 @@ impl LoadingUi {
         mut text: Query<&mut Text, With<LoadText>>,
         mut load: Query<&mut Node, With<LoadBar>>,
         state: Res<State<LoadingState>>,
-        textures: Res<BlockTextures>,
+        textures: Option<Res<BlockTexturesBuilder>>,
         loader: Res<ChunkLoader>,
     ) {
         match state.get() {
@@ -66,7 +66,9 @@ impl LoadingUi {
                 let mut load = load.single_mut().unwrap();
                 let mut text = text.single_mut().unwrap();
                 text.0 = "Loading Textures...".to_owned();
-                load.width = Val::Vw(LOAD_BAR_MAX * textures.loading_percent());
+                if let Some(textures) = textures {
+                    load.width = Val::Vw(LOAD_BAR_MAX * textures.loading_percent());
+                }
             }
             LoadingState::Chunks => {
                 let mut text = text.single_mut().unwrap();
