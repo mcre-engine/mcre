@@ -115,7 +115,7 @@ impl ChunkUpdates {
             let mesh = meshes.get_mut(mesh.0.id()).unwrap();
             chunk.set(pos, val.unwrap_or(Block::AIR));
             let builder = ChunkMeshBuilder::new(chunk);
-            builder.update_mesh(mesh, &textures);
+            builder.update_mesh(mesh, &textures.atlas);
         }
     }
 

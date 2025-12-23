@@ -8,7 +8,7 @@ use mcre_core::{Block, BlockState};
 
 use crate::{
     chunk::{Chunk, math::pos::BlockPosition},
-    textures::BlockTextures,
+    textures::BlockTexturesAtlas,
 };
 
 pub struct ChunkMeshBuilder<'a> {
@@ -20,9 +20,9 @@ impl<'a> ChunkMeshBuilder<'a> {
         ChunkMeshBuilder { chunk }
     }
 
-    pub fn update_mesh(&self, mesh: &mut Mesh, textures: &BlockTextures) {
+    pub fn update_mesh(&self, mesh: &mut Mesh, atlas: &BlockTexturesAtlas) {
         let mut builder = MeshBuilder::default();
-        self.update_mesh_attributes(&mut builder, textures);
+        self.update_mesh_attributes(&mut builder, atlas);
         //TODO Optimize in place?
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, builder.vertices);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, builder.uvs);
@@ -52,12 +52,12 @@ impl<'a> ChunkMeshBuilder<'a> {
         (positive_faces, negative_faces)
     }
 
-    fn update_mesh_attributes(&self, builder: &mut MeshBuilder, textures: &BlockTextures) {
+    fn update_mesh_attributes(&self, builder: &mut MeshBuilder, atlas: &BlockTexturesAtlas) {
         for (pos, block) in self.chunk.iter() {
             if block.is_air() {
                 continue;
             }
-            let Some(uv_rect) = textures.get_uv_rect(block) else {
+            let Some(uv_rect) = atlas.uv_rect(block) else {
                 continue;
             };
             //TODO: Fix to use known data about block states
@@ -89,9 +89,9 @@ impl<'a> ChunkMeshBuilder<'a> {
         }
     }
 
-    pub fn build(self, textures: &BlockTextures) -> Mesh {
+    pub fn build(self, atlas: &BlockTexturesAtlas) -> Mesh {
         let mut builder = MeshBuilder::default();
-        self.update_mesh_attributes(&mut builder, textures);
+        self.update_mesh_attributes(&mut builder, atlas);
 
         Mesh::new(
             PrimitiveTopology::TriangleList,

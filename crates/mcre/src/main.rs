@@ -15,7 +15,7 @@ use crate::{
     camera::FirstPersonPlugin,
     chunk::loader::ChunkLoaderPlugin,
     player::PlayerInteractionPlugin,
-    textures::BlockTextures,
+    textures::BlockTexturesBuilder,
     ui::{debug::DebugMenuPlugin, load::LoadingUi},
 };
 
@@ -55,13 +55,12 @@ fn main() {
         .add_sub_state::<LoadingState>()
         .add_systems(Startup, setup_light)
         .add_systems(OnEnter(AppState::Loading), LoadingUi::add_ui_system)
-        .add_systems(
-            OnEnter(LoadingState::Textures),
-            BlockTextures::load_textures_system,
-        )
+        .add_systems(OnEnter(LoadingState::Textures), |mut commands: Commands| {
+            commands.init_resource::<BlockTexturesBuilder>()
+        })
         .add_systems(
             Update,
-            BlockTextures::check_loaded_textures_system.run_if(in_state(LoadingState::Textures)),
+            BlockTexturesBuilder::update_builder_system.run_if(in_state(LoadingState::Textures)),
         )
         .add_systems(
             Update,

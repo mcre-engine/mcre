@@ -18,7 +18,7 @@ impl Default for SeedRng {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct ChunkRng(Perlin);
 
 impl ChunkRng {
