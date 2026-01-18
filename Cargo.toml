@@ -24,6 +24,8 @@ mcje            = { version = "0.1.0", path = "crates/mcje" }
 mcje_macros     = { version = "0.1.0", path = "crates/mcje_macros" }
 mcje_downloader = { version = "0.1.0", path = "crates/mcje_downloader" }
 
+core_io = { version = "0.1.0", path = "crates/core_io" }
+
 serde        = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json   = { version = "1", default-features = false, features = ["alloc"] }
 indexmap     = { version = "2", default-features = false, features = ["serde"] }
@@ -45,4 +47,4 @@ convert_case = "0.10"
 prettyplease = "0.2"
 
 [workspace.metadata.cargo-shear]
-ignored = ["mcre_assets", "mcre_static_data"]
+ignored = ["mcre_assets", "mcre_static_data", "core_io"]
