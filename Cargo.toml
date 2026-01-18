@@ -12,7 +12,7 @@ repository = "https://github.com/mcre-project/mcre"
 description = "A minecraft clone written in Rust."
 
 edition = "2024"
-rust-version = "1.91.0"
+rust-version = "1.92.0"
 
 [workspace.dependencies]
 mcre_core        = { version = "0.1.0", path = "crates/mcre_core" }
