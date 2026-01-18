@@ -14,7 +14,7 @@ alias f := fix
 
 # Initialize the project by installing all necessary tools
 init:
-  cargo install cargo-binstall
+  cargo install cargo-binstall --locked
   cargo binstall watchexec-cli typos-cli cargo-shear -y
 
 # Install git pre-commit hook to format files
