@@ -6,21 +6,29 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { nixpkgs, rust-overlay, ... }:
+  outputs =
+    { nixpkgs, rust-overlay, ... }:
     let
-      systems =
-        [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
 
       rust-toolchain-toml = builtins.readFile ./rust-toolchain.toml;
       rust-toolchain = builtins.fromTOML rust-toolchain-toml;
-    in {
-      devShells = nixpkgs.lib.genAttrs systems (system:
+    in
+    {
+      devShells = nixpkgs.lib.genAttrs systems (
+        system:
         let
           pkgs = import nixpkgs {
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
-        in {
+        in
+        {
           default = pkgs.mkShell {
             buildInputs = [
               pkgs.just
@@ -37,7 +45,36 @@
               export PATH="$HOME/.cargo/bin:$PATH"
             '';
           };
-        });
+        }
+      );
+
+      apps = nixpkgs.lib.genAttrs systems (
+        system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
+          scripts = (import ./scripts.nix) pkgs;
+        in
+        nixpkgs.lib.mapAttrs (
+          name:
+          {
+            inputs ? [ ],
+            script,
+          }:
+          let
+            app = pkgs.writeShellApplication {
+              inherit name;
+              runtimeInputs = [ pkgs.rust-bin.stable."${rust-toolchain.toolchain.channel}".default ] ++ inputs;
+              text = "set -e\n" + script;
+            };
+          in
+          {
+            type = "app";
+            program = "${app}/bin/${name}";
+          }
+        ) scripts
+      );
     };
 }
-
