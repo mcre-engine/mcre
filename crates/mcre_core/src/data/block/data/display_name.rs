@@ -1,4 +1,4 @@
-static VALUES: [&str; 1166usize] = [
+static VALUES: [&str; 1168usize] = [
     "Air",
     "Stone",
     "Granite",
@@ -157,6 +157,7 @@ static VALUES: [&str; 1166usize] = [
     "Black Wool",
     "Moving Piston",
     "Dandelion",
+    "Golden Dandelion",
     "Torchflower",
     "Poppy",
     "Blue Orchid",
@@ -422,6 +423,7 @@ static VALUES: [&str; 1166usize] = [
     "Potted Mangrove Propagule",
     "Potted Fern",
     "Potted Dandelion",
+    "Potted Golden Dandelion",
     "Potted Poppy",
     "Potted Blue Orchid",
     "Potted Allium",

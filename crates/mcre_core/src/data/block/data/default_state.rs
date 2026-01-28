@@ -1,4 +1,4 @@
-static VALUES: [u16; 1166usize] =
+static VALUES: [u16; 1168usize] =
     unsafe { core::mem::transmute(*include_bytes!("./default_state.bin")) };
 pub(crate) fn get(idx: u16) -> u16 {
     VALUES[idx as usize]

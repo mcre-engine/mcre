@@ -20,7 +20,7 @@ impl From<Block> for BlockState {
     }
 }
 impl Block {
-    pub const MAX: Self = Self(1165u16);
+    pub const MAX: Self = Self(1167u16);
     pub fn name(self) -> &'static str {
         data::name::get(self.0)
     }
