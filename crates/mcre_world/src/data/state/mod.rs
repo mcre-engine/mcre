@@ -1,7 +1,8 @@
 mod data;
 mod enums;
-use crate::{Block, FieldKey, FieldVal, OffsetType, PropKey, PropVal};
+use crate::{Block, FieldKey, FieldVal, PropKey, PropVal};
 pub use enums::*;
+use mcre_core::OffsetType;
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockState(u16);

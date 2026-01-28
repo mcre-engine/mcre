@@ -1,5 +1,5 @@
-pub use crate::{Axis, Direction};
 use core::str::FromStr;
+pub use mcre_core::{Axis, Direction};
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum NoteBlockInstrument {

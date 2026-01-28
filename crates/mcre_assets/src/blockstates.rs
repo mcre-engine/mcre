@@ -4,7 +4,8 @@ use alloc::{
     boxed::Box,
     vec::{self, Vec},
 };
-use mcre_core::{BlockState, PropFilter, PropVal, Vec4f};
+use mcre_core::Vec4f;
+use mcre_world::{BlockState, PropFilter, PropVal};
 use serde::{Deserialize, Deserializer};
 
 use crate::BlockModelId;
@@ -201,7 +202,7 @@ impl BlockStateDefinition {
 
 #[cfg(test)]
 mod tests {
-    use mcre_core::BlockState;
+    use mcre_world::BlockState;
 
     use crate::blockstates::{BlockModelResolution, BlockStateDefinition};
     use std::{
@@ -288,7 +289,7 @@ mod de_impl {
 
     use super::*;
     use alloc::string::String;
-    use mcre_core::PropKey;
+    use mcre_world::PropKey;
     use serde::{
         Deserialize,
         de::{self, MapAccess, Unexpected, Visitor},

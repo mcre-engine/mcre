@@ -888,6 +888,7 @@ dependencies = [
  "hashbrown",
  "mcje_downloader",
  "mcre_core",
+ "mcre_world",
  "rustc-hash",
  "serde",
  "serde_json",
@@ -913,6 +914,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "mcre_world"
+version = "0.1.0"
+dependencies = [
+ "mcre_core",
+ "serde",
 ]
 
 [[package]]

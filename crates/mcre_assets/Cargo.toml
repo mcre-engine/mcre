@@ -12,7 +12,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-mcre_core = { workspace = true }
+mcre_core  = { workspace = true }
+mcre_world = { workspace = true }
 
 serde      = { workspace = true }
 serde_json = { workspace = true }
