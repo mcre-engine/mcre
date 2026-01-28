@@ -16,7 +16,7 @@ impl From<BlockState> for u16 {
     }
 }
 impl BlockState {
-    pub const MAX: Self = Self(29670u16);
+    pub const MAX: Self = Self(29672u16);
     pub fn block(self) -> Block {
         data::block::get(self.0).into()
     }
