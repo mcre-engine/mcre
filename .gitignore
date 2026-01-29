@@ -1,3 +1,4 @@
 /target
 **/logs
 /crates/mcre_assets/assets
+bump.log

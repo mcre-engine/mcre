@@ -45,7 +45,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
 
           gh issue create \
-            --title "bump-version failed for MC `$VERSION`" \
+            --title "$(printf 'bump-version failed for MC `%s`' "$VERSION")" \
             --body "$(printf 'Target Minecraft Version: **%s**\n\n```\n%s\n```' \
               "$VERSION" "$(cat bump.log)")"
 
@@ -83,7 +83,7 @@ jobs:
           git commit -m "chore(mc): bump version to $VERSION"
           git push origin "$BRANCH"
 
-          TITLE="chore: bump target version to `$VERSION`"
+          TITLE="chore: bump target version to \`$VERSION\`"
           BODY="# Release Notes:\n\n$NOTES"
 
           gh pr create \
