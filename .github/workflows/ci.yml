@@ -19,12 +19,15 @@ jobs:
     name: CI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Install Nix
-        uses: cachix/install-nix-action@v17
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          
+      - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
       - name: Cache Nix
         uses: nix-community/cache-nix-action@v6
         with:
@@ -36,5 +39,6 @@ jobs:
           purge-prefixes: nix-${{ runner.os }}-
           purge-created: 0
           purge-primary-key: never
+
       - name: Run checks
         run: nix run .#ci

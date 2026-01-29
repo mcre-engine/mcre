@@ -135,8 +135,11 @@ impl UnitGen for StateRootUnit<'_> {
             mod data;
             mod enums;
 
-            use crate::{Block, OffsetType, FieldKey, FieldVal, PropKey, PropVal};
+            use crate::{Block, FieldKey, FieldVal, PropKey, PropVal};
+
+            use mcre_core::OffsetType;
             use serde::{Serialize, Deserialize};
+
             pub use enums::*;
 
             #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

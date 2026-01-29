@@ -1,0 +1,89 @@
+name: Bump Target Version
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # daily
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run bump-version
+        id: bump
+        run: |
+          set -o pipefail
+          nix run .#bump-version 2>&1 | tee bump.log
+
+      - name: Read Next Version
+        id: version
+        run: |
+          VERSION="$(cat mc-version | tr -d '\n')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Next Version: $VERSION"
+
+      - name: Create issue if bump failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          gh issue create \
+            --title "bump-version failed for MC `$VERSION`" \
+            --body "$(printf 'Target Minecraft Version: **%s**\n\n```\n%s\n```' \
+              "$VERSION" "$(cat bump.log)")"
+
+      - name: Stop if bump failed
+        if: failure()
+        run: exit 1
+
+      - name: Check for git changes
+        id: changes
+        run: |
+          if git status --porcelain | grep .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create PR if there are changes
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="auto/bump-version-$VERSION"
+
+          NOTES_PATH=$(curl -s https://launchercontent.mojang.com/v2/javaPatchNotes.json | jq -r --arg v "$VERSION" '.entries[] | select(.version == $v) | .contentPath')
+          NOTES_URL="https://launchercontent.mojang.com/v2/$NOTES_PATH"
+
+          NOTES=$(curl -s $NOTES_URL | jq -r '.body')
+
+          git switch -c "$BRANCH"
+          git add -A
+          git commit -m "chore(mc): bump version to $VERSION"
+          git push origin "$BRANCH"
+
+          TITLE="chore: bump target version to `$VERSION`"
+          BODY="# Release Notes:\n\n$NOTES"
+
+          gh pr create \
+            --title "$TITLE" \
+            --body "$BODY" \
+            --head "$BRANCH"

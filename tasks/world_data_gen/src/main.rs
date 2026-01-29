@@ -27,7 +27,7 @@ async fn main() {
     let analysis = analyze(&blocks, foreign_enums);
 
     let mut factory = Factory::new(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/mcre_core/src/data"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/mcre_world/src/data"),
     );
 
     factory.add_scope(RootScope {

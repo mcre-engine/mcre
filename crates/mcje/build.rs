@@ -7,10 +7,15 @@ async fn main() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let manifest_dir = PathBuf::from(manifest_dir);
     let root_manifest = RootManifest::fetch().await.unwrap();
+    let target_mc_version = fs::read_to_string(manifest_dir.join("../../mc-version"))
+        .await
+        .unwrap()
+        .trim()
+        .to_string();
     let version_release = root_manifest
         .versions
         .into_iter()
-        .find(|ver| ver.id == "26.1-snapshot-5")
+        .find(|ver| ver.id == target_mc_version)
         .unwrap();
 
     let version_manifest = version_release.fetch_manifest().await.unwrap();

@@ -17,6 +17,7 @@ rust-version = "1.92.0"
 [workspace.dependencies]
 mcre_core        = { version = "0.1.0", path = "crates/mcre_core" }
 mcre_data        = { version = "0.1.0", path = "crates/mcre_data" }
+mcre_world       = { version = "0.1.0", path = "crates/mcre_world" }
 mcre_assets      = { version = "0.1.0", path = "crates/mcre_assets" }
 mcre_static_data = { version = "0.1.0", path = "crates/mcre_static_data" }
 

@@ -57,7 +57,7 @@ impl UnitGen for EnumsGenerator {
             .map(|enum_name| format_ident!("{}", enum_name));
 
         let code = quote! {
-            pub use crate::{#( #imports ),*};
+            pub use mcre_core::{#( #imports ),*};
             use core::str::FromStr;
 
             #( #enums )*

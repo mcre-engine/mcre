@@ -177,20 +177,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
-name = "core_gen"
-version = "0.1.0"
-dependencies = [
- "convert_case",
- "indexmap",
- "mcre_data",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn",
- "tokio",
-]
-
-[[package]]
 name = "core_io"
 version = "0.1.0"
 
@@ -888,6 +874,7 @@ dependencies = [
  "hashbrown",
  "mcje_downloader",
  "mcre_core",
+ "mcre_world",
  "rustc-hash",
  "serde",
  "serde_json",
@@ -913,6 +900,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "mcre_world"
+version = "0.1.0"
+dependencies = [
+ "mcre_core",
+ "serde",
 ]
 
 [[package]]
@@ -2167,6 +2162,20 @@ name = "wit-bindgen"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
+
+[[package]]
+name = "world_data_gen"
+version = "0.1.0"
+dependencies = [
+ "convert_case",
+ "indexmap",
+ "mcre_data",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn",
+ "tokio",
+]
 
 [[package]]
 name = "writeable"
