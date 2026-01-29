@@ -1,4 +1,4 @@
-static VALUES: [u8; 3710usize] = *include_bytes!("./part.bin");
+static VALUES: [u8; 3709usize] = *include_bytes!("./part.bin");
 pub(crate) fn get(idx: u16) -> u8 {
     let byte_pos = idx / 8u16;
     let bit_pos = idx % 8u16;

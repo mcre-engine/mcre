@@ -1,4 +1,4 @@
-static VALUES: [u8; 14837usize] = *include_bytes!("./honey_level.bin");
+static VALUES: [u8; 14836usize] = *include_bytes!("./honey_level.bin");
 pub(crate) fn get(idx: u16) -> u8 {
     let byte_pos = idx / 2u16;
     let bit_pos = (idx % 2u16) * 4u16;

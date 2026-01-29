@@ -1,4 +1,4 @@
-const COUNT: usize = 1168usize;
+const COUNT: usize = 1166usize;
 static DATA: &[u8] = include_bytes!("./display_name.bin");
 pub(crate) fn get(idx: u16) -> &'static str {
     let idx = idx as usize;
