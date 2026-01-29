@@ -1,4 +1,4 @@
-static VALUES: [u8; 7418usize] = *include_bytes!("./hydration.bin");
+static VALUES: [u8; 7419usize] = *include_bytes!("./hydration.bin");
 pub(crate) fn get(idx: u16) -> u8 {
     let byte_pos = idx / 4u16;
     let bit_pos = (idx % 4u16) * 2u16;
