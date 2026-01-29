@@ -54,4 +54,19 @@ pkgs: {
   fmt.script = ''
     cargo fmt
   '';
+
+  bump-version = {
+    inputs = [pkgs.jq pkgs.curl pkgs.jdk25];
+    script = ''
+      export JAVA_HOME=${pkgs.jdk25.home}
+      curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r '.versions.[0].id' > mc-version
+      if ! git diff --quiet -- mc-version; then
+        rm -rf target
+        cargo r -r -p data_gen
+        rm -rf crates/mcre_world/src/data
+        cargo r -r -p world_data_gen
+        cargo fmt
+      fi
+    '';
+  };
 }
