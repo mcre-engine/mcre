@@ -15,10 +15,10 @@ let
 in
 {
   ci = mkRust {
-    extraInputs = [ pkgs.git pkgs.jdk25 pkgs.typos ];
+    extraInputs = [ pkgs.git pkgs.temurin-bin-25 pkgs.typos ];
     script = ''
       typos
-      export JAVA_HOME=${pkgs.jdk25.home}
+      export JAVA_HOME=${pkgs.temurin-bin-25.home}
       cargo ck
       cargo test --workspace --all-features
       cargo lint -- -D warnings
@@ -27,11 +27,11 @@ in
   };
 
   ready = mkRust {
-    extraInputs = [ pkgs.git pkgs.jdk25 pkgs.typos ];
+    extraInputs = [ pkgs.git pkgs.temurin-bin-25 pkgs.typos ];
     script = ''
       git diff --exit-code --quiet
       typos
-      export JAVA_HOME=${pkgs.jdk25.home}
+      export JAVA_HOME=${pkgs.temurin-bin-25.home}
       cargo fmt
       cargo ck
       cargo test --all-features
@@ -61,9 +61,9 @@ in
   '';
 
   bump-version = mkRust {
-    extraInputs = [ pkgs.curl pkgs.jdk25 pkgs.jq ];
+    extraInputs = [ pkgs.curl pkgs.temurin-bin-25 pkgs.jq ];
     script = ''
-      export JAVA_HOME=${pkgs.jdk25.home}
+      export JAVA_HOME=${pkgs.temurin-bin-25.home}
       curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r '.versions.[0].id' > mc-version
       if ! git diff --quiet -- mc-version; then
         rm -rf target

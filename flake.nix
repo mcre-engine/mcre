@@ -37,7 +37,7 @@
               )
               pkgs.clang
               pkgs.pkg-config
-              pkgs.jdk25
+              pkgs.temurin-bin-25
               pkgs.git
             ];
 
