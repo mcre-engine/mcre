@@ -1,13 +1,24 @@
-pkgs: {
-  ci = {
-    inputs = [
-      pkgs.git
-      pkgs.jdk25
-      pkgs.typos
-    ];
+pkgs:
+let
+  rustInputs = with pkgs; [ clang libiconv pkg-config ];
+
+  rustEnv = ''
+    export LIBRARY_PATH="${pkgs.libiconv}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+    export NIX_LDFLAGS="-L${pkgs.libiconv}/lib''${NIX_LDFLAGS:+ $NIX_LDFLAGS}"
+    export NIX_CFLAGS_COMPILE="-I${pkgs.libiconv}/include''${NIX_CFLAGS_COMPILE:+ $NIX_CFLAGS_COMPILE}"
+  '';
+
+  mkRust = { extraInputs, script }: {
+    inputs = rustInputs ++ extraInputs;
+    script = rustEnv + script;
+  };
+in
+{
+  ci = mkRust {
+    extraInputs = [ pkgs.git pkgs.temurin-bin-25 pkgs.typos ];
     script = ''
       typos
-      export JAVA_HOME=${pkgs.jdk25.home}
+      export JAVA_HOME=${pkgs.temurin-bin-25.home}
       cargo ck
       cargo test --workspace --all-features
       cargo lint -- -D warnings
@@ -15,15 +26,12 @@ pkgs: {
     '';
   };
 
-  ready = {
-    inputs = [
-      pkgs.git
-      pkgs.typos
-    ];
+  ready = mkRust {
+    extraInputs = [ pkgs.git pkgs.temurin-bin-25 pkgs.typos ];
     script = ''
       git diff --exit-code --quiet
       typos
-      export JAVA_HOME=${pkgs.jdk25.home}
+      export JAVA_HOME=${pkgs.temurin-bin-25.home}
       cargo fmt
       cargo ck
       cargo test --all-features
@@ -33,11 +41,8 @@ pkgs: {
     '';
   };
 
-  fix = {
-    inputs = [
-      pkgs.git
-      pkgs.typos
-    ];
+  fix = mkRust {
+    extraInputs = [ pkgs.git pkgs.typos ];
     script = ''
       cargo clippy --fix --allow-staged --no-deps
       cargo fmt
@@ -55,14 +60,10 @@ pkgs: {
     cargo fmt
   '';
 
-  bump-version = {
-    inputs = [
-      pkgs.jq
-      pkgs.curl
-      pkgs.jdk25
-    ];
+  bump-version = mkRust {
+    extraInputs = [ pkgs.curl pkgs.temurin-bin-25 pkgs.jq ];
     script = ''
-      export JAVA_HOME=${pkgs.jdk25.home}
+      export JAVA_HOME=${pkgs.temurin-bin-25.home}
       curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r '.versions.[0].id' > mc-version
       if ! git diff --quiet -- mc-version; then
         rm -rf target
