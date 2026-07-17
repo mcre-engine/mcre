@@ -139,24 +139,24 @@ impl From<Half> for HalfPropVal {
 pub enum TypePropVal {
     Normal,
     Sticky,
-    Single,
-    Left,
-    Right,
     Top,
     Bottom,
     Double,
+    Single,
+    Left,
+    Right,
 }
 impl TypePropVal {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Normal => "normal",
             Self::Sticky => "sticky",
-            Self::Single => "single",
-            Self::Left => "left",
-            Self::Right => "right",
             Self::Top => "top",
             Self::Bottom => "bottom",
             Self::Double => "double",
+            Self::Single => "single",
+            Self::Left => "left",
+            Self::Right => "right",
         }
     }
 }
@@ -166,12 +166,12 @@ impl FromStr for TypePropVal {
         match s {
             "normal" => Ok(Self::Normal),
             "sticky" => Ok(Self::Sticky),
-            "single" => Ok(Self::Single),
-            "left" => Ok(Self::Left),
-            "right" => Ok(Self::Right),
             "top" => Ok(Self::Top),
             "bottom" => Ok(Self::Bottom),
             "double" => Ok(Self::Double),
+            "single" => Ok(Self::Single),
+            "left" => Ok(Self::Left),
+            "right" => Ok(Self::Right),
             _ => Err(()),
         }
     }
@@ -184,21 +184,21 @@ impl From<PistonType> for TypePropVal {
         }
     }
 }
-impl From<ChestType> for TypePropVal {
-    fn from(e: ChestType) -> Self {
-        match e {
-            ChestType::Single => Self::Single,
-            ChestType::Left => Self::Left,
-            ChestType::Right => Self::Right,
-        }
-    }
-}
 impl From<SlabType> for TypePropVal {
     fn from(e: SlabType) -> Self {
         match e {
             SlabType::Top => Self::Top,
             SlabType::Bottom => Self::Bottom,
             SlabType::Double => Self::Double,
+        }
+    }
+}
+impl From<ChestType> for TypePropVal {
+    fn from(e: ChestType) -> Self {
+        match e {
+            ChestType::Single => Self::Single,
+            ChestType::Left => Self::Left,
+            ChestType::Right => Self::Right,
         }
     }
 }
@@ -599,23 +599,24 @@ pub enum PropKey {
     HoneyLevel = 72u8,
     Charges = 73u8,
     Candles = 74u8,
-    SculkSensorPhase = 75u8,
-    Bloom = 76u8,
-    CanSummon = 77u8,
-    Shrieking = 78u8,
-    CopperGolemPose = 79u8,
-    Thickness = 80u8,
-    VerticalDirection = 81u8,
-    Berries = 82u8,
-    FlowerAmount = 83u8,
-    SegmentAmount = 84u8,
-    Tilt = 85u8,
-    Cracked = 86u8,
-    Crafting = 87u8,
-    Ominous = 88u8,
-    TrialSpawnerState = 89u8,
-    VaultState = 90u8,
-    Tip = 91u8,
+    PotentSulfurState = 75u8,
+    SculkSensorPhase = 76u8,
+    Bloom = 77u8,
+    CanSummon = 78u8,
+    Shrieking = 79u8,
+    CopperGolemPose = 80u8,
+    Thickness = 81u8,
+    VerticalDirection = 82u8,
+    Berries = 83u8,
+    FlowerAmount = 84u8,
+    SegmentAmount = 85u8,
+    Tilt = 86u8,
+    Cracked = 87u8,
+    Crafting = 88u8,
+    Ominous = 89u8,
+    TrialSpawnerState = 90u8,
+    VaultState = 91u8,
+    Tip = 92u8,
 }
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -695,23 +696,24 @@ pub enum PropVal {
     HoneyLevel(u8) = 72u8,
     Charges(u8) = 73u8,
     Candles(u8) = 74u8,
-    SculkSensorPhase(SculkSensorPhase) = 75u8,
-    Bloom(bool) = 76u8,
-    CanSummon(bool) = 77u8,
-    Shrieking(bool) = 78u8,
-    CopperGolemPose(Pose) = 79u8,
-    Thickness(DripstoneThickness) = 80u8,
-    VerticalDirection(Direction) = 81u8,
-    Berries(bool) = 82u8,
-    FlowerAmount(u8) = 83u8,
-    SegmentAmount(u8) = 84u8,
-    Tilt(Tilt) = 85u8,
-    Cracked(bool) = 86u8,
-    Crafting(bool) = 87u8,
-    Ominous(bool) = 88u8,
-    TrialSpawnerState(TrialSpawnerState) = 89u8,
-    VaultState(VaultState) = 90u8,
-    Tip(bool) = 91u8,
+    PotentSulfurState(PotentSulfurState) = 75u8,
+    SculkSensorPhase(SculkSensorPhase) = 76u8,
+    Bloom(bool) = 77u8,
+    CanSummon(bool) = 78u8,
+    Shrieking(bool) = 79u8,
+    CopperGolemPose(Pose) = 80u8,
+    Thickness(SpeleothemThickness) = 81u8,
+    VerticalDirection(Direction) = 82u8,
+    Berries(bool) = 83u8,
+    FlowerAmount(u8) = 84u8,
+    SegmentAmount(u8) = 85u8,
+    Tilt(Tilt) = 86u8,
+    Cracked(bool) = 87u8,
+    Crafting(bool) = 88u8,
+    Ominous(bool) = 89u8,
+    TrialSpawnerState(TrialSpawnerState) = 90u8,
+    VaultState(VaultState) = 91u8,
+    Tip(bool) = 92u8,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -791,23 +793,24 @@ pub enum PropFilter {
     HoneyLevel(Box<[u8]>) = 72u8,
     Charges(Box<[u8]>) = 73u8,
     Candles(Box<[u8]>) = 74u8,
-    SculkSensorPhase(Box<[SculkSensorPhase]>) = 75u8,
-    Bloom(Box<[bool]>) = 76u8,
-    CanSummon(Box<[bool]>) = 77u8,
-    Shrieking(Box<[bool]>) = 78u8,
-    CopperGolemPose(Box<[Pose]>) = 79u8,
-    Thickness(Box<[DripstoneThickness]>) = 80u8,
-    VerticalDirection(Box<[Direction]>) = 81u8,
-    Berries(Box<[bool]>) = 82u8,
-    FlowerAmount(Box<[u8]>) = 83u8,
-    SegmentAmount(Box<[u8]>) = 84u8,
-    Tilt(Box<[Tilt]>) = 85u8,
-    Cracked(Box<[bool]>) = 86u8,
-    Crafting(Box<[bool]>) = 87u8,
-    Ominous(Box<[bool]>) = 88u8,
-    TrialSpawnerState(Box<[TrialSpawnerState]>) = 89u8,
-    VaultState(Box<[VaultState]>) = 90u8,
-    Tip(Box<[bool]>) = 91u8,
+    PotentSulfurState(Box<[PotentSulfurState]>) = 75u8,
+    SculkSensorPhase(Box<[SculkSensorPhase]>) = 76u8,
+    Bloom(Box<[bool]>) = 77u8,
+    CanSummon(Box<[bool]>) = 78u8,
+    Shrieking(Box<[bool]>) = 79u8,
+    CopperGolemPose(Box<[Pose]>) = 80u8,
+    Thickness(Box<[SpeleothemThickness]>) = 81u8,
+    VerticalDirection(Box<[Direction]>) = 82u8,
+    Berries(Box<[bool]>) = 83u8,
+    FlowerAmount(Box<[u8]>) = 84u8,
+    SegmentAmount(Box<[u8]>) = 85u8,
+    Tilt(Box<[Tilt]>) = 86u8,
+    Cracked(Box<[bool]>) = 87u8,
+    Crafting(Box<[bool]>) = 88u8,
+    Ominous(Box<[bool]>) = 89u8,
+    TrialSpawnerState(Box<[TrialSpawnerState]>) = 90u8,
+    VaultState(Box<[VaultState]>) = 91u8,
+    Tip(Box<[bool]>) = 92u8,
 }
 impl PropKey {
     pub fn as_str(self) -> &'static str {
@@ -887,6 +890,7 @@ impl PropKey {
             Self::HoneyLevel => "honey_level",
             Self::Charges => "charges",
             Self::Candles => "candles",
+            Self::PotentSulfurState => "potent_sulfur_state",
             Self::SculkSensorPhase => "sculk_sensor_phase",
             Self::Bloom => "bloom",
             Self::CanSummon => "can_summon",
@@ -985,6 +989,7 @@ impl PropVal {
             Self::HoneyLevel(_) => PropKey::HoneyLevel,
             Self::Charges(_) => PropKey::Charges,
             Self::Candles(_) => PropKey::Candles,
+            Self::PotentSulfurState(_) => PropKey::PotentSulfurState,
             Self::SculkSensorPhase(_) => PropKey::SculkSensorPhase,
             Self::Bloom(_) => PropKey::Bloom,
             Self::CanSummon(_) => PropKey::CanSummon,
@@ -1083,6 +1088,9 @@ impl PropVal {
             PropKey::HoneyLevel => Some(Self::HoneyLevel(u8::from_str(s).ok()?)),
             PropKey::Charges => Some(Self::Charges(u8::from_str(s).ok()?)),
             PropKey::Candles => Some(Self::Candles(u8::from_str(s).ok()?)),
+            PropKey::PotentSulfurState => Some(Self::PotentSulfurState(
+                PotentSulfurState::from_str(s).ok()?,
+            )),
             PropKey::SculkSensorPhase => {
                 Some(Self::SculkSensorPhase(SculkSensorPhase::from_str(s).ok()?))
             }
@@ -1090,7 +1098,7 @@ impl PropVal {
             PropKey::CanSummon => Some(Self::CanSummon(bool::from_str(s).ok()?)),
             PropKey::Shrieking => Some(Self::Shrieking(bool::from_str(s).ok()?)),
             PropKey::CopperGolemPose => Some(Self::CopperGolemPose(Pose::from_str(s).ok()?)),
-            PropKey::Thickness => Some(Self::Thickness(DripstoneThickness::from_str(s).ok()?)),
+            PropKey::Thickness => Some(Self::Thickness(SpeleothemThickness::from_str(s).ok()?)),
             PropKey::VerticalDirection => {
                 Some(Self::VerticalDirection(Direction::from_str(s).ok()?))
             }
@@ -1187,6 +1195,7 @@ impl PropFilter {
             Self::HoneyLevel(_) => PropKey::HoneyLevel,
             Self::Charges(_) => PropKey::Charges,
             Self::Candles(_) => PropKey::Candles,
+            Self::PotentSulfurState(_) => PropKey::PotentSulfurState,
             Self::SculkSensorPhase(_) => PropKey::SculkSensorPhase,
             Self::Bloom(_) => PropKey::Bloom,
             Self::CanSummon(_) => PropKey::CanSummon,
@@ -1285,6 +1294,9 @@ impl PropFilter {
             (Self::HoneyLevel(values), PropVal::HoneyLevel(value)) => values.contains(&value),
             (Self::Charges(values), PropVal::Charges(value)) => values.contains(&value),
             (Self::Candles(values), PropVal::Candles(value)) => values.contains(&value),
+            (Self::PotentSulfurState(values), PropVal::PotentSulfurState(value)) => {
+                values.contains(&value)
+            }
             (Self::SculkSensorPhase(values), PropVal::SculkSensorPhase(value)) => {
                 values.contains(&value)
             }
@@ -1691,6 +1703,11 @@ impl PropFilter {
                     .map(|part| u8::from_str(part).ok())
                     .collect::<Option<Box<_>>>()?,
             )),
+            PropKey::PotentSulfurState => Some(Self::PotentSulfurState(
+                parts
+                    .map(|part| PotentSulfurState::from_str(part).ok())
+                    .collect::<Option<Box<_>>>()?,
+            )),
             PropKey::SculkSensorPhase => Some(Self::SculkSensorPhase(
                 parts
                     .map(|part| SculkSensorPhase::from_str(part).ok())
@@ -1718,7 +1735,7 @@ impl PropFilter {
             )),
             PropKey::Thickness => Some(Self::Thickness(
                 parts
-                    .map(|part| DripstoneThickness::from_str(part).ok())
+                    .map(|part| SpeleothemThickness::from_str(part).ok())
                     .collect::<Option<Box<_>>>()?,
             )),
             PropKey::VerticalDirection => Some(Self::VerticalDirection(
@@ -1858,6 +1875,7 @@ impl FromStr for PropKey {
             "honey_level" => Ok(Self::HoneyLevel),
             "charges" => Ok(Self::Charges),
             "candles" => Ok(Self::Candles),
+            "potent_sulfur_state" => Ok(Self::PotentSulfurState),
             "sculk_sensor_phase" => Ok(Self::SculkSensorPhase),
             "bloom" => Ok(Self::Bloom),
             "can_summon" => Ok(Self::CanSummon),

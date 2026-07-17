@@ -222,8 +222,8 @@ fn process_block_state(
         .z()
         .unwrap();
 
-    let light_block: u8 = env
-        .get_field(block_state, "lightBlock", "I")
+    let light_dampening: u8 = env
+        .get_field(block_state, "lightDampening", "I")
         .unwrap()
         .i()
         .unwrap()
@@ -307,7 +307,7 @@ fn process_block_state(
         light_emission,
         use_shape_for_light_occlusion,
         propagates_skylight_down,
-        light_block,
+        light_dampening,
         solid_render,
         is_air,
         ignited_by_lava,

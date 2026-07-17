@@ -56,12 +56,12 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
                     }),
                 }),
                 Box::new(SubByteGen {
-                    name: "light_block".to_string(),
+                    name: "light_dampening".to_string(),
                     is_bool: false,
                     min: 0,
                     max: 15,
                     list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.light_block),
+                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.light_dampening),
                 }),
                 Box::new(SubByteGen {
                     name: "solid_render".to_string(),
@@ -183,7 +183,7 @@ impl UnitGen for StateDataRootUnit {
             pub(crate) mod ignited_by_lava;
             pub(crate) mod is_air;
             pub(crate) mod is_randomly_ticking;
-            pub(crate) mod light_block;
+            pub(crate) mod light_dampening;
             pub(crate) mod light_emission;
             pub(crate) mod max_horizontal_offset;
             pub(crate) mod max_vertical_offset;

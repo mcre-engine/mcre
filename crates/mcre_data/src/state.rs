@@ -19,7 +19,7 @@ pub struct BlockState {
     pub propagates_skylight_down: bool,
     // How many light levels this block blocks (0–15).
     // Opposite of emission.
-    pub light_block: u8,
+    pub light_dampening: u8,
     // Whether it is considered solid for rendering (solid faces culling).
     pub solid_render: bool,
     // Block Solidity + Physics

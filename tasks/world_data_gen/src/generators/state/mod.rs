@@ -176,8 +176,8 @@ impl UnitGen for StateRootUnit<'_> {
                     data::propagates_skylight_down::get(self.0)
                 }
 
-                pub fn light_block(self) -> u8 {
-                    data::light_block::get(self.0)
+                pub fn light_dampening(self) -> u8 {
+                    data::light_dampening::get(self.0)
                 }
 
                 pub fn solid_render(self) -> bool {
