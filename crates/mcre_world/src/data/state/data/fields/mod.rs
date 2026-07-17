@@ -80,6 +80,7 @@ pub(crate) mod orientation;
 pub(crate) mod part;
 pub(crate) mod pickles;
 pub(crate) mod piston_type;
+pub(crate) mod potent_sulfur_state;
 pub(crate) mod power;
 pub(crate) mod rail_shape;
 pub(crate) mod redstone_east;

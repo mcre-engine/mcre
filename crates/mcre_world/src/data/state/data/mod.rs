@@ -5,7 +5,7 @@ pub(crate) mod fields;
 pub(crate) mod ignited_by_lava;
 pub(crate) mod is_air;
 pub(crate) mod is_randomly_ticking;
-pub(crate) mod light_block;
+pub(crate) mod light_dampening;
 pub(crate) mod light_emission;
 pub(crate) mod max_horizontal_offset;
 pub(crate) mod max_vertical_offset;

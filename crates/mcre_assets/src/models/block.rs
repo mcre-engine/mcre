@@ -5,7 +5,7 @@ use alloc::{
     vec::Vec,
 };
 use mcre_core::{Axis, Direction, Vec3f, Vec4f};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::{BlockModelId, FxHashMap, RefOr, ReferenceId, RotationDegrees, TextureId};
 
@@ -15,7 +15,7 @@ pub struct BlockModelDefinition {
     pub parent: Option<BlockModelId>,
     pub ambientocclusion: bool,
     pub elements: Vec<BlockModelElement>,
-    pub textures: FxHashMap<String, RefOr<TextureId>>,
+    pub textures: FxHashMap<String, BlockModelTexture>,
     pub display: FxHashMap<String, Transform>,
 }
 
@@ -30,11 +30,22 @@ fn default_ambientocclusion() -> bool {
     true
 }
 
+fn default_origin() -> Vec3f {
+    Vec3f::new(0.0, 0.0, 0.0)
+}
+
+fn default_scale() -> Vec3f {
+    Vec3f::new(1.0, 1.0, 1.0)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Transform {
+    #[serde(default = "default_origin")]
     pub translation: Vec3f,
-    pub rotation: Option<Vec3f>,
-    pub scale: Option<Vec3f>,
+    #[serde(default = "default_origin")]
+    pub rotation: Vec3f,
+    #[serde(default = "default_scale")]
+    pub scale: Vec3f,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,14 +64,63 @@ fn default_shade() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BlockModelElementRotation {
-    pub origin: Vec3f,
-    pub axis: Axis,
-    pub angle: f32,
-    #[serde(default)]
-    pub rescale: bool,
+#[derive(Debug, Clone)]
+pub enum BlockModelElementRotation {
+    AxisAngle {
+        origin: Vec3f,
+        axis: Axis,
+        angle: f32,
+        rescale: bool,
+    },
+    Euler {
+        origin: Vec3f,
+        x: f32,
+        y: f32,
+        z: f32,
+    },
+}
+
+impl<'de> Deserialize<'de> for BlockModelElementRotation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        #[derive(Deserialize)]
+        struct RotationData {
+            origin: Vec3f,
+            #[serde(default)]
+            rescale: bool,
+            axis: Option<Axis>,
+            angle: Option<f32>,
+            x: Option<f32>,
+            y: Option<f32>,
+            z: Option<f32>,
+        }
+
+        let data = RotationData::deserialize(deserializer)?;
+
+        if let (Some(axis), Some(angle)) = (data.axis, data.angle) {
+            Ok(BlockModelElementRotation::AxisAngle {
+                origin: data.origin,
+                axis,
+                angle,
+                rescale: data.rescale,
+            })
+        } else if let (Some(x), Some(y), Some(z)) = (data.x, data.y, data.z) {
+            Ok(BlockModelElementRotation::Euler {
+                origin: data.origin,
+                x,
+                y,
+                z,
+            })
+        } else {
+            Err(Error::custom(
+                "invalid rotation: expected either `axis`/`angle` or `x`/`y`/`z`",
+            ))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -74,46 +134,97 @@ pub struct BlockModelFace {
     pub cullface: Option<Direction>,
 }
 
-impl BlockModelElementRotation {
-    pub fn apply_on_point(&self, point: Vec3f) -> Vec3f {
-        let mut point = point - self.origin;
-        let (sin, cos) = self.angle.sin_cos();
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlockModelTextureObject {
+    pub force_translucent: bool,
+    pub sprite: RefOr<TextureId>,
+}
 
-        // Minecraft Java Edition Rescale Logic
-        // Formula: 1.0 / (|cos(angle)| + |sin(angle)|)
-        let scale = if self.rescale {
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum BlockModelTexture {
+    RefOr(RefOr<TextureId>),
+    Object(BlockModelTextureObject),
+}
+
+impl BlockModelElementRotation {
+    fn rotate_axis_angle(
+        point: Vec3f,
+        origin: Vec3f,
+        axis: Axis,
+        angle: f32,
+        rescale: bool,
+    ) -> Vec3f {
+        let mut point = point - origin;
+        let (sin, cos) = angle.sin_cos();
+
+        let scale = if rescale {
             1.0 / (cos.abs() + sin.abs())
         } else {
             1.0
         };
 
-        match self.axis {
+        match axis {
             Axis::X => {
                 let y = point[1];
                 let z = point[2];
-                // Rotate Y and Z, then apply scale
                 point[1] = (y * cos - z * sin) * scale;
                 point[2] = (y * sin + z * cos) * scale;
             }
             Axis::Y => {
                 let x = point[0];
                 let z = point[2];
-                // Rotate X and Z, then apply scale
                 point[0] = (x * cos + z * sin) * scale;
                 point[2] = (z * cos - x * sin) * scale;
             }
             Axis::Z => {
                 let x = point[0];
                 let y = point[1];
-                // Rotate X and Y, then apply scale
                 point[0] = (x * cos - y * sin) * scale;
                 point[1] = (x * sin + y * cos) * scale;
             }
         }
-        point + self.origin
+        point + origin
     }
 
-    // apply_on_quad remains the same, but must now also pass 'from' and 'to'
+    fn rotate_euler(mut point: Vec3f, origin: Vec3f, x: f32, y: f32, z: f32) -> Vec3f {
+        point = point - origin;
+
+        let (sin, cos) = x.to_radians().sin_cos();
+        let y1 = point[1];
+        let z1 = point[2];
+        point[1] = y1 * cos - z1 * sin;
+        point[2] = y1 * sin + z1 * cos;
+
+        let (sin, cos) = y.to_radians().sin_cos();
+        let x1 = point[0];
+        let z1 = point[2];
+        point[0] = x1 * cos + z1 * sin;
+        point[2] = z1 * cos - x1 * sin;
+
+        let (sin, cos) = z.to_radians().sin_cos();
+        let x1 = point[0];
+        let y1 = point[1];
+        point[0] = x1 * cos - y1 * sin;
+        point[1] = x1 * sin + y1 * cos;
+
+        point + origin
+    }
+
+    pub fn apply_on_point(&self, point: Vec3f) -> Vec3f {
+        match self {
+            BlockModelElementRotation::AxisAngle {
+                origin,
+                axis,
+                angle,
+                rescale,
+            } => Self::rotate_axis_angle(point, *origin, *axis, *angle, *rescale),
+            BlockModelElementRotation::Euler { origin, x, y, z } => {
+                Self::rotate_euler(point, *origin, *x, *y, *z)
+            }
+        }
+    }
+
     pub fn apply_on_quad(&self, quad: [Vec3f; 4]) -> [Vec3f; 4] {
         array::from_fn(|i| self.apply_on_point(quad[i]))
     }
@@ -180,8 +291,16 @@ impl BlockModelDefinition {
         F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
     {
         for (name, texture) in &self.textures {
-            if let RefOr::Value(texture_id) = texture {
-                texture_map.insert(ReferenceId::new(name.clone()), texture_id.clone());
+            let texture_id = match texture {
+                BlockModelTexture::RefOr(RefOr::Value(id)) => Some(id.clone()),
+                BlockModelTexture::Object(obj) => match &obj.sprite {
+                    RefOr::Value(id) => Some(id.clone()),
+                    _ => None,
+                },
+                _ => None,
+            };
+            if let Some(texture_id) = texture_id {
+                texture_map.insert(ReferenceId::new(name.clone()), texture_id);
             }
         }
 
@@ -323,9 +442,10 @@ mod de_impl {
     use serde_json::Value;
 
     use crate::{
-        BlockModelId, FxHashMap, RefOr, TextureId,
+        BlockModelId, FxHashMap,
         block::{
-            BlockModelDefinition, BlockModelElement, GuiLight, Transform, default_ambientocclusion,
+            BlockModelDefinition, BlockModelElement, BlockModelTexture, GuiLight, Transform,
+            default_ambientocclusion,
         },
     };
 
@@ -365,7 +485,7 @@ mod de_impl {
                     let mut parent: Option<Option<BlockModelId>> = None;
                     let mut ambientocclusion: Option<bool> = None;
                     let mut elements: Option<Vec<BlockModelElement>> = None;
-                    let mut textures: Option<FxHashMap<String, RefOr<TextureId>>> = None;
+                    let mut textures: Option<FxHashMap<String, BlockModelTexture>> = None;
                     let mut display: Option<FxHashMap<String, Transform>> = None;
 
                     // Loop over key-value pairs in the input map
@@ -411,11 +531,11 @@ mod de_impl {
                                         continue;
                                     }
 
-                                    let ref_or_texture: RefOr<TextureId> =
+                                    let texture: BlockModelTexture =
                                         serde::Deserialize::deserialize(value)
                                             .map_err(de::Error::custom)?;
 
-                                    filtered_map.insert(key, ref_or_texture);
+                                    filtered_map.insert(key, texture);
                                 }
 
                                 textures = Some(filtered_map);

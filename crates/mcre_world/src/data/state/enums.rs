@@ -19,13 +19,17 @@ pub enum NoteBlockInstrument {
     Bit = 13u8,
     Banjo = 14u8,
     Pling = 15u8,
-    Zombie = 16u8,
-    Skeleton = 17u8,
-    Creeper = 18u8,
-    Dragon = 19u8,
-    WitherSkeleton = 20u8,
-    Piglin = 21u8,
-    CustomHead = 22u8,
+    Trumpet = 16u8,
+    TrumpetExposed = 17u8,
+    TrumpetOxidized = 18u8,
+    TrumpetWeathered = 19u8,
+    Zombie = 20u8,
+    Skeleton = 21u8,
+    Creeper = 22u8,
+    Dragon = 23u8,
+    WitherSkeleton = 24u8,
+    Piglin = 25u8,
+    CustomHead = 26u8,
 }
 impl NoteBlockInstrument {
     pub fn as_str(self) -> &'static str {
@@ -46,6 +50,10 @@ impl NoteBlockInstrument {
             Self::Bit => "bit",
             Self::Banjo => "banjo",
             Self::Pling => "pling",
+            Self::Trumpet => "trumpet",
+            Self::TrumpetExposed => "trumpet_exposed",
+            Self::TrumpetOxidized => "trumpet_oxidized",
+            Self::TrumpetWeathered => "trumpet_weathered",
             Self::Zombie => "zombie",
             Self::Skeleton => "skeleton",
             Self::Creeper => "creeper",
@@ -76,6 +84,10 @@ impl FromStr for NoteBlockInstrument {
             "bit" => Ok(Self::Bit),
             "banjo" => Ok(Self::Banjo),
             "pling" => Ok(Self::Pling),
+            "trumpet" => Ok(Self::Trumpet),
+            "trumpet_exposed" => Ok(Self::TrumpetExposed),
+            "trumpet_oxidized" => Ok(Self::TrumpetOxidized),
+            "trumpet_weathered" => Ok(Self::TrumpetWeathered),
             "zombie" => Ok(Self::Zombie),
             "skeleton" => Ok(Self::Skeleton),
             "creeper" => Ok(Self::Creeper),
@@ -209,63 +221,6 @@ impl FromStr for PistonType {
 }
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
-pub enum SideChainPart {
-    Unconnected = 0u8,
-    Right = 1u8,
-    Center = 2u8,
-    Left = 3u8,
-}
-impl SideChainPart {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Unconnected => "unconnected",
-            Self::Right => "right",
-            Self::Center => "center",
-            Self::Left => "left",
-        }
-    }
-}
-impl FromStr for SideChainPart {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, ()> {
-        match s {
-            "unconnected" => Ok(Self::Unconnected),
-            "right" => Ok(Self::Right),
-            "center" => Ok(Self::Center),
-            "left" => Ok(Self::Left),
-            _ => Err(()),
-        }
-    }
-}
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum CreakingHeartState {
-    Uprooted = 0u8,
-    Dormant = 1u8,
-    Awake = 2u8,
-}
-impl CreakingHeartState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Uprooted => "uprooted",
-            Self::Dormant => "dormant",
-            Self::Awake => "awake",
-        }
-    }
-}
-impl FromStr for CreakingHeartState {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, ()> {
-        match s {
-            "uprooted" => Ok(Self::Uprooted),
-            "dormant" => Ok(Self::Dormant),
-            "awake" => Ok(Self::Awake),
-            _ => Err(()),
-        }
-    }
-}
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-#[repr(u8)]
 pub enum Half {
     Top = 0u8,
     Bottom = 1u8,
@@ -317,6 +272,90 @@ impl FromStr for StairsShape {
             "inner_right" => Ok(Self::InnerRight),
             "outer_left" => Ok(Self::OuterLeft),
             "outer_right" => Ok(Self::OuterRight),
+            _ => Err(()),
+        }
+    }
+}
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum SlabType {
+    Top = 0u8,
+    Bottom = 1u8,
+    Double = 2u8,
+}
+impl SlabType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+            Self::Double => "double",
+        }
+    }
+}
+impl FromStr for SlabType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        match s {
+            "top" => Ok(Self::Top),
+            "bottom" => Ok(Self::Bottom),
+            "double" => Ok(Self::Double),
+            _ => Err(()),
+        }
+    }
+}
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum SideChainPart {
+    Unconnected = 0u8,
+    Right = 1u8,
+    Center = 2u8,
+    Left = 3u8,
+}
+impl SideChainPart {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unconnected => "unconnected",
+            Self::Right => "right",
+            Self::Center => "center",
+            Self::Left => "left",
+        }
+    }
+}
+impl FromStr for SideChainPart {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        match s {
+            "unconnected" => Ok(Self::Unconnected),
+            "right" => Ok(Self::Right),
+            "center" => Ok(Self::Center),
+            "left" => Ok(Self::Left),
+            _ => Err(()),
+        }
+    }
+}
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum CreakingHeartState {
+    Uprooted = 0u8,
+    Dormant = 1u8,
+    Awake = 2u8,
+}
+impl CreakingHeartState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Uprooted => "uprooted",
+            Self::Dormant => "dormant",
+            Self::Awake => "awake",
+        }
+    }
+}
+impl FromStr for CreakingHeartState {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        match s {
+            "uprooted" => Ok(Self::Uprooted),
+            "dormant" => Ok(Self::Dormant),
+            "awake" => Ok(Self::Awake),
             _ => Err(()),
         }
     }
@@ -422,33 +461,6 @@ impl FromStr for AttachFace {
             "floor" => Ok(Self::Floor),
             "wall" => Ok(Self::Wall),
             "ceiling" => Ok(Self::Ceiling),
-            _ => Err(()),
-        }
-    }
-}
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum SlabType {
-    Top = 0u8,
-    Bottom = 1u8,
-    Double = 2u8,
-}
-impl SlabType {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Top => "top",
-            Self::Bottom => "bottom",
-            Self::Double => "double",
-        }
-    }
-}
-impl FromStr for SlabType {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, ()> {
-        match s {
-            "top" => Ok(Self::Top),
-            "bottom" => Ok(Self::Bottom),
-            "double" => Ok(Self::Double),
             _ => Err(()),
         }
     }
@@ -677,6 +689,39 @@ impl FromStr for TestBlockMode {
 }
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
+pub enum PotentSulfurState {
+    Dry = 0u8,
+    Wet = 1u8,
+    Dormant = 2u8,
+    Erupting = 3u8,
+    Continuous = 4u8,
+}
+impl PotentSulfurState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dry => "dry",
+            Self::Wet => "wet",
+            Self::Dormant => "dormant",
+            Self::Erupting => "erupting",
+            Self::Continuous => "continuous",
+        }
+    }
+}
+impl FromStr for PotentSulfurState {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        match s {
+            "dry" => Ok(Self::Dry),
+            "wet" => Ok(Self::Wet),
+            "dormant" => Ok(Self::Dormant),
+            "erupting" => Ok(Self::Erupting),
+            "continuous" => Ok(Self::Continuous),
+            _ => Err(()),
+        }
+    }
+}
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum SculkSensorPhase {
     Inactive = 0u8,
     Active = 1u8,
@@ -734,14 +779,14 @@ impl FromStr for Pose {
 }
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
-pub enum DripstoneThickness {
+pub enum SpeleothemThickness {
     TipMerge = 0u8,
     Tip = 1u8,
     Frustum = 2u8,
     Middle = 3u8,
     Base = 4u8,
 }
-impl DripstoneThickness {
+impl SpeleothemThickness {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::TipMerge => "tip_merge",
@@ -752,7 +797,7 @@ impl DripstoneThickness {
         }
     }
 }
-impl FromStr for DripstoneThickness {
+impl FromStr for SpeleothemThickness {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, ()> {
         match s {

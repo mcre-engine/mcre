@@ -17,7 +17,7 @@ impl From<BlockState> for u16 {
     }
 }
 impl BlockState {
-    pub const MAX: Self = Self(29672u16);
+    pub const MAX: Self = Self(34346u16);
     pub fn block(self) -> Block {
         data::block::get(self.0).into()
     }
@@ -30,8 +30,8 @@ impl BlockState {
     pub fn propagates_skylight_down(self) -> bool {
         data::propagates_skylight_down::get(self.0)
     }
-    pub fn light_block(self) -> u8 {
-        data::light_block::get(self.0)
+    pub fn light_dampening(self) -> u8 {
+        data::light_dampening::get(self.0)
     }
     pub fn solid_render(self) -> bool {
         data::solid_render::get(self.0)
@@ -147,6 +147,9 @@ impl BlockState {
             FieldKey::HoneyLevel => Some(FieldVal::HoneyLevel(self.honey_level())),
             FieldKey::Charges => Some(FieldVal::Charges(self.charges())),
             FieldKey::Candles => Some(FieldVal::Candles(self.candles())),
+            FieldKey::PotentSulfurState => {
+                Some(FieldVal::PotentSulfurState(self.potent_sulfur_state()))
+            }
             FieldKey::SculkSensorPhase => {
                 Some(FieldVal::SculkSensorPhase(self.sculk_sensor_phase()))
             }
@@ -175,8 +178,8 @@ impl BlockState {
             FieldKey::DoubleblockHalf => Some(FieldVal::DoubleblockHalf(self.doubleblock_half())),
             FieldKey::Half => Some(FieldVal::Half(self.half())),
             FieldKey::PistonType => Some(FieldVal::PistonType(self.piston_type())),
-            FieldKey::ChestType => Some(FieldVal::ChestType(self.chest_type())),
             FieldKey::SlabType => Some(FieldVal::SlabType(self.slab_type())),
+            FieldKey::ChestType => Some(FieldVal::ChestType(self.chest_type())),
             FieldKey::RedstoneEast => Some(FieldVal::RedstoneEast(self.redstone_east())),
             FieldKey::WallEast => Some(FieldVal::WallEast(self.wall_east())),
             FieldKey::RedstoneNorth => Some(FieldVal::RedstoneNorth(self.redstone_north())),
@@ -289,10 +292,10 @@ impl BlockState {
             PropKey::Type => {
                 if self.block().is_field_present(FieldKey::PistonType) {
                     Some(PropVal::Type(self.piston_type().into()))
-                } else if self.block().is_field_present(FieldKey::ChestType) {
-                    Some(PropVal::Type(self.chest_type().into()))
                 } else if self.block().is_field_present(FieldKey::SlabType) {
                     Some(PropVal::Type(self.slab_type().into()))
+                } else if self.block().is_field_present(FieldKey::ChestType) {
+                    Some(PropVal::Type(self.chest_type().into()))
                 } else {
                     None
                 }
@@ -544,6 +547,10 @@ impl BlockState {
                 .block()
                 .is_field_present(FieldKey::Candles)
                 .then_some(PropVal::Candles(self.candles())),
+            PropKey::PotentSulfurState => self
+                .block()
+                .is_field_present(FieldKey::PotentSulfurState)
+                .then_some(PropVal::PotentSulfurState(self.potent_sulfur_state())),
             PropKey::SculkSensorPhase => self
                 .block()
                 .is_field_present(FieldKey::SculkSensorPhase)
@@ -836,6 +843,13 @@ impl BlockState {
     pub fn candles(self) -> u8 {
         data::fields::candles::get(self.0)
     }
+    pub fn potent_sulfur_state(self) -> PotentSulfurState {
+        unsafe {
+            core::mem::transmute::<u8, PotentSulfurState>(data::fields::potent_sulfur_state::get(
+                self.0,
+            ))
+        }
+    }
     pub fn sculk_sensor_phase(self) -> SculkSensorPhase {
         unsafe {
             core::mem::transmute::<u8, SculkSensorPhase>(data::fields::sculk_sensor_phase::get(
@@ -855,9 +869,9 @@ impl BlockState {
     pub fn copper_golem_pose(self) -> Pose {
         unsafe { core::mem::transmute::<u8, Pose>(data::fields::copper_golem_pose::get(self.0)) }
     }
-    pub fn thickness(self) -> DripstoneThickness {
+    pub fn thickness(self) -> SpeleothemThickness {
         unsafe {
-            core::mem::transmute::<u8, DripstoneThickness>(data::fields::thickness::get(self.0))
+            core::mem::transmute::<u8, SpeleothemThickness>(data::fields::thickness::get(self.0))
         }
     }
     pub fn vertical_direction(self) -> Direction {
@@ -916,11 +930,11 @@ impl BlockState {
     pub fn piston_type(self) -> PistonType {
         unsafe { core::mem::transmute::<u8, PistonType>(data::fields::piston_type::get(self.0)) }
     }
-    pub fn chest_type(self) -> ChestType {
-        unsafe { core::mem::transmute::<u8, ChestType>(data::fields::chest_type::get(self.0)) }
-    }
     pub fn slab_type(self) -> SlabType {
         unsafe { core::mem::transmute::<u8, SlabType>(data::fields::slab_type::get(self.0)) }
+    }
+    pub fn chest_type(self) -> ChestType {
+        unsafe { core::mem::transmute::<u8, ChestType>(data::fields::chest_type::get(self.0)) }
     }
     pub fn redstone_east(self) -> RedstoneSide {
         unsafe {
