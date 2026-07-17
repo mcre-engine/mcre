@@ -70,7 +70,7 @@ impl BlockState {
 
 #[cfg(test)]
 mod tests {
-    use jni::{JNIEnv, objects::JValueGen};
+    use jni::{Env, JValue, jni_sig, jni_str};
     use mcre_core::BlockPos;
 
     use crate::state::{BlockState, OffsetType};
@@ -82,14 +82,14 @@ mod tests {
     }
 
     #[mcje::test]
-    async fn test_random_offset(env: &mut JNIEnv<'_>) {
+    async fn test_random_offset(env: &mut Env<'_>) {
         let block_states = BlockState::all().await.unwrap();
 
         let block_state_registry = env
             .get_static_field(
-                "net/minecraft/world/level/block/Block",
-                "BLOCK_STATE_REGISTRY",
-                "Lnet/minecraft/core/IdMapper;",
+                jni_str!("net/minecraft/world/level/block/Block"),
+                jni_str!("BLOCK_STATE_REGISTRY"),
+                jni_sig!("Lnet/minecraft/core/IdMapper;"),
             )
             .unwrap()
             .l()
@@ -98,9 +98,9 @@ mod tests {
         let mut block_state = env
             .call_method(
                 &block_state_registry,
-                "byId",
-                "(I)Ljava/lang/Object;",
-                &[JValueGen::Int(0)],
+                jni_str!("byId"),
+                jni_sig!("(I)Ljava/lang/Object;"),
+                &[JValue::Int(0)],
             )
             .unwrap()
             .l()
@@ -112,8 +112,10 @@ mod tests {
             let offset_function = env
                 .get_field(
                     &block_state,
-                    "offsetFunction",
-                    "Lnet/minecraft/world/level/block/state/BlockBehaviour$OffsetFunction;",
+                    jni_str!("offsetFunction"),
+                    jni_sig!(
+                        "Lnet/minecraft/world/level/block/state/BlockBehaviour$OffsetFunction;"
+                    ),
                 )
                 .unwrap()
                 .l()
@@ -124,15 +126,12 @@ mod tests {
                     OffsetType::None
                 );
             } else {
-                let block_pos_class = "net/minecraft/core/BlockPos";
-
                 for i in 0..10 {
-                    // BlockPos(i, i, i)
                     let pos_obj = env
                         .new_object(
-                            block_pos_class,
-                            "(III)V",
-                            &[JValueGen::Int(i), JValueGen::Int(i), JValueGen::Int(i)],
+                            jni_str!("net/minecraft/core/BlockPos"),
+                            jni_sig!("(III)V"),
+                            &[JValue::Int(i), JValue::Int(i), JValue::Int(i)],
                         )
                         .unwrap();
 
@@ -140,14 +139,26 @@ mod tests {
                     // Signature: (LBlockState;LBlockPos;)LVec3;
                     let vec3_obj = env.call_method(
                         &offset_function,
-                        "evaluate",
-                        "(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/phys/Vec3;",
-                        &[JValueGen::Object(&block_state), JValueGen::Object(&pos_obj)]
+                        jni_str!("evaluate"),
+                        jni_sig!("(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/phys/Vec3;"),
+                        &[JValue::Object(&block_state), JValue::Object(&pos_obj)]
                     ).unwrap().l().unwrap();
 
-                    let java_x = env.get_field(&vec3_obj, "x", "D").unwrap().d().unwrap();
-                    let java_y = env.get_field(&vec3_obj, "y", "D").unwrap().d().unwrap();
-                    let java_z = env.get_field(&vec3_obj, "z", "D").unwrap().d().unwrap();
+                    let java_x = env
+                        .get_field(&vec3_obj, jni_str!("x"), jni_sig!("D"))
+                        .unwrap()
+                        .d()
+                        .unwrap();
+                    let java_y = env
+                        .get_field(&vec3_obj, jni_str!("y"), jni_sig!("D"))
+                        .unwrap()
+                        .d()
+                        .unwrap();
+                    let java_z = env
+                        .get_field(&vec3_obj, jni_str!("z"), jni_sig!("D"))
+                        .unwrap()
+                        .d()
+                        .unwrap();
 
                     let java_value = (java_x, java_y, java_z);
 
@@ -196,9 +207,9 @@ mod tests {
             block_state = env
                 .call_method(
                     &block_state_registry,
-                    "byId",
-                    "(I)Ljava/lang/Object;",
-                    &[JValueGen::Int(block_state_id.into())],
+                    jni_str!("byId"),
+                    jni_sig!("(I)Ljava/lang/Object;"),
+                    &[JValue::Int(block_state_id.into())],
                 )
                 .unwrap()
                 .l()

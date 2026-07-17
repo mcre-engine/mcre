@@ -34,12 +34,12 @@ hashbrown    = { version = "0.17", default-features = false, features = ["serde"
 rustc-hash   = { version = "2", default-features = false }
 tokio        = { version = "1", features = ["full"] }
 chrono       = { version = "0.4", features = ["serde"] }
-reqwest      = { version = "0.13", default-features = false, features = ["json", "stream", "native-tls"] }
+reqwest      = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
 url          = { version = "2", features = ["serde"] }
 futures-core = "0.3"
 bytes        = "1"
 zip          = "8"
-jni          = { version = "0.21", features = ["invocation"] }
+jni          = { version = "0.22", features = ["invocation"] }
 
 syn          = { version = "2.0", features = ["full"] }
 quote        = "1"
