@@ -2,8 +2,8 @@ use std::{fs, path::PathBuf};
 
 use indexmap::IndexMap;
 use jni::{
-    JNIEnv,
-    objects::{JObject, JString, JValueGen},
+    Env, JValue, jni_sig, jni_str,
+    objects::{JObject, JString},
 };
 use mcje::{get_registry, iterate};
 use mcre_core::OffsetType;
@@ -16,20 +16,20 @@ const BLOCK_DATA_PATH: &str = "crates/mcre_data/blocks.json";
 const BLOCK_STATE_DATA_PATH: &str = "crates/mcre_data/block_states.json";
 
 #[mcje::main]
-async fn main(env: &mut JNIEnv<'_>) {
+async fn main(env: &mut Env<'_>) {
     generate_block_data(env);
     generate_block_state_data(env);
 }
 
-fn generate_block_data(env: &mut JNIEnv) {
+fn generate_block_data<'a>(env: &mut Env<'a>) {
     println!("[DEBUG] Generating block data");
     let block_registry = get_registry(env, "BLOCK", "DefaultedRegistry");
 
     let block_state_registry = env
         .get_static_field(
-            "net/minecraft/world/level/block/Block",
-            "BLOCK_STATE_REGISTRY",
-            "Lnet/minecraft/core/IdMapper;",
+            jni_str!("net/minecraft/world/level/block/Block"),
+            jni_str!("BLOCK_STATE_REGISTRY"),
+            jni_sig!("Lnet/minecraft/core/IdMapper;"),
         )
         .unwrap()
         .l()
@@ -45,8 +45,8 @@ fn generate_block_data(env: &mut JNIEnv) {
         let default_state = env
             .get_field(
                 &block,
-                "defaultBlockState",
-                "Lnet/minecraft/world/level/block/state/BlockState;",
+                jni_str!("defaultBlockState"),
+                jni_sig!("Lnet/minecraft/world/level/block/state/BlockState;"),
             )
             .unwrap()
             .l()
@@ -54,10 +54,10 @@ fn generate_block_data(env: &mut JNIEnv) {
 
         let default_state_id = env
             .call_static_method(
-                "net/minecraft/world/level/block/Block",
-                "getId",
-                "(Lnet/minecraft/world/level/block/state/BlockState;)I",
-                &[JValueGen::Object(&default_state)],
+                jni_str!("net/minecraft/world/level/block/Block"),
+                jni_str!("getId"),
+                jni_sig!("(Lnet/minecraft/world/level/block/state/BlockState;)I"),
+                &[JValue::Object(&default_state)],
             )
             .unwrap()
             .i()
@@ -74,9 +74,9 @@ fn generate_block_data(env: &mut JNIEnv) {
             let state = env
                 .call_method(
                     &block_state_registry,
-                    "byId",
-                    "(I)Ljava/lang/Object;",
-                    &[JValueGen::Int(block_state_id_counter as i32)],
+                    jni_str!("byId"),
+                    jni_sig!("(I)Ljava/lang/Object;"),
+                    &[JValue::Int(block_state_id_counter as i32)],
                 )
                 .unwrap()
                 .l()
@@ -85,7 +85,7 @@ fn generate_block_data(env: &mut JNIEnv) {
                 break;
             }
             let state_owner = env
-                .get_field(state, "owner", "Ljava/lang/Object;")
+                .get_field(state, jni_str!("owner"), jni_sig!("Ljava/lang/Object;"))
                 .unwrap()
                 .l()
                 .unwrap();
@@ -116,15 +116,15 @@ fn generate_block_data(env: &mut JNIEnv) {
     println!("[DEBUG] Block data saved to `{}`", BLOCK_DATA_PATH);
 }
 
-fn generate_block_state_data(env: &mut JNIEnv) {
+fn generate_block_state_data<'a>(env: &mut Env<'a>) {
     println!("[DEBUG] Generating block state data");
     let block_registry = get_registry(env, "BLOCK", "DefaultedRegistry");
 
     let block_state_registry = env
         .get_static_field(
-            "net/minecraft/world/level/block/Block",
-            "BLOCK_STATE_REGISTRY",
-            "Lnet/minecraft/core/IdMapper;",
+            jni_str!("net/minecraft/world/level/block/Block"),
+            jni_str!("BLOCK_STATE_REGISTRY"),
+            jni_sig!("Lnet/minecraft/core/IdMapper;"),
         )
         .unwrap()
         .l()
@@ -133,9 +133,9 @@ fn generate_block_state_data(env: &mut JNIEnv) {
     let mut block_state = env
         .call_method(
             &block_state_registry,
-            "byId",
-            "(I)Ljava/lang/Object;",
-            &[JValueGen::Int(0)],
+            jni_str!("byId"),
+            jni_sig!("(I)Ljava/lang/Object;"),
+            &[JValue::Int(0)],
         )
         .unwrap()
         .l()
@@ -152,9 +152,9 @@ fn generate_block_state_data(env: &mut JNIEnv) {
         block_state = env
             .call_method(
                 &block_state_registry,
-                "byId",
-                "(I)Ljava/lang/Object;",
-                &[JValueGen::Int(block_state_id.into())],
+                jni_str!("byId"),
+                jni_sig!("(I)Ljava/lang/Object;"),
+                &[JValue::Int(block_state_id.into())],
             )
             .unwrap()
             .l()
@@ -175,14 +175,18 @@ fn generate_block_state_data(env: &mut JNIEnv) {
     );
 }
 
-fn process_block_state(
-    block_registry: &JObject,
+fn process_block_state<'a>(
+    block_registry: &JObject<'a>,
     id: u16,
-    block_state: &JObject,
-    env: &mut JNIEnv,
+    block_state: &JObject<'a>,
+    env: &mut Env<'a>,
 ) -> BlockState {
     let block = env
-        .get_field(block_state, "owner", "Ljava/lang/Object;")
+        .get_field(
+            block_state,
+            jni_str!("owner"),
+            jni_sig!("Ljava/lang/Object;"),
+        )
         .unwrap()
         .l()
         .unwrap();
@@ -190,9 +194,9 @@ fn process_block_state(
     let block_id: u16 = env
         .call_method(
             block_registry,
-            "getId",
-            "(Ljava/lang/Object;)I",
-            &[JValueGen::Object(&block)],
+            jni_str!("getId"),
+            jni_sig!("(Ljava/lang/Object;)I"),
+            &[JValue::Object(&block)],
         )
         .unwrap()
         .i()
@@ -203,7 +207,7 @@ fn process_block_state(
     let block_name = get_block_name(&block, block_registry, env);
 
     let light_emission: u8 = env
-        .get_field(block_state, "lightEmission", "I")
+        .get_field(block_state, jni_str!("lightEmission"), jni_sig!("I"))
         .unwrap()
         .i()
         .unwrap()
@@ -211,19 +215,27 @@ fn process_block_state(
         .unwrap();
 
     let use_shape_for_light_occlusion = env
-        .get_field(block_state, "useShapeForLightOcclusion", "Z")
+        .get_field(
+            block_state,
+            jni_str!("useShapeForLightOcclusion"),
+            jni_sig!("Z"),
+        )
         .unwrap()
         .z()
         .unwrap();
 
     let propagates_skylight_down = env
-        .get_field(block_state, "propagatesSkylightDown", "Z")
+        .get_field(
+            block_state,
+            jni_str!("propagatesSkylightDown"),
+            jni_sig!("Z"),
+        )
         .unwrap()
         .z()
         .unwrap();
 
     let light_dampening: u8 = env
-        .get_field(block_state, "lightDampening", "I")
+        .get_field(block_state, jni_str!("lightDampening"), jni_sig!("I"))
         .unwrap()
         .i()
         .unwrap()
@@ -231,55 +243,63 @@ fn process_block_state(
         .unwrap();
 
     let solid_render = env
-        .get_field(block_state, "solidRender", "Z")
+        .get_field(block_state, jni_str!("solidRender"), jni_sig!("Z"))
         .unwrap()
         .z()
         .unwrap();
 
     let is_air = env
-        .get_field(block_state, "isAir", "Z")
+        .get_field(block_state, jni_str!("isAir"), jni_sig!("Z"))
         .unwrap()
         .z()
         .unwrap();
 
     let ignited_by_lava = env
-        .get_field(block_state, "ignitedByLava", "Z")
+        .get_field(block_state, jni_str!("ignitedByLava"), jni_sig!("Z"))
         .unwrap()
         .z()
         .unwrap();
 
     let can_occlude = env
-        .get_field(block_state, "canOcclude", "Z")
+        .get_field(block_state, jni_str!("canOcclude"), jni_sig!("Z"))
         .unwrap()
         .z()
         .unwrap();
 
     let is_randomly_ticking = env
-        .get_field(block_state, "isRandomlyTicking", "Z")
+        .get_field(block_state, jni_str!("isRandomlyTicking"), jni_sig!("Z"))
         .unwrap()
         .z()
         .unwrap();
 
     let replaceable = env
-        .get_field(block_state, "replaceable", "Z")
+        .get_field(block_state, jni_str!("replaceable"), jni_sig!("Z"))
         .unwrap()
         .z()
         .unwrap();
 
     let spawn_terrain_particles = env
-        .get_field(block_state, "spawnTerrainParticles", "Z")
+        .get_field(
+            block_state,
+            jni_str!("spawnTerrainParticles"),
+            jni_sig!("Z"),
+        )
         .unwrap()
         .z()
         .unwrap();
 
     let requires_correct_tool_for_drops = env
-        .get_field(block_state, "requiresCorrectToolForDrops", "Z")
+        .get_field(
+            block_state,
+            jni_str!("requiresCorrectToolForDrops"),
+            jni_sig!("Z"),
+        )
         .unwrap()
         .z()
         .unwrap();
 
     let destroy_speed = env
-        .get_field(block_state, "destroySpeed", "F")
+        .get_field(block_state, jni_str!("destroySpeed"), jni_sig!("F"))
         .unwrap()
         .f()
         .unwrap();
@@ -287,13 +307,23 @@ fn process_block_state(
     let offset_type = determine_offset_type(block_state, env);
 
     let max_horizontal_offset = env
-        .call_method(&block, "getMaxHorizontalOffset", "()F", &[])
+        .call_method(
+            &block,
+            jni_str!("getMaxHorizontalOffset"),
+            jni_sig!("()F"),
+            &[],
+        )
         .unwrap()
         .f()
         .unwrap();
 
     let max_vertical_offset = env
-        .call_method(&block, "getMaxVerticalOffset", "()F", &[])
+        .call_method(
+            &block,
+            jni_str!("getMaxVerticalOffset"),
+            jni_sig!("()F"),
+            &[],
+        )
         .unwrap()
         .f()
         .unwrap();
@@ -324,12 +354,12 @@ fn process_block_state(
     }
 }
 
-pub fn determine_offset_type(block_state: &JObject, env: &mut JNIEnv) -> OffsetType {
+pub fn determine_offset_type(block_state: &JObject, env: &mut Env) -> OffsetType {
     let offset_function = env
         .get_field(
             block_state,
-            "offsetFunction",
-            "Lnet/minecraft/world/level/block/state/BlockBehaviour$OffsetFunction;",
+            jni_str!("offsetFunction"),
+            jni_sig!("Lnet/minecraft/world/level/block/state/BlockBehaviour$OffsetFunction;"),
         )
         .unwrap()
         .l()
@@ -339,15 +369,13 @@ pub fn determine_offset_type(block_state: &JObject, env: &mut JNIEnv) -> OffsetT
         return OffsetType::None;
     }
 
-    let block_pos_class = "net/minecraft/core/BlockPos";
-
     for i in 0..10 {
         // BlockPos(i, i, i)
         let pos_obj = env
             .new_object(
-                block_pos_class,
-                "(III)V",
-                &[JValueGen::Int(i), JValueGen::Int(i), JValueGen::Int(i)],
+                jni_str!("net/minecraft/core/BlockPos"),
+                jni_sig!("(III)V"),
+                &[JValue::Int(i), JValue::Int(i), JValue::Int(i)],
             )
             .unwrap();
 
@@ -355,12 +383,16 @@ pub fn determine_offset_type(block_state: &JObject, env: &mut JNIEnv) -> OffsetT
         // Signature: (LBlockState;LBlockPos;)LVec3;
         let vec3_obj = env.call_method(
             &offset_function,
-            "evaluate",
-            "(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/phys/Vec3;",
-            &[JValueGen::Object(block_state), JValueGen::Object(&pos_obj)]
+            jni_str!("evaluate"),
+            jni_sig!("(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/phys/Vec3;"),
+            &[JValue::Object(block_state), JValue::Object(&pos_obj)]
         ).unwrap().l().unwrap();
 
-        let y_val = env.get_field(&vec3_obj, "y", "D").unwrap().d().unwrap();
+        let y_val = env
+            .get_field(&vec3_obj, jni_str!("y"), jni_sig!("D"))
+            .unwrap()
+            .d()
+            .unwrap();
 
         if y_val.abs() > 0.00001 {
             return OffsetType::XYZ;
@@ -370,14 +402,17 @@ pub fn determine_offset_type(block_state: &JObject, env: &mut JNIEnv) -> OffsetT
     OffsetType::XZ
 }
 
-fn get_state_values(block_state: &JObject, env: &mut JNIEnv) -> IndexMap<String, StateValue> {
+fn get_state_values<'a>(
+    block_state: &JObject<'a>,
+    env: &mut Env<'a>,
+) -> IndexMap<String, StateValue> {
     let mut values = IndexMap::new();
 
     let properties = env
         .call_method(
             block_state,
-            "getProperties",
-            "()Ljava/util/Collection;",
+            jni_str!("getProperties"),
+            jni_sig!("()Ljava/util/Collection;"),
             &[],
         )
         .unwrap()
@@ -386,22 +421,27 @@ fn get_state_values(block_state: &JObject, env: &mut JNIEnv) -> IndexMap<String,
 
     iterate(&properties, env, |_i, property, env| {
         let property_clazz = env
-            .get_field(&property, "clazz", "Ljava/lang/Class;")
+            .get_field(&property, jni_str!("clazz"), jni_sig!("Ljava/lang/Class;"))
             .unwrap()
             .l()
             .unwrap();
 
         let property_clazz_name = env
-            .call_method(property_clazz, "getSimpleName", "()Ljava/lang/String;", &[])
+            .call_method(
+                property_clazz,
+                jni_str!("getSimpleName"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )
             .unwrap()
             .l()
             .unwrap();
 
         let property_clazz_name = obj_to_str(property_clazz_name, env);
 
-        let value = env.call_method(block_state, "getValue", "(Lnet/minecraft/world/level/block/state/properties/Property;)Ljava/lang/Comparable;", &[JValueGen::Object(&property)]).unwrap().l().unwrap();
+        let value = env.call_method(block_state, jni_str!("getValue"), jni_sig!("(Lnet/minecraft/world/level/block/state/properties/Property;)Ljava/lang/Comparable;"), &[JValue::Object(&property)]).unwrap().l().unwrap();
         let key_obj = env
-            .get_field(&property, "name", "Ljava/lang/String;")
+            .get_field(&property, jni_str!("name"), jni_sig!("Ljava/lang/String;"))
             .unwrap()
             .l()
             .unwrap();
@@ -409,9 +449,9 @@ fn get_state_values(block_state: &JObject, env: &mut JNIEnv) -> IndexMap<String,
         let value_obj = env
             .call_method(
                 &property,
-                "getName",
-                "(Ljava/lang/Comparable;)Ljava/lang/String;",
-                &[JValueGen::Object(&value)],
+                jni_str!("getName"),
+                jni_sig!("(Ljava/lang/Comparable;)Ljava/lang/String;"),
+                &[JValue::Object(&value)],
             )
             .unwrap()
             .l()
@@ -432,12 +472,12 @@ fn get_state_values(block_state: &JObject, env: &mut JNIEnv) -> IndexMap<String,
     values
 }
 
-fn get_block_display_name(env: &mut JNIEnv, block: &JObject) -> String {
+fn get_block_display_name(env: &mut Env, block: &JObject) -> String {
     let display_name_component = env
         .call_method(
             block,
-            "getName",
-            "()Lnet/minecraft/network/chat/MutableComponent;",
+            jni_str!("getName"),
+            jni_sig!("()Lnet/minecraft/network/chat/MutableComponent;"),
             &[],
         )
         .unwrap()
@@ -447,8 +487,8 @@ fn get_block_display_name(env: &mut JNIEnv, block: &JObject) -> String {
     let display_name_obj = env
         .call_method(
             display_name_component,
-            "getString",
-            "()Ljava/lang/String;",
+            jni_str!("getString"),
+            jni_sig!("()Ljava/lang/String;"),
             &[],
         )
         .unwrap()
@@ -458,13 +498,13 @@ fn get_block_display_name(env: &mut JNIEnv, block: &JObject) -> String {
     obj_to_str(display_name_obj, env)
 }
 
-fn get_block_name(block: &JObject, block_registry: &JObject, env: &mut JNIEnv) -> String {
+fn get_block_name(block: &JObject, block_registry: &JObject, env: &mut Env) -> String {
     let block_identifier = env
         .call_method(
             block_registry,
-            "getKey",
-            "(Ljava/lang/Object;)Lnet/minecraft/resources/Identifier;",
-            &[JValueGen::Object(block)],
+            jni_str!("getKey"),
+            jni_sig!("(Ljava/lang/Object;)Lnet/minecraft/resources/Identifier;"),
+            &[JValue::Object(block)],
         )
         .unwrap()
         .l()
@@ -472,26 +512,26 @@ fn get_block_name(block: &JObject, block_registry: &JObject, env: &mut JNIEnv) -
     get_identifier_path(&block_identifier, env)
 }
 
-fn get_identifier_path(identifier: &JObject, env: &mut JNIEnv) -> String {
+fn get_identifier_path(identifier: &JObject, env: &mut Env) -> String {
     let path = env
-        .get_field(identifier, "path", "Ljava/lang/String;")
+        .get_field(identifier, jni_str!("path"), jni_sig!("Ljava/lang/String;"))
         .unwrap()
         .l()
         .unwrap();
     obj_to_str(path, env)
 }
 
-fn obj_to_str(obj: JObject, env: &mut JNIEnv) -> String {
-    let jstr = JString::from(obj);
-    env.get_string(&jstr).unwrap().into()
+fn obj_to_str(obj: JObject, env: &mut Env) -> String {
+    let jstr = env.as_cast::<JString>(&obj).unwrap();
+    jstr.try_to_string(env).unwrap()
 }
 
-fn get_block_states(block: &JObject, env: &mut JNIEnv) -> Vec<BlockStateField> {
+fn get_block_states<'a>(block: &JObject<'a>, env: &mut Env<'a>) -> Vec<BlockStateField> {
     let state_definition = env
         .get_field(
             block,
-            "stateDefinition",
-            "Lnet/minecraft/world/level/block/state/StateDefinition;",
+            jni_str!("stateDefinition"),
+            jni_sig!("Lnet/minecraft/world/level/block/state/StateDefinition;"),
         )
         .unwrap()
         .l()
@@ -500,8 +540,8 @@ fn get_block_states(block: &JObject, env: &mut JNIEnv) -> Vec<BlockStateField> {
     let properties_map = env
         .get_field(
             state_definition,
-            "propertiesByName",
-            "Lcom/google/common/collect/ImmutableSortedMap;",
+            jni_str!("propertiesByName"),
+            jni_sig!("Lcom/google/common/collect/ImmutableSortedMap;"),
         )
         .unwrap()
         .l()
@@ -510,8 +550,8 @@ fn get_block_states(block: &JObject, env: &mut JNIEnv) -> Vec<BlockStateField> {
     let properties_map_entry_set = env
         .call_method(
             properties_map,
-            "entrySet",
-            "()Lcom/google/common/collect/ImmutableSet;",
+            jni_str!("entrySet"),
+            jni_sig!("()Lcom/google/common/collect/ImmutableSet;"),
             &[],
         )
         .unwrap()
@@ -522,7 +562,12 @@ fn get_block_states(block: &JObject, env: &mut JNIEnv) -> Vec<BlockStateField> {
 
     iterate(&properties_map_entry_set, env, |_i, entry, env| {
         let name_obj = env
-            .call_method(&entry, "getKey", "()Ljava/lang/Object;", &[])
+            .call_method(
+                &entry,
+                jni_str!("getKey"),
+                jni_sig!("()Ljava/lang/Object;"),
+                &[],
+            )
             .unwrap()
             .l()
             .unwrap();
@@ -530,19 +575,29 @@ fn get_block_states(block: &JObject, env: &mut JNIEnv) -> Vec<BlockStateField> {
         let name = obj_to_str(name_obj, env);
 
         let property = env
-            .call_method(entry, "getValue", "()Ljava/lang/Object;", &[])
+            .call_method(
+                entry,
+                jni_str!("getValue"),
+                jni_sig!("()Ljava/lang/Object;"),
+                &[],
+            )
             .unwrap()
             .l()
             .unwrap();
 
         let property_clazz = env
-            .get_field(&property, "clazz", "Ljava/lang/Class;")
+            .get_field(&property, jni_str!("clazz"), jni_sig!("Ljava/lang/Class;"))
             .unwrap()
             .l()
             .unwrap();
 
         let property_clazz_name = env
-            .call_method(property_clazz, "getSimpleName", "()Ljava/lang/String;", &[])
+            .call_method(
+                property_clazz,
+                jni_str!("getSimpleName"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )
             .unwrap()
             .l()
             .unwrap();
@@ -552,14 +607,14 @@ fn get_block_states(block: &JObject, env: &mut JNIEnv) -> Vec<BlockStateField> {
         let values = match property_clazz_name.as_str() {
             "Integer" => {
                 let min: u8 = env
-                    .get_field(&property, "min", "I")
+                    .get_field(&property, jni_str!("min"), jni_sig!("I"))
                     .unwrap()
                     .i()
                     .unwrap()
                     .try_into()
                     .unwrap();
                 let max: u8 = env
-                    .get_field(&property, "max", "I")
+                    .get_field(&property, jni_str!("max"), jni_sig!("I"))
                     .unwrap()
                     .i()
                     .unwrap()
@@ -574,20 +629,53 @@ fn get_block_states(block: &JObject, env: &mut JNIEnv) -> Vec<BlockStateField> {
             }
             _ => {
                 let possible_values = env
-                    .call_method(&property, "getPossibleValues", "()Ljava/util/List;", &[])
+                    .call_method(
+                        &property,
+                        jni_str!("getPossibleValues"),
+                        jni_sig!("()Ljava/util/List;"),
+                        &[],
+                    )
                     .unwrap()
                     .l()
                     .unwrap();
 
                 let mut values = Vec::new();
 
-                iterate(&possible_values, env, |_i, value, env| {
+                let iterable = env
+                    .call_method(
+                        &possible_values,
+                        jni_str!("iterator"),
+                        jni_sig!("()Ljava/util/Iterator;"),
+                        &[],
+                    )
+                    .unwrap()
+                    .l()
+                    .unwrap();
+                loop {
+                    let has_next = env
+                        .call_method(&iterable, jni_str!("hasNext"), jni_sig!("()Z"), &[])
+                        .unwrap()
+                        .z()
+                        .unwrap();
+                    if !has_next {
+                        break;
+                    }
+                    let value = env
+                        .call_method(
+                            &iterable,
+                            jni_str!("next"),
+                            jni_sig!("()Ljava/lang/Object;"),
+                            &[],
+                        )
+                        .unwrap()
+                        .l()
+                        .unwrap();
                     let value_name_obj = env
                         .call_method(
                             &property,
-                            "getName",
-                            "(Ljava/lang/Comparable;)Ljava/lang/String;",
-                            &[JValueGen::Object(&value)],
+                            jni_str!("getName"),
+                            jni_sig!("(Ljava/lang/Comparable;)Ljava/lang/String;"),
+                            &[JValue::Object(&value)],
                         )
                         .unwrap()
                         .l()
@@ -596,7 +684,7 @@ fn get_block_states(block: &JObject, env: &mut JNIEnv) -> Vec<BlockStateField> {
                     let value_name = obj_to_str(value_name_obj, env);
 
                     values.push(value_name);
-                });
+                }
 
                 BlockStateFieldValues::Enum {
                     enum_name: property_clazz_name,
