@@ -1,40 +1,40 @@
 {
-  description = "MCRE Dev shell";
-
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    rust-overlay.url = "github:oxalica/rust-overlay";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     { nixpkgs, rust-overlay, ... }:
     let
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
-      ];
-
       rust-toolchain-toml = builtins.readFile ./rust-toolchain.toml;
-      rust-toolchain = builtins.fromTOML rust-toolchain-toml;
+      rust-toolchain = fromTOML rust-toolchain-toml;
     in
     {
-      devShells = nixpkgs.lib.genAttrs systems (
-        system:
+      devShells = builtins.mapAttrs (
+        system: rustPkgs:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ rust-overlay.overlays.default ];
-          };
+          pkgs = nixpkgs.legacyPackages.${system};
         in
         {
           default = pkgs.mkShell {
             buildInputs = [
               pkgs.just
               pkgs.rustup
-              pkgs.rust-bin.stable."${rust-toolchain.toolchain.channel}".default
-
+              (
+                rustPkgs."rust_${
+                  nixpkgs.lib.replaceStrings [ "." ] [ "_" ] rust-toolchain.toolchain.channel
+                }".override
+                {
+                  extensions = [
+                    "rust-src"
+                    "rust-analyzer"
+                  ];
+                }
+              )
               pkgs.clang
               pkgs.pkg-config
               pkgs.jdk25
@@ -46,15 +46,12 @@
             '';
           };
         }
-      );
+      ) rust-overlay.packages;
 
-      apps = nixpkgs.lib.genAttrs systems (
-        system:
+      apps = builtins.mapAttrs (
+        system: rustPkgs:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ rust-overlay.overlays.default ];
-          };
+          pkgs = nixpkgs.legacyPackages.${system};
           scripts = (import ./scripts.nix) pkgs;
         in
         nixpkgs.lib.mapAttrs (
@@ -66,7 +63,10 @@
           let
             app = pkgs.writeShellApplication {
               inherit name;
-              runtimeInputs = [ pkgs.rust-bin.stable."${rust-toolchain.toolchain.channel}".default ] ++ inputs;
+              runtimeInputs = [
+                (rustPkgs."rust_${nixpkgs.lib.replaceStrings [ "." ] [ "_" ] rust-toolchain.toolchain.channel}")
+              ]
+              ++ inputs;
               text = "set -e\n" + script;
             };
           in
@@ -75,6 +75,8 @@
             program = "${app}/bin/${name}";
           }
         ) scripts
-      );
+      ) rust-overlay.packages;
+
+      formatter = builtins.mapAttrs (_: pkgs: pkgs.nixfmt-tree) nixpkgs.legacyPackages;
     };
 }
