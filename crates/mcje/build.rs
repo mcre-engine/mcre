@@ -4,14 +4,18 @@ use tokio::{fs, time};
 
 #[tokio::main]
 async fn main() {
+    println!("cargo:rerun-if-changed=../../mc-version");
+
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let manifest_dir = PathBuf::from(manifest_dir);
-    let root_manifest = RootManifest::fetch().await.unwrap();
+
     let target_mc_version = fs::read_to_string(manifest_dir.join("../../mc-version"))
         .await
         .unwrap()
         .trim()
         .to_string();
+
+    let root_manifest = RootManifest::fetch().await.unwrap();
     let version_release = root_manifest
         .versions
         .into_iter()
@@ -20,11 +24,14 @@ async fn main() {
 
     let version_manifest = version_release.fetch_manifest().await.unwrap();
 
-    let root_path = manifest_dir.join("../../target/").join("downloads");
-    let main_path = root_path.join("mc.jar");
+    let download_dir = manifest_dir
+        .join("../../target/")
+        .join("downloads")
+        .join(&target_mc_version);
+    let main_path = download_dir.join("mc.jar");
 
-    if !root_path.exists() {
-        fs::create_dir_all(&root_path).await.unwrap();
+    if !download_dir.exists() {
+        fs::create_dir_all(&download_dir).await.unwrap();
     }
 
     if !main_path.exists() {
@@ -32,7 +39,7 @@ async fn main() {
         fs::write(&main_path, client).await.unwrap();
     }
 
-    let libs_root = root_path.join("libs");
+    let libs_root = download_dir.join("libs");
 
     let mut classpath = main_path.to_str().unwrap().to_string();
     #[cfg(target_os = "windows")]
@@ -50,7 +57,6 @@ async fn main() {
             });
             classpath += &format!("{}{}", sep, lib_path.to_str().unwrap());
             if !lib_path.exists() {
-                // avoid rate limit
                 time::sleep(Duration::from_millis(100)).await;
                 let lib_source = lib.downloads.artifact.download().await.unwrap();
                 if let Some(parent) = lib_path.parent()

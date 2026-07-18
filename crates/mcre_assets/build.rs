@@ -11,17 +11,28 @@ use zip::ZipArchive;
 
 #[tokio::main]
 async fn main() {
+    println!("cargo:rerun-if-changed=../../mc-version");
+
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let manifest_dir = PathBuf::from(manifest_dir);
-    if manifest_dir.join("assets").exists() {
-        return;
-    }
-    let root_manifest = RootManifest::fetch().await.unwrap();
+
     let target_mc_version = fs::read_to_string(manifest_dir.join("../../mc-version"))
         .await
         .unwrap()
         .trim()
         .to_string();
+
+    let cache_dir = manifest_dir
+        .join("../../target/")
+        .join("downloads")
+        .join(&target_mc_version)
+        .join("assets");
+
+    if cache_dir.exists() {
+        return;
+    }
+
+    let root_manifest = RootManifest::fetch().await.unwrap();
     let version_release = root_manifest
         .versions
         .into_iter()
@@ -43,7 +54,7 @@ async fn main() {
         let name = entry.name();
 
         if name.starts_with("assets/minecraft") {
-            let outpath = manifest_dir.join(name);
+            let outpath = cache_dir.join(name.strip_prefix("assets/").unwrap());
             if let Some(parent) = outpath.parent()
                 && !parent.exists()
             {

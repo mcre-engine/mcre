@@ -66,7 +66,6 @@ in
       export JAVA_HOME=${pkgs.temurin-bin-25.home}
       curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r '.versions.[0].id' > mc-version
       if ! git diff --quiet -- mc-version; then
-        rm -rf target
         cargo r -r -p data_gen
         rm -rf crates/mcre_world/src/data
         cargo r -r -p world_data_gen
