@@ -393,7 +393,14 @@ mod tests {
     async fn test_parse_block_model_definition() {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         let manifest_dir = PathBuf::from(manifest_dir);
-        let root_dir = manifest_dir.join("assets/minecraft/models/block");
+        let target_mc_version = std::fs::read_to_string(manifest_dir.join("../../mc-version"))
+            .unwrap()
+            .trim()
+            .to_string();
+        let root_dir = manifest_dir
+            .join("../../target/downloads")
+            .join(&target_mc_version)
+            .join("assets/minecraft/models/block");
 
         let mut total = 0;
         let mut passed = 0;
