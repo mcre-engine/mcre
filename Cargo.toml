@@ -41,11 +41,11 @@ bytes        = "1"
 zip          = "8"
 jni          = { version = "0.22", features = ["invocation"] }
 
-syn          = { version = "2.0", features = ["full"] }
+syn          = { version = "3", features = ["full"] }
 quote        = "1"
 proc-macro2  = "1"
 convert_case = "0.11"
-prettyplease = "0.2"
+prettyplease = "0.3"
 
 [workspace.metadata.cargo-shear]
 ignored = ["mcre_assets", "mcre_static_data", "core_io"]
