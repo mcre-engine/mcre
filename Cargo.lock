@@ -958,11 +958,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcre_static_data_gen"
+version = "0.1.0"
+dependencies = [
+ "convert_case",
+ "indexmap",
+ "mcre_data",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+ "tokio",
+]
+
+[[package]]
 name = "mcre_world"
 version = "0.1.0"
 dependencies = [
  "mcre_core",
+ "mcre_data",
+ "mcre_static_data_gen",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2105,20 +2122,6 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
-
-[[package]]
-name = "world_data_gen"
-version = "0.1.0"
-dependencies = [
- "convert_case",
- "indexmap",
- "mcre_data",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn 3.0.3",
- "tokio",
-]
 
 [[package]]
 name = "writeable"

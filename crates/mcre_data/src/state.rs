@@ -58,6 +58,13 @@ impl BlockState {
 }
 
 impl BlockState {
+    pub fn all_sync() -> io::Result<Vec<Self>> {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let block_state_data_path = root.join("block_states.json");
+        let block_state_data_json = std::fs::read_to_string(block_state_data_path)?;
+        Ok(serde_json::from_str(&block_state_data_json)?)
+    }
+
     pub async fn all() -> io::Result<Vec<Self>> {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let block_state_data_path = root.join("block_states.json");
