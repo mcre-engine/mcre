@@ -16,29 +16,25 @@ concurrency:
 
 jobs:
   test:
-    name: CI
-    runs-on: ubuntu-latest
+    name: Test ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cache Nix
-        uses: nix-community/cache-nix-action@v6
-        with:
-          save: ${{ github.ref_name == 'main' }}
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-          gc-max-store-size-linux: 1G
-          purge: true
-          purge-prefixes: nix-${{ runner.os }}-
-          purge-created: 0
-          purge-primary-key: never
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Run checks
-        run: nix run .#ci
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,typos-cli
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - run: just ci

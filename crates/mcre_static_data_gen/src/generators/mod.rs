@@ -116,7 +116,6 @@ impl<'a> Factory<'a> {
 
         let code = units_to_inline_modules(&units);
         let mut code_str = code.to_string();
-        std::fs::write("/tmp/all.rs", &code_str).unwrap();
 
         for (scope_path, unit_name) in &bin_entries {
             let old = format!("include_bytes ! (\"./{}.bin\")", unit_name);

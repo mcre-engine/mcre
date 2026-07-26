@@ -39,6 +39,8 @@
               pkgs.pkg-config
               pkgs.temurin-bin-25
               pkgs.git
+              pkgs.curl
+              pkgs.jq
             ];
 
             shellHook = ''
@@ -46,35 +48,6 @@
             '';
           };
         }
-      ) rust-overlay.packages;
-
-      apps = builtins.mapAttrs (
-        system: rustPkgs:
-        let
-          pkgs = nixpkgs.legacyPackages.${system};
-          scripts = (import ./scripts.nix) pkgs;
-        in
-        nixpkgs.lib.mapAttrs (
-          name:
-          {
-            inputs ? [ ],
-            script,
-          }:
-          let
-            app = pkgs.writeShellApplication {
-              inherit name;
-              runtimeInputs = [
-                (rustPkgs."rust_${nixpkgs.lib.replaceStrings [ "." ] [ "_" ] rust-toolchain.toolchain.channel}")
-              ]
-              ++ inputs;
-              text = "set -e\n" + script;
-            };
-          in
-          {
-            type = "app";
-            program = "${app}/bin/${name}";
-          }
-        ) scripts
       ) rust-overlay.packages;
 
       formatter = builtins.mapAttrs (_: pkgs: pkgs.nixfmt-tree) nixpkgs.legacyPackages;
