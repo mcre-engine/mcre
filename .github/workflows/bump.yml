@@ -19,16 +19,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: cachix/install-nix-action@v31
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@v2
         with:
-          extra_nix_config: |
-            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+          tool: just
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
 
       - name: Run bump-version
         id: bump
         run: |
           set -o pipefail
-          nix run .#bump-version 2>&1 | tee bump.log
+          just bump-version 2>&1 | tee bump.log
 
       - name: Read Next Version
         id: version
