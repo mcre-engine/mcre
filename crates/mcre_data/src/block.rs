@@ -1,3 +1,4 @@
+use mcre_core::OffsetType;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
@@ -12,6 +13,25 @@ pub struct Block {
     pub min_state_id: u16,
     pub max_state_id: u16,
     pub states: Vec<BlockStateField>,
+    pub has_collision: bool,
+    pub explosion_resistance: f32,
+    pub friction: f32,
+    pub speed_factor: f32,
+    pub jump_factor: f32,
+    pub bounce_restitution: f32,
+    pub fall_distance_reduction: f32,
+    pub push_reaction: String,
+    pub instrument: String,
+    pub destroy_speed: f32,
+    pub requires_correct_tool_for_drops: bool,
+    pub can_occlude: bool,
+    pub ignited_by_lava: bool,
+    pub is_air: bool,
+    pub spawn_terrain_particles: bool,
+    pub replaceable: bool,
+    pub offset_type: OffsetType,
+    pub max_horizontal_offset: f32,
+    pub max_vertical_offset: f32,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
