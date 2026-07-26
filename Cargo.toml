@@ -27,6 +27,8 @@ mcje_downloader = { version = "0.1.0", path = "crates/mcje_downloader" }
 
 core_io = { version = "0.1.0", path = "crates/core_io" }
 
+mcre_static_data_gen = { version = "0.1.0", path = "crates/mcre_static_data_gen" }
+
 serde        = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json   = { version = "1", default-features = false, features = ["alloc"] }
 indexmap     = { version = "2", default-features = false, features = ["serde"] }

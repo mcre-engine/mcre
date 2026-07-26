@@ -15,3 +15,8 @@ rust-version.workspace = true
 mcre_core = { workspace = true }
 
 serde = { workspace = true }
+
+[build-dependencies]
+mcre_static_data_gen = { path = "../mcre_static_data_gen", default-features = false }
+mcre_data = { workspace = true }
+serde_json = { workspace = true }
