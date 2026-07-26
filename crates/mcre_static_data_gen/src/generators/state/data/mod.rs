@@ -74,32 +74,6 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
                     }),
                 }),
                 Box::new(SubByteGen {
-                    name: "is_air".to_string(),
-                    is_bool: true,
-                    min: 0,
-                    max: 1,
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.is_air as u8),
-                }),
-                Box::new(SubByteGen {
-                    name: "ignited_by_lava".to_string(),
-                    is_bool: true,
-                    min: 0,
-                    max: 1,
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
-                        state.ignited_by_lava as u8
-                    }),
-                }),
-                Box::new(SubByteGen {
-                    name: "can_occlude".to_string(),
-                    is_bool: true,
-                    min: 0,
-                    max: 1,
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.can_occlude as u8),
-                }),
-                Box::new(SubByteGen {
                     name: "is_randomly_ticking".to_string(),
                     is_bool: true,
                     min: 0,
@@ -107,61 +81,6 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
                     list: self.states,
                     mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
                         state.is_randomly_ticking as u8
-                    }),
-                }),
-                Box::new(SubByteGen {
-                    name: "replaceable".to_string(),
-                    is_bool: true,
-                    min: 0,
-                    max: 1,
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.replaceable as u8),
-                }),
-                Box::new(SubByteGen {
-                    name: "spawn_terrain_particles".to_string(),
-                    is_bool: true,
-                    min: 0,
-                    max: 1,
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
-                        state.spawn_terrain_particles as u8
-                    }),
-                }),
-                Box::new(SubByteGen {
-                    name: "requires_correct_tool_for_drops".to_string(),
-                    is_bool: true,
-                    min: 0,
-                    max: 1,
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
-                        state.requires_correct_tool_for_drops as u8
-                    }),
-                }),
-                Box::new(MultiByteGen {
-                    name: "destroy_speed".to_string(),
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.destroy_speed),
-                }),
-                Box::new(SubByteGen {
-                    name: "offset_type".to_string(),
-                    is_bool: false,
-                    min: 0,
-                    max: 2,
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.offset_type as u8),
-                }),
-                Box::new(MultiByteGen {
-                    name: "max_horizontal_offset".to_string(),
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
-                        state.max_horizontal_offset
-                    }),
-                }),
-                Box::new(MultiByteGen {
-                    name: "max_vertical_offset".to_string(),
-                    list: self.states,
-                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
-                        state.max_vertical_offset
                     }),
                 }),
             ]),
@@ -178,21 +97,11 @@ impl UnitGen for StateDataRootUnit {
     fn generate(&self, _analysis: &Analysis) -> Unit {
         let code = quote! {
             pub(crate) mod block;
-            pub(crate) mod can_occlude;
-            pub(crate) mod destroy_speed;
-            pub(crate) mod ignited_by_lava;
-            pub(crate) mod is_air;
             pub(crate) mod is_randomly_ticking;
             pub(crate) mod light_dampening;
             pub(crate) mod light_emission;
-            pub(crate) mod max_horizontal_offset;
-            pub(crate) mod max_vertical_offset;
-            pub(crate) mod offset_type;
             pub(crate) mod propagates_skylight_down;
-            pub(crate) mod replaceable;
-            pub(crate) mod requires_correct_tool_for_drops;
             pub(crate) mod solid_render;
-            pub(crate) mod spawn_terrain_particles;
             pub(crate) mod use_shape_for_light_occlusion;
 
             pub(crate) mod fields;

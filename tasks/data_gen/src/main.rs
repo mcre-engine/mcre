@@ -95,6 +95,180 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
 
         let max_state_id = block_state_id_counter - 1;
 
+        let has_collision = env
+            .get_field(&block, jni_str!("hasCollision"), jni_sig!("Z"))
+            .unwrap()
+            .z()
+            .unwrap();
+
+        let explosion_resistance = env
+            .get_field(&block, jni_str!("explosionResistance"), jni_sig!("F"))
+            .unwrap()
+            .f()
+            .unwrap();
+
+        let friction = env
+            .get_field(&block, jni_str!("friction"), jni_sig!("F"))
+            .unwrap()
+            .f()
+            .unwrap();
+
+        let speed_factor = env
+            .get_field(&block, jni_str!("speedFactor"), jni_sig!("F"))
+            .unwrap()
+            .f()
+            .unwrap();
+
+        let jump_factor = env
+            .get_field(&block, jni_str!("jumpFactor"), jni_sig!("F"))
+            .unwrap()
+            .f()
+            .unwrap();
+
+        let bounce_restitution = env
+            .get_field(&block, jni_str!("bounceRestitution"), jni_sig!("F"))
+            .unwrap()
+            .f()
+            .unwrap();
+
+        let fall_distance_reduction = env
+            .get_field(&block, jni_str!("fallDistanceReduction"), jni_sig!("F"))
+            .unwrap()
+            .f()
+            .unwrap();
+
+        let properties = env
+            .get_field(
+                &block,
+                jni_str!("properties"),
+                jni_sig!("Lnet/minecraft/world/level/block/state/BlockBehaviour$Properties;"),
+            )
+            .unwrap()
+            .l()
+            .unwrap();
+
+        let push_reaction_obj = env
+            .get_field(
+                &properties,
+                jni_str!("pushReaction"),
+                jni_sig!("Lnet/minecraft/world/level/material/PushReaction;"),
+            )
+            .unwrap()
+            .l()
+            .unwrap();
+        let push_reaction = {
+            let name_obj = env
+                .call_method(
+                    &push_reaction_obj,
+                    jni_str!("name"),
+                    jni_sig!("()Ljava/lang/String;"),
+                    &[],
+                )
+                .unwrap()
+                .l()
+                .unwrap();
+            obj_to_str(name_obj, env).to_lowercase()
+        };
+
+        let instrument_obj = env
+            .get_field(
+                &properties,
+                jni_str!("instrument"),
+                jni_sig!("Lnet/minecraft/world/level/block/state/properties/NoteBlockInstrument;"),
+            )
+            .unwrap()
+            .l()
+            .unwrap();
+        let instrument = if instrument_obj.is_null() {
+            String::new()
+        } else {
+            let serializable = env
+                .call_method(
+                    &instrument_obj,
+                    jni_str!("getSerializedName"),
+                    jni_sig!("()Ljava/lang/String;"),
+                    &[],
+                )
+                .unwrap()
+                .l()
+                .unwrap();
+            obj_to_str(serializable, env)
+        };
+
+        let destroy_speed = env
+            .get_field(&default_state, jni_str!("destroySpeed"), jni_sig!("F"))
+            .unwrap()
+            .f()
+            .unwrap();
+
+        let requires_correct_tool_for_drops = env
+            .get_field(
+                &default_state,
+                jni_str!("requiresCorrectToolForDrops"),
+                jni_sig!("Z"),
+            )
+            .unwrap()
+            .z()
+            .unwrap();
+
+        let can_occlude = env
+            .get_field(&default_state, jni_str!("canOcclude"), jni_sig!("Z"))
+            .unwrap()
+            .z()
+            .unwrap();
+
+        let ignited_by_lava = env
+            .get_field(&default_state, jni_str!("ignitedByLava"), jni_sig!("Z"))
+            .unwrap()
+            .z()
+            .unwrap();
+
+        let is_air = env
+            .get_field(&default_state, jni_str!("isAir"), jni_sig!("Z"))
+            .unwrap()
+            .z()
+            .unwrap();
+
+        let spawn_terrain_particles = env
+            .get_field(
+                &default_state,
+                jni_str!("spawnTerrainParticles"),
+                jni_sig!("Z"),
+            )
+            .unwrap()
+            .z()
+            .unwrap();
+
+        let replaceable = env
+            .get_field(&default_state, jni_str!("replaceable"), jni_sig!("Z"))
+            .unwrap()
+            .z()
+            .unwrap();
+
+        let offset_type = determine_offset_type(&default_state, env);
+
+        let max_horizontal_offset = env
+            .call_method(
+                &block,
+                jni_str!("getMaxHorizontalOffset"),
+                jni_sig!("()F"),
+                &[],
+            )
+            .unwrap()
+            .f()
+            .unwrap();
+
+        let max_vertical_offset = env
+            .call_method(
+                &block,
+                jni_str!("getMaxVerticalOffset"),
+                jni_sig!("()F"),
+                &[],
+            )
+            .unwrap()
+            .f()
+            .unwrap();
+
         blocks.push(Block {
             id: i as u16,
             name,
@@ -103,6 +277,25 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
             min_state_id,
             max_state_id,
             states,
+            has_collision,
+            explosion_resistance,
+            friction,
+            speed_factor,
+            jump_factor,
+            bounce_restitution,
+            fall_distance_reduction,
+            push_reaction,
+            instrument,
+            destroy_speed,
+            requires_correct_tool_for_drops,
+            can_occlude,
+            ignited_by_lava,
+            is_air,
+            spawn_terrain_particles,
+            replaceable,
+            offset_type,
+            max_horizontal_offset,
+            max_vertical_offset,
         });
     });
     println!("[DEBUG] Done!");
@@ -248,84 +441,10 @@ fn process_block_state<'a>(
         .z()
         .unwrap();
 
-    let is_air = env
-        .get_field(block_state, jni_str!("isAir"), jni_sig!("Z"))
-        .unwrap()
-        .z()
-        .unwrap();
-
-    let ignited_by_lava = env
-        .get_field(block_state, jni_str!("ignitedByLava"), jni_sig!("Z"))
-        .unwrap()
-        .z()
-        .unwrap();
-
-    let can_occlude = env
-        .get_field(block_state, jni_str!("canOcclude"), jni_sig!("Z"))
-        .unwrap()
-        .z()
-        .unwrap();
-
     let is_randomly_ticking = env
         .get_field(block_state, jni_str!("isRandomlyTicking"), jni_sig!("Z"))
         .unwrap()
         .z()
-        .unwrap();
-
-    let replaceable = env
-        .get_field(block_state, jni_str!("replaceable"), jni_sig!("Z"))
-        .unwrap()
-        .z()
-        .unwrap();
-
-    let spawn_terrain_particles = env
-        .get_field(
-            block_state,
-            jni_str!("spawnTerrainParticles"),
-            jni_sig!("Z"),
-        )
-        .unwrap()
-        .z()
-        .unwrap();
-
-    let requires_correct_tool_for_drops = env
-        .get_field(
-            block_state,
-            jni_str!("requiresCorrectToolForDrops"),
-            jni_sig!("Z"),
-        )
-        .unwrap()
-        .z()
-        .unwrap();
-
-    let destroy_speed = env
-        .get_field(block_state, jni_str!("destroySpeed"), jni_sig!("F"))
-        .unwrap()
-        .f()
-        .unwrap();
-
-    let offset_type = determine_offset_type(block_state, env);
-
-    let max_horizontal_offset = env
-        .call_method(
-            &block,
-            jni_str!("getMaxHorizontalOffset"),
-            jni_sig!("()F"),
-            &[],
-        )
-        .unwrap()
-        .f()
-        .unwrap();
-
-    let max_vertical_offset = env
-        .call_method(
-            &block,
-            jni_str!("getMaxVerticalOffset"),
-            jni_sig!("()F"),
-            &[],
-        )
-        .unwrap()
-        .f()
         .unwrap();
 
     let state_values = get_state_values(block_state, env);
@@ -339,17 +458,7 @@ fn process_block_state<'a>(
         propagates_skylight_down,
         light_dampening,
         solid_render,
-        is_air,
-        ignited_by_lava,
-        can_occlude,
         is_randomly_ticking,
-        replaceable,
-        spawn_terrain_particles,
-        requires_correct_tool_for_drops,
-        destroy_speed,
-        offset_type,
-        max_horizontal_offset,
-        max_vertical_offset,
         state_values,
     }
 }

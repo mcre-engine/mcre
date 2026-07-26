@@ -14,7 +14,7 @@ MCRE is an experimental Minecraft Java Edition client in Rust. Targets the versi
 ```
 crates/           # library crates (9)
   mcre_core/      # primitives (no_std)
-  mcre_data/      # block/state data structs
+  mcre_data/      # block/state JSON + typed accessors (uses std)
   mcre_world/     # world model (no_std)
   mcre_assets/    # asset extraction (no_std except test)
   mcje/           # JVM bridge (JNI)
@@ -35,6 +35,7 @@ tasks/            # binary tasks (1)
 | Test all         | `cargo test --workspace --all-features`                                        |
 | Test one crate   | `just test -- -p <crate>`                                                     |
 | Lint (clippy)    | `cargo lint -- -D warnings`                                                    |
+| Decompile source | `just src` (outputs to `target/mc-src/<version>/`)                             |
 | Format           | `cargo fmt` / `cargo fmt --check`                                              |
 | Spell check      | `typos`                                                                        |
 | Docs             | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items`      |
@@ -44,6 +45,10 @@ tasks/            # binary tasks (1)
 | Install hook     | `just install-hook`                                                            |
 
 Aliases defined in `.cargo/config.toml`: `ck` → `check --workspace --all-features --all-targets --locked`, `lint` → `clippy --workspace --all-targets --all-features`.
+
+**CI recipe order** (`.github/workflows/ci.yml`): `typos` → `cargo ck` → `cargo test --workspace --all-features` → `cargo lint -- -D warnings` → `git diff --exit-code`.
+
+**`ready` recipe** adds `cargo fmt` and doc check before lint, and ends with `git status`. Tests without `--workspace` (local crate only). Run `just ready` before pushing.
 
 ## Build Requirements
 
@@ -65,22 +70,33 @@ Step 1 is manual; step 2 is automatic. Run step 1 whenever `mc-version` changes.
 
 ## Version Bump
 
-To target a new Minecraft version:
+Automated (recommended): `just bump-version` — fetches latest MC version, writes `mc-version`, regenerates data, formats.
 
-1. Update `mc-version` with the target version string
-2. Generate fresh data: `cargo run -r -p data_gen`
-3. Run `cargo fmt` and review the diff
+Runs daily on CI (`.github/workflows/bump.yml`); opens a PR if changed.
+
+Manual steps (if auto fails or you need a specific version):
+
+1. Write target version string to `mc-version`
+2. Run `cargo run -r -p data_gen`
+3. Run `cargo fmt` and review diff
 4. Update generator crates (`data_gen`, `mcre_static_data_gen`) if the new version changed any data format
 
-The build script in `mcre_world` generates Rust source from `mcre_data/` JSON automatically at compile time — no separate codegen step needed.
-
-Or use the automated command: `just bump-version` (handles steps 1-3 automatically).
+`mcre_world`'s `build.rs` regenerates Rust source at compile time from `mcre_data/` JSON via `cargo:rerun-if-changed` — no separate codegen step.
 
 ## Architecture Notes
 
 - **`no_std` crates**: `mcre_core`, `mcre_world` (and `mcre_assets` except under `cfg(test)`). Import from `core_io` instead of `std::io` for stdio in no_std contexts.
 - **JNI bridge**: `mcje` crate embeds a JVM via JNI. `#[mcje::main]` wraps `async fn main(env: &mut JNIEnv)` with JVM init + bootstrap.
 - **Event-driven world model** documented in `docs/world-model.md`.
+
+## Notable Config Files
+
+| File | Purpose |
+|------|---------|
+| `.cargo/config.toml` | Alias definitions (`ck`, `lint`) |
+| `.typos.toml` | Excludes `**/*.bin` from spell check |
+| `.gitignore` | Ignores `/target`, `**/logs`, `/crates/mcre_assets/assets` |
+| `rust-toolchain.toml` | Pins Rust 1.97.0 |
 
 ## Style Conventions
 

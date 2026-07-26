@@ -185,15 +185,15 @@ impl UnitGen for StateRootUnit<'_> {
                 }
 
                 pub fn is_air(self) -> bool {
-                    data::is_air::get(self.0)
+                    self.block().is_air()
                 }
 
                 pub fn ignited_by_lava(self) -> bool {
-                    data::ignited_by_lava::get(self.0)
+                    self.block().ignited_by_lava()
                 }
 
                 pub fn can_occlude(self) -> bool {
-                    data::can_occlude::get(self.0)
+                    self.block().can_occlude()
                 }
 
                 pub fn is_randomly_ticking(self) -> bool {
@@ -201,31 +201,31 @@ impl UnitGen for StateRootUnit<'_> {
                 }
 
                 pub fn replaceable(self) -> bool {
-                    data::replaceable::get(self.0)
+                    self.block().replaceable()
                 }
 
                 pub fn spawn_terrain_particles(self) -> bool {
-                    data::spawn_terrain_particles::get(self.0)
+                    self.block().spawn_terrain_particles()
                 }
 
                 pub fn requires_correct_tool_for_drops(self) -> bool {
-                    data::requires_correct_tool_for_drops::get(self.0)
+                    self.block().requires_correct_tool_for_drops()
                 }
 
                 pub fn destroy_speed(self) -> f32 {
-                    data::destroy_speed::get(self.0)
+                    self.block().destroy_speed()
                 }
 
                 pub fn offset_type(self) -> OffsetType {
-                    unsafe { core::mem::transmute::<u8, OffsetType>(data::offset_type::get(self.0)) }
+                    self.block().offset_type()
                 }
 
                 pub fn max_horizontal_offset(self) -> f32 {
-                    data::max_horizontal_offset::get(self.0)
+                    self.block().max_horizontal_offset()
                 }
 
                 pub fn max_vertical_offset(self) -> f32 {
-                    data::max_vertical_offset::get(self.0)
+                    self.block().max_vertical_offset()
                 }
 
                 pub fn get_field(self, field: FieldKey) -> Option<FieldVal> {
