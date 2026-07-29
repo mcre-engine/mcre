@@ -52,6 +52,15 @@ pub enum TextureId {
     Item(ItemTextureId),
 }
 
+impl core::fmt::Display for TextureId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            TextureId::Block(id) => write!(f, "minecraft:block/{}", id.id),
+            TextureId::Item(id) => write!(f, "minecraft:item/{}", id.id),
+        }
+    }
+}
+
 impl<S: AssetScope> NamespacedId<S> {
     pub fn new(namespace: String, id: String) -> Self {
         Self {

@@ -327,6 +327,15 @@ impl BlockModelDefinition {
     where
         F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
     {
+        let _ = self.bake_quads(parent_resolver)?;
+        Ok(())
+    }
+
+    /// Bake the model into a list of quads with resolved texture references.
+    pub fn bake_quads<F>(&self, parent_resolver: F) -> Result<Vec<BakedQuad>, ModelBakeError>
+    where
+        F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
+    {
         let texture_map = self.build_texture_map(parent_resolver)?;
 
         let mut quads = Vec::new();
@@ -376,7 +385,7 @@ impl BlockModelDefinition {
             }
         }
 
-        Ok(())
+        Ok(quads)
     }
 }
 

@@ -1,6 +1,6 @@
 pub mod error;
-pub mod path;
 pub mod native;
+pub mod path;
 pub mod web;
 
 pub use error::{FsError, Result};
@@ -95,10 +95,7 @@ pub trait Fs: Send + Sync {
     async fn create(&self, path: &FsPath) -> Result<Self::File> {
         self.open(
             path,
-            &OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true),
+            &OpenOptions::new().write(true).create(true).truncate(true),
         )
         .await
     }
@@ -112,10 +109,7 @@ pub trait Fs: Send + Sync {
     async fn open_write(&self, path: &FsPath) -> Result<Self::File> {
         self.open(
             path,
-            &OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true),
+            &OpenOptions::new().write(true).create(true).truncate(true),
         )
         .await
     }
@@ -150,10 +144,7 @@ pub trait Fs: Send + Sync {
 
     /// Returns true if the path is a directory.
     async fn is_dir(&self, path: &FsPath) -> bool {
-        self.metadata(path)
-            .await
-            .map(|m| m.is_dir)
-            .unwrap_or(false)
+        self.metadata(path).await.map(|m| m.is_dir).unwrap_or(false)
     }
 
     /// Reads the entire contents of a file into a byte vector.
@@ -174,10 +165,12 @@ pub trait Fs: Send + Sync {
     /// Reads the entire contents of a file into a string.
     async fn read_to_string(&self, path: &FsPath) -> Result<String> {
         let data = self.read(path).await?;
-        String::from_utf8(data).map_err(|e| FsError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("File is not valid UTF-8: {}", e),
-        )))
+        String::from_utf8(data).map_err(|e| {
+            FsError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("File is not valid UTF-8: {}", e),
+            ))
+        })
     }
 
     /// Writes a byte slice to a file, creating it if it doesn't exist.

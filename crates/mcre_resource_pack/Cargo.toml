@@ -1,0 +1,34 @@
+[package]
+name = "mcre_resource_pack"
+version = "0.1.0"
+authors.workspace = true
+categories.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Minecraft resource pack loader — deserializes packs from platform-agnostic filesystem into a block-state-id-indexed lookup table with string interning"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mcre_fs    = { workspace = true }
+mcre_data  = { workspace = true }
+mcre_world = { workspace = true }
+mcre_core  = { workspace = true }
+mcre_assets = { workspace = true }
+
+serde      = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+hashbrown  = { workspace = true }
+rustc-hash = { workspace = true }
+thiserror  = "2"
+
+embedded-io-async = { workspace = true }
+
+reqwest = { workspace = true, optional = true }
+mcje_downloader = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
+
+[features]
+download = ["reqwest", "mcje_downloader", "zip"]
