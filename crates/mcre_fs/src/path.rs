@@ -67,6 +67,13 @@ impl FsPath {
         self
     }
 
+    /// Appends a component and returns a new path (non-consuming).
+    pub fn join(&self, part: impl Into<Box<str>>) -> Self {
+        let mut copy = self.clone();
+        copy.push(part);
+        copy
+    }
+
     /// Returns the parent path (all components except the last).
     pub fn parent(&self) -> Option<FsPath> {
         if self.parts.is_empty() {
@@ -137,6 +144,12 @@ impl From<&str> for FsPath {
                 .map(Box::from)
                 .collect(),
         }
+    }
+}
+
+impl From<String> for FsPath {
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
     }
 }
 
