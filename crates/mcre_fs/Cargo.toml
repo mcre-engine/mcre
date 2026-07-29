@@ -1,0 +1,26 @@
+[package]
+name = "mcre_fs"
+version = "0.1.0"
+authors.workspace = true
+categories.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+embedded-io-async = { workspace = true }
+futures-util = "0.3"
+
+# NOTE: The `opfs` crate is v0.2.0 (March 2026) and relatively new.
+# It handles OPFS on web and tokio::fs on native automatically.
+# If maturity becomes a concern, we can replace it with a custom wrapper
+# using web-sys directly for OPFS and tokio::fs for native.
+opfs = "0.2"
+
+tokio = { workspace = true }
+thiserror = "2"
+dirs = "5"

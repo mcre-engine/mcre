@@ -21,7 +21,7 @@ crates/           # library crates (9)
   mcje_macros/    # proc macros: #[mcje::main], #[mcje::test]
   mcje_downloader/# MC jar/lib downloader
   mcre_static_data_gen/ # generates Rust source from JSON (build-dep of mcre_world)
-  core_io/        # std::io re-export (no_std shim)
+  mcre_fs/      # platform-agnostic filesystem (embedded-io-async traits, native + web backends)
 tasks/            # binary tasks (1)
   data_gen/       # extracts block/state JSON from MC jar via JNI
 ```
@@ -55,7 +55,7 @@ Aliases defined in `.cargo/config.toml`: `ck` → `check --workspace --all-featu
 - **JDK 25** required (temurin). Set `JAVA_HOME` if not using the Nix dev shell.
 - **Network access** required at build time — Minecraft jar + deps downloaded from Mojang servers.
 - First build is slow (large downloads).
-- `cargo-shear` ignores `mcre_assets`, `mcre_static_data`, `core_io` (build-only deps).
+- `cargo-shear` ignores `mcre_assets`, `mcre_static_data` (build-only deps).
 
 ## Data Generation Pipeline
 
@@ -85,7 +85,7 @@ Manual steps (if auto fails or you need a specific version):
 
 ## Architecture Notes
 
-- **`no_std` crates**: `mcre_core`, `mcre_world` (and `mcre_assets` except under `cfg(test)`). Import from `core_io` instead of `std::io` for stdio in no_std contexts.
+- **`no_std` crates**: `mcre_core`, `mcre_world` (and `mcre_assets` except under `cfg(test)`). Filesystem access uses `mcre_fs` (embedded-io-async traits with native tokio + web OPFS backends).
 - **JNI bridge**: `mcje` crate embeds a JVM via JNI. `#[mcje::main]` wraps `async fn main(env: &mut JNIEnv)` with JVM init + bootstrap.
 - **Event-driven world model** documented in `docs/world-model.md`.
 

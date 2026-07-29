@@ -25,9 +25,9 @@ mcje            = { version = "0.1.0", path = "crates/mcje" }
 mcje_macros     = { version = "0.1.0", path = "crates/mcje_macros" }
 mcje_downloader = { version = "0.1.0", path = "crates/mcje_downloader" }
 
-core_io = { version = "0.1.0", path = "crates/core_io" }
-
 mcre_static_data_gen = { version = "0.1.0", path = "crates/mcre_static_data_gen" }
+
+mcre_fs             = { version = "0.1.0", path = "crates/mcre_fs" }
 
 serde        = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json   = { version = "1", default-features = false, features = ["alloc"] }
@@ -49,5 +49,7 @@ proc-macro2  = "1"
 convert_case = "0.11"
 prettyplease = "0.3"
 
+embedded-io-async = "0.7"
+
 [workspace.metadata.cargo-shear]
-ignored = ["mcre_assets", "mcre_static_data", "core_io"]
+ignored = ["mcre_assets", "mcre_static_data"]
