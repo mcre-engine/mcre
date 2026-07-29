@@ -215,15 +215,17 @@ impl Fs for OpfsFs {
                     })?;
 
                 let data = from_handle.read().await.map_err(|e| {
-                    crate::FsError::Io(std::io::Error::other(
-                        format!("Failed to read source: {}", e),
-                    ))
+                    crate::FsError::Io(std::io::Error::other(format!(
+                        "Failed to read source: {}",
+                        e
+                    )))
                 })?;
 
                 dir.remove_entry(&from_name).await.map_err(|e| {
-                    crate::FsError::Io(std::io::Error::other(
-                        format!("Failed to remove source: {}", e),
-                    ))
+                    crate::FsError::Io(std::io::Error::other(format!(
+                        "Failed to remove source: {}",
+                        e
+                    )))
                 })?;
 
                 let mut new_handle = dir
@@ -233,9 +235,10 @@ impl Fs for OpfsFs {
                     )
                     .await
                     .map_err(|e| {
-                        crate::FsError::Io(std::io::Error::other(
-                            format!("Failed to create target: {}", e),
-                        ))
+                        crate::FsError::Io(std::io::Error::other(format!(
+                            "Failed to create target: {}",
+                            e
+                        )))
                     })?;
 
                 let write_options = opfs::CreateWritableOptions {
@@ -245,22 +248,22 @@ impl Fs for OpfsFs {
                     .create_writable_with_options(&write_options)
                     .await
                     .map_err(|e| {
-                        crate::FsError::Io(std::io::Error::other(
-                            format!("Failed to create writer: {}", e),
-                        ))
+                        crate::FsError::Io(std::io::Error::other(format!(
+                            "Failed to create writer: {}",
+                            e
+                        )))
                     })?;
 
                 use opfs::WritableFileStream as _;
                 writer.write_at_cursor_pos(&data).await.map_err(|e| {
-                    crate::FsError::Io(std::io::Error::other(
-                        format!("Failed to write: {}", e),
-                    ))
+                    crate::FsError::Io(std::io::Error::other(format!("Failed to write: {}", e)))
                 })?;
 
                 writer.close().await.map_err(|e| {
-                    crate::FsError::Io(std::io::Error::other(
-                        format!("Failed to close writer: {}", e),
-                    ))
+                    crate::FsError::Io(std::io::Error::other(format!(
+                        "Failed to close writer: {}",
+                        e
+                    )))
                 })?;
             } else {
                 return Err(crate::FsError::NotSupported(
@@ -283,10 +286,7 @@ impl Fs for OpfsFs {
         let dir = self.navigate_to_parent(path).await?;
 
         let file_result = dir
-            .get_file_handle_with_options(
-                &name,
-                &opfs::GetFileHandleOptions { create: false },
-            )
+            .get_file_handle_with_options(&name, &opfs::GetFileHandleOptions { create: false })
             .await;
         let dir_result = dir
             .get_directory_handle_with_options(
@@ -322,16 +322,18 @@ impl Fs for OpfsFs {
 
         let mut entries = Vec::new();
         let mut iter = dir.entries().await.map_err(|e| {
-            crate::FsError::Io(std::io::Error::other(
-                format!("Failed to list entries: {}", e),
-            ))
+            crate::FsError::Io(std::io::Error::other(format!(
+                "Failed to list entries: {}",
+                e
+            )))
         })?;
 
         while let Some(entry) = iter.next().await {
             let (name, _handle) = entry.map_err(|e| {
-                crate::FsError::Io(std::io::Error::other(
-                    format!("Failed to read entry: {}", e),
-                ))
+                crate::FsError::Io(std::io::Error::other(format!(
+                    "Failed to read entry: {}",
+                    e
+                )))
             })?;
 
             let entry_path = path.clone().with(name.clone());

@@ -1040,6 +1040,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcre_resource_pack"
+version = "0.1.0"
+dependencies = [
+ "embedded-io-async",
+ "hashbrown",
+ "mcje_downloader",
+ "mcre_assets",
+ "mcre_core",
+ "mcre_data",
+ "mcre_fs",
+ "mcre_world",
+ "reqwest",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "zip",
+]
+
+[[package]]
 name = "mcre_static_data_gen"
 version = "0.1.0"
 dependencies = [

@@ -1,5 +1,5 @@
-use std::{boxed::Box, string::String, vec, vec::Vec};
 use core::fmt;
+use std::{boxed::Box, string::String, vec, vec::Vec};
 
 /// A platform-agnostic path composed of parts without separators.
 ///
@@ -205,10 +205,7 @@ mod tests {
     #[test]
     fn test_from_str_leading_slash() {
         let path = FsPath::from("/saves/world1");
-        assert_eq!(
-            path.parts(),
-            boxed_strs(&["saves", "world1"]).as_slice()
-        );
+        assert_eq!(path.parts(), boxed_strs(&["saves", "world1"]).as_slice());
     }
 
     #[test]

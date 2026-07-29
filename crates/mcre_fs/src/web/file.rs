@@ -59,9 +59,9 @@ impl Read for OpfsFile {
         &mut self,
         buf: &mut [u8],
     ) -> core::result::Result<(), embedded_io_async::ReadExactError<FsError>> {
-        self.ensure_loaded().await.map_err(|e| {
-            embedded_io_async::ReadExactError::Other(e)
-        })?;
+        self.ensure_loaded()
+            .await
+            .map_err(embedded_io_async::ReadExactError::Other)?;
 
         let cached = self.read_cache.as_ref().unwrap();
         let remaining = &cached[self.read_pos..];
@@ -97,16 +97,21 @@ impl Write for OpfsFile {
                 )))
             })?;
 
-        writer.seek(self.write_pos).await.map_err(|e| {
-            FsError::Io(std::io::Error::other(format!("OPFS seek error: {}", e)))
-        })?;
+        writer
+            .seek(self.write_pos)
+            .await
+            .map_err(|e| FsError::Io(std::io::Error::other(format!("OPFS seek error: {}", e))))?;
 
-        writer.write_at_cursor_pos(buf).await.map_err(|e| {
-            FsError::Io(std::io::Error::other(format!("OPFS write error: {}", e)))
-        })?;
+        writer
+            .write_at_cursor_pos(buf)
+            .await
+            .map_err(|e| FsError::Io(std::io::Error::other(format!("OPFS write error: {}", e))))?;
 
         writer.close().await.map_err(|e| {
-            FsError::Io(std::io::Error::other(format!("OPFS close writer error: {}", e)))
+            FsError::Io(std::io::Error::other(format!(
+                "OPFS close writer error: {}",
+                e
+            )))
         })?;
 
         self.write_pos += buf.len();
