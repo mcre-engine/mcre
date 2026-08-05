@@ -142,8 +142,6 @@ bump-version:
   echo "$LATEST" > mc-version
   if ! git diff --quiet -- mc-version; then
     cargo r -r -p data_gen
-    rm -rf crates/mcre_world/src/data
-    cargo r -r -p world_data_gen
     cargo fmt
   else
     echo "Already at latest version ($LATEST)"
