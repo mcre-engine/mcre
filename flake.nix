@@ -38,7 +38,6 @@
               pkgs.clang
               pkgs.pkg-config
               pkgs.temurin-bin-25
-              pkgs.git
               pkgs.curl
               pkgs.jq
             ];
