@@ -8,7 +8,6 @@ use tokio::fs;
 pub struct BlockState {
     pub id: u16,
     pub block_id: u16,
-    pub block_name: String,
     pub light_emission: u8,
     pub use_shape_for_light_occlusion: bool,
     pub propagates_skylight_down: bool,

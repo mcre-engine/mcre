@@ -1,5 +1,5 @@
 use convert_case::ccase;
-use mcre_data::state::BlockState;
+use mcre_data::{block::Block, state::BlockState};
 use quote::{format_ident, quote};
 
 use crate::{
@@ -14,6 +14,7 @@ pub mod data;
 pub mod enums;
 
 pub struct StateScope<'a> {
+    pub blocks: &'a [Block],
     pub states: &'a [BlockState],
 }
 
@@ -29,6 +30,7 @@ impl<'a> ScopeGen<'a> for StateScope<'a> {
             ]),
             sub_scopes: Box::new([Box::new(StateDataScope {
                 states: self.states,
+                blocks: self.blocks,
             })]),
         }
     }

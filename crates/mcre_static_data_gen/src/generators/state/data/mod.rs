@@ -1,6 +1,6 @@
 mod fields;
 
-use mcre_data::state::BlockState;
+use mcre_data::{block::Block, state::BlockState};
 use quote::quote;
 
 use crate::{
@@ -14,6 +14,7 @@ use crate::{
 
 pub struct StateDataScope<'a> {
     pub states: &'a [BlockState],
+    pub blocks: &'a [Block],
 }
 
 impl<'a> ScopeGen<'a> for StateDataScope<'a> {
@@ -86,6 +87,7 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
             ]),
             sub_scopes: Box::new([Box::new(StateFieldsDataScope {
                 states: self.states,
+                blocks: self.blocks,
             })]),
         }
     }

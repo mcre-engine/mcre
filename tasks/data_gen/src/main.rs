@@ -397,8 +397,6 @@ fn process_block_state<'a>(
         .try_into()
         .unwrap();
 
-    let block_name = get_block_name(&block, block_registry, env);
-
     let light_emission: u8 = env
         .get_field(block_state, jni_str!("lightEmission"), jni_sig!("I"))
         .unwrap()
@@ -452,7 +450,6 @@ fn process_block_state<'a>(
     BlockState {
         id,
         block_id,
-        block_name,
         light_emission,
         use_shape_for_light_occlusion,
         propagates_skylight_down,

@@ -1,4 +1,7 @@
-use mcre_data::state::{BlockState, StateValue};
+use mcre_data::{
+    block::Block,
+    state::{BlockState, StateValue},
+};
 use quote::{format_ident, quote};
 
 use crate::{
@@ -8,6 +11,7 @@ use crate::{
 
 pub struct StateFieldsDataScope<'a> {
     pub states: &'a [BlockState],
+    pub blocks: &'a [Block],
 }
 
 impl<'a> ScopeGen<'a> for StateFieldsDataScope<'a> {
@@ -59,6 +63,7 @@ impl<'a> ScopeGen<'a> for StateFieldsDataScope<'a> {
                         list: self.states,
                         mapping_fn: {
                             let enum_name = enum_name.to_string();
+                            let blocks = self.blocks;
                             Box::new(move |state, analysis: &Analysis<'_>| {
                                 let prop_name = if let Some(prop_name) =
                                     analysis.field_to_prop.get(&field_name)
@@ -71,10 +76,10 @@ impl<'a> ScopeGen<'a> for StateFieldsDataScope<'a> {
                                     .state_values
                                     .get(prop_name)
                                     .and_then(|val| {
-                                        if let Some(field_name1) = analysis
-                                            .prop_to_field
-                                            .get(&(state.block_name.as_str(), prop_name))
-                                            && field_name1 != &field_name
+                                        if let Some(field_name1) = analysis.prop_to_field.get(&(
+                                            blocks[state.block_id as usize].name.as_str(),
+                                            prop_name,
+                                        )) && field_name1 != &field_name
                                         {
                                             None
                                         } else if let StateValue::String(val) = val {

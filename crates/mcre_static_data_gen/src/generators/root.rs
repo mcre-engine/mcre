@@ -28,6 +28,7 @@ impl<'a> ScopeGen<'a> for RootScope<'a> {
                     blocks: self.blocks,
                 }),
                 Box::new(StateScope {
+                    blocks: self.blocks,
                     states: self.states,
                 }),
             ]),
