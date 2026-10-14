@@ -2,7 +2,7 @@
 
 ## Project
 
-MCRE is an experimental Minecraft Java Edition client in Rust. Targets the version in `mc-version` (currently 26.3-snapshot-5).
+MCRE is an experimental Minecraft Java Edition client in Rust. Targets the version in `mc-version` (currently 26.4-snapshot-4).
 
 ## Toolchain
 
