@@ -61,6 +61,7 @@ bytemuck  = { version = "1", features = ["derive"] }
 pollster  = "0.4"
 thiserror = "2"
 flate2    = "1"
+libm      = "0.2"
 egui      = "0.36"
 egui-winit  = "0.36"
 egui-wgpu   = "0.36"
