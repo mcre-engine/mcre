@@ -12,7 +12,7 @@ repository = "https://github.com/mcre-project/mcre"
 description = "A minecraft clone written in Rust."
 
 edition = "2024"
-rust-version = "1.97.0"
+rust-version = "1.99.0"
 
 [workspace.dependencies]
 mcre_core        = { version = "0.1.0", path = "crates/mcre_core" }
@@ -43,13 +43,13 @@ reqwest      = { version = "0.13", default-features = false, features = ["json",
 url          = { version = "2", features = ["serde"] }
 futures-core = "0.3"
 bytes        = "1"
-zip          = "8"
+zip          = "9"
 jni          = { version = "0.22", features = ["invocation"] }
 
 syn          = { version = "3", features = ["full"] }
 quote        = "1"
 proc-macro2  = "1"
-convert_case = "0.11"
+convert_case = "0.12"
 prettyplease = "0.3"
 
 embedded-io-async = "0.7"
@@ -58,13 +58,13 @@ wgpu      = "30"
 winit     = "0.30"
 png       = "0.18"
 bytemuck  = { version = "1", features = ["derive"] }
-pollster  = "0.4"
+pollster  = "1"
 thiserror = "2"
 flate2    = "1"
 libm      = "0.2"
-egui      = "0.36"
-egui-winit  = "0.36"
-egui-wgpu   = "0.36"
+egui      = "0.37"
+egui-winit  = "0.37"
+egui-wgpu   = "0.37"
 
 [workspace.metadata.cargo-shear]
 ignored = ["mcre_assets", "mcre_static_data"]

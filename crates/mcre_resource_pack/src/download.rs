@@ -71,7 +71,10 @@ pub async fn ensure_default_pack(fs: &impl Fs) -> Result<FsPath> {
             continue;
         }
 
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|e| ResourcePackError::Download(e.to_string()))?
+            .to_string();
         if !name.starts_with("assets/minecraft") {
             continue;
         }

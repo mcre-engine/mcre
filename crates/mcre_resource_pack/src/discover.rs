@@ -157,7 +157,10 @@ pub async fn ensure_extracted(
         let mut entry = archive
             .by_index(i)
             .map_err(|err| ResourcePackError::Zip(err.to_string()))?;
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|err| ResourcePackError::Zip(err.to_string()))?
+            .to_string();
         if name.contains("..") || name.starts_with('/') || name.starts_with('\\') {
             return Err(ResourcePackError::Zip(format!("unsafe path: {name}")));
         }

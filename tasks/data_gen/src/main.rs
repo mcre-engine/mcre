@@ -208,6 +208,7 @@ fn generate_biome_data() {
     let mut names: Vec<String> = archive
         .file_names()
         .filter_map(|name| {
+            let name = name.ok()?;
             name.strip_prefix("data/minecraft/worldgen/biome/")
                 .and_then(|rest| rest.strip_suffix(".json"))
                 .map(str::to_string)

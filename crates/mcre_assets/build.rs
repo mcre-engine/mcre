@@ -51,7 +51,7 @@ async fn main() {
         if !entry.is_file() {
             continue;
         }
-        let name = entry.name();
+        let name = entry.name().unwrap();
 
         if name.starts_with("assets/minecraft") {
             let outpath = cache_dir.join(name.strip_prefix("assets/").unwrap());
