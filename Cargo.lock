@@ -280,6 +280,7 @@ dependencies = [
  "mcre_data",
  "serde_json",
  "tokio",
+ "zip",
 ]
 
 [[package]]

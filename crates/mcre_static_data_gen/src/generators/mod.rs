@@ -5,6 +5,7 @@ use quote::{format_ident, quote};
 
 use crate::analyzer::Analysis;
 
+mod biome;
 mod block;
 pub mod common;
 mod fields;

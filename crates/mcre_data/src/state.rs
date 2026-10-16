@@ -14,6 +14,19 @@ pub struct BlockState {
     pub light_dampening: u8,
     pub solid_render: bool,
     pub is_randomly_ticking: bool,
+    /// 6-bit mask of directions for which `state.skipRendering(state, dir)` is
+    /// true (bit `n` = `Direction::index() == n`).
+    #[serde(default)]
+    pub self_skip: u8,
+    /// `state.isCollisionShapeFullBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)`
+    #[serde(default)]
+    pub collision_full: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fluid: Option<String>,
+    #[serde(default)]
+    pub occlusion_shape: u16,
+    #[serde(default)]
+    pub emissive_rendering: bool,
     pub state_values: IndexMap<String, StateValue>,
 }
 

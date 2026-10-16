@@ -4,6 +4,8 @@ use std::path::PathBuf;
 async fn main() {
     let blocks = mcre_data::block::Block::all().await.unwrap();
     let states = mcre_data::state::BlockState::all().await.unwrap();
+    let biomes = mcre_data::biome::Biome::all().await.unwrap();
+    let shapes = mcre_data::shape::OcclusionShape::all().await.unwrap();
     let output = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/mcre_world/src/data");
-    mcre_static_data_gen::generate(&output, &blocks, &states);
+    mcre_static_data_gen::generate(&output, &blocks, &states, &biomes, &shapes);
 }

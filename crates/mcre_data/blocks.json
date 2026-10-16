@@ -1173,7 +1173,8 @@
     "replaceable": true,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "liquid_fluid": "water"
   },
   {
     "id": 38,
@@ -1208,7 +1209,8 @@
     "replaceable": true,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "liquid_fluid": "lava"
   },
   {
     "id": 39,
@@ -3272,7 +3274,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 95,
@@ -3315,7 +3320,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 96,
@@ -3358,7 +3366,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 97,
@@ -3401,7 +3412,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 98,
@@ -3444,7 +3458,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 99,
@@ -3487,7 +3504,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 100,
@@ -3530,7 +3550,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 101,
@@ -3573,7 +3596,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 102,
@@ -3616,7 +3642,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 103,
@@ -3659,7 +3688,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 104,
@@ -3702,7 +3734,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 105,
@@ -3745,7 +3780,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 106,
@@ -3788,7 +3826,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 107,
@@ -3831,7 +3872,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "leaves"
+    ]
   },
   {
     "id": 108,
@@ -13072,7 +13116,13 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "skip_against_tags": [
+      "face_occluding_ice_blocks"
+    ],
+    "culling_tags": [
+      "face_occluding_ice_blocks"
+    ]
   },
   {
     "id": 327,
@@ -15508,7 +15558,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "bars"
+    ]
   },
   {
     "id": 392,
@@ -15557,7 +15610,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "bars"
+    ]
   },
   {
     "id": 393,
@@ -15606,7 +15662,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "bars"
+    ]
   },
   {
     "id": 394,
@@ -15655,7 +15714,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "bars"
+    ]
   },
   {
     "id": 395,
@@ -15704,7 +15766,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "bars"
+    ]
   },
   {
     "id": 396,
@@ -15753,7 +15818,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "bars"
+    ]
   },
   {
     "id": 397,
@@ -15802,7 +15870,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "bars"
+    ]
   },
   {
     "id": 398,
@@ -15851,7 +15922,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "bars"
+    ]
   },
   {
     "id": 399,
@@ -15900,7 +15974,10 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "culling_tags": [
+      "bars"
+    ]
   },
   {
     "id": 400,
@@ -29456,7 +29533,13 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "skip_against_tags": [
+      "face_occluding_ice_blocks"
+    ],
+    "culling_tags": [
+      "face_occluding_ice_blocks"
+    ]
   },
   {
     "id": 729,
@@ -29491,7 +29574,13 @@
     "replaceable": false,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "skip_against_tags": [
+      "face_occluding_ice_blocks"
+    ],
+    "culling_tags": [
+      "face_occluding_ice_blocks"
+    ]
   },
   {
     "id": 730,
@@ -35559,7 +35648,8 @@
     "replaceable": true,
     "offset_type": "none",
     "max_horizontal_offset": 0.25,
-    "max_vertical_offset": 0.2
+    "max_vertical_offset": 0.2,
+    "liquid_fluid": "water"
   },
   {
     "id": 888,

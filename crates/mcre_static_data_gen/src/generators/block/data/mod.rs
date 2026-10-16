@@ -15,6 +15,9 @@ pub struct BlockDataScope<'a> {
 
 impl<'a> ScopeGen<'a> for BlockDataScope<'a> {
     fn generate(&self, _analysis: &Analysis) -> Scope<'a> {
+        let tag_union = super::tag_union(self.blocks);
+        assert!(tag_union.len() <= 8, "too many culling tags for u8 mask");
+        let tag_max = ((1u16 << tag_union.len()) - 1).max(1) as u8;
         Scope {
             name: "data".to_string(),
             units: Box::new([
@@ -230,6 +233,37 @@ impl<'a> ScopeGen<'a> for BlockDataScope<'a> {
                         block.max_vertical_offset
                     }),
                 }),
+                Box::new(StringGen {
+                    name: "liquid_fluid".to_string(),
+                    list: self.blocks,
+                    mapping_fn: Box::new(|block| block.liquid_fluid.as_deref().unwrap_or("")),
+                }),
+                Box::new(SubByteGen {
+                    name: "skip_against_tags".to_string(),
+                    is_bool: false,
+                    min: 0,
+                    max: tag_max,
+                    list: self.blocks,
+                    mapping_fn: {
+                        let tag_union = tag_union.clone();
+                        Box::new(move |block, _analysis: &Analysis<'_>| {
+                            super::tags_mask(&block.skip_against_tags, &tag_union)
+                        })
+                    },
+                }),
+                Box::new(SubByteGen {
+                    name: "culling_tags".to_string(),
+                    is_bool: false,
+                    min: 0,
+                    max: tag_max,
+                    list: self.blocks,
+                    mapping_fn: {
+                        let tag_union = tag_union.clone();
+                        Box::new(move |block, _analysis: &Analysis<'_>| {
+                            super::tags_mask(&block.culling_tags, &tag_union)
+                        })
+                    },
+                }),
             ]),
             sub_scopes: Box::new([]),
         }
@@ -243,6 +277,7 @@ impl UnitGen for BlockDataRootUnit {
         let code = quote! {
             pub(crate) mod bounce_restitution;
             pub(crate) mod can_occlude;
+            pub(crate) mod culling_tags;
             pub(crate) mod default_state;
             pub(crate) mod destroy_speed;
             pub(crate) mod display_name;
@@ -254,6 +289,7 @@ impl UnitGen for BlockDataRootUnit {
             pub(crate) mod instrument;
             pub(crate) mod is_air;
             pub(crate) mod jump_factor;
+            pub(crate) mod liquid_fluid;
             pub(crate) mod max_horizontal_offset;
             pub(crate) mod max_state;
             pub(crate) mod max_vertical_offset;
@@ -263,6 +299,7 @@ impl UnitGen for BlockDataRootUnit {
             pub(crate) mod push_reaction;
             pub(crate) mod replaceable;
             pub(crate) mod requires_correct_tool_for_drops;
+            pub(crate) mod skip_against_tags;
             pub(crate) mod spawn_terrain_particles;
             pub(crate) mod speed_factor;
             pub(crate) mod fields_present;

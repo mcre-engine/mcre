@@ -32,6 +32,12 @@ pub struct Block {
     pub offset_type: OffsetType,
     pub max_horizontal_offset: f32,
     pub max_vertical_offset: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liquid_fluid: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skip_against_tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub culling_tags: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]

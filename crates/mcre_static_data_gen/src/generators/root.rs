@@ -1,17 +1,19 @@
 use crate::{
     analyzer::Analysis,
     generators::{
-        Scope, ScopeGen, Unit, UnitGen, block::BlockScope, fields::FieldsUnit, props::PropsUnit,
-        state::StateScope,
+        Scope, ScopeGen, Unit, UnitGen, biome::BiomeScope, block::BlockScope, fields::FieldsUnit,
+        props::PropsUnit, state::StateScope,
     },
 };
 
-use mcre_data::{block::Block, state::BlockState};
+use mcre_data::{biome::Biome, block::Block, shape::OcclusionShape, state::BlockState};
 use quote::quote;
 
 pub struct RootScope<'a> {
     pub blocks: &'a [Block],
     pub states: &'a [BlockState],
+    pub biomes: &'a [Biome],
+    pub shapes: &'a [OcclusionShape],
 }
 
 impl<'a> ScopeGen<'a> for RootScope<'a> {
@@ -30,6 +32,10 @@ impl<'a> ScopeGen<'a> for RootScope<'a> {
                 Box::new(StateScope {
                     blocks: self.blocks,
                     states: self.states,
+                    shapes: self.shapes,
+                }),
+                Box::new(BiomeScope {
+                    biomes: self.biomes,
                 }),
             ]),
         }
@@ -41,11 +47,14 @@ pub struct RootUnit;
 impl UnitGen for RootUnit {
     fn generate(&self, _analysis: &Analysis) -> Unit {
         let code = quote! {
+            mod biome;
             mod block;
             mod state;
             mod props;
             mod fields;
 
+            #[allow(ambiguous_glob_reexports)]
+            pub use biome::*;
             #[allow(ambiguous_glob_reexports)]
             pub use block::*;
             #[allow(ambiguous_glob_reexports)]

@@ -122,6 +122,7 @@ impl UnitGen for PropsUnit {
         });
         let props_literals = analysis.prop_schema.keys().collect::<Vec<_>>();
         let props_indices = (0..(props_idents.len() as u8)).collect::<Vec<_>>();
+        let all_len = props_idents.len();
 
         let prop_def = quote! {
             #( #extra_enums )*
@@ -145,6 +146,8 @@ impl UnitGen for PropsUnit {
             }
 
             impl PropKey {
+                pub const ALL: [Self; #all_len] = [#(Self::#props_idents,)*];
+
                 pub fn as_str(self) -> &'static str {
                     match self {
                         #( Self::#props_idents => #props_literals, )*
