@@ -22,6 +22,17 @@ pub async fn ensure_default_pack(fs: &impl Fs) -> Result<FsPath> {
 
     let meta_path = cache_root.join("pack.mcmeta");
     if fs.exists(&meta_path).await {
+        if let Ok(json) = fs.read_to_string(&meta_path).await
+            && let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&json)
+            && let Some(pack) = value.get_mut("pack")
+            && let Some(object) = pack.as_object_mut()
+            && object.get("pack_format") == Some(&serde_json::Value::from(1))
+        {
+            object.remove("pack_format");
+            if let Ok(fixed) = serde_json::to_string(&value) {
+                let _ = fs.write(&meta_path, fixed.as_bytes()).await;
+            }
+        }
         return Ok(cache_root);
     }
 
@@ -65,8 +76,7 @@ pub async fn ensure_default_pack(fs: &impl Fs) -> Result<FsPath> {
             continue;
         }
 
-        let relative = name.strip_prefix("assets/").unwrap();
-        let outpath_str = format!("{cache_root}/{relative}");
+        let outpath_str = format!("{cache_root}/{name}");
         let outpath = FsPath::from(outpath_str.as_str());
 
         if let Some(parent) = outpath.parent() {
@@ -80,6 +90,9 @@ pub async fn ensure_default_pack(fs: &impl Fs) -> Result<FsPath> {
 
         fs.write(&outpath, &data).await?;
     }
+
+    let meta = r#"{"pack":{"description":"Minecraft (generated)"}}"#;
+    fs.write(&meta_path, meta.as_bytes()).await?;
 
     Ok(cache_root)
 }
