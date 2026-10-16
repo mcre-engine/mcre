@@ -12,7 +12,7 @@ MCRE is an experimental Minecraft Java Edition client in Rust. Targets the versi
 ## Workspace
 
 ```
-crates/           # library crates (9)
+crates/           # library crates (11)
   mcre_core/      # primitives (no_std)
   mcre_data/      # block/state JSON + typed accessors (uses std)
   mcre_world/     # world model (no_std)
@@ -22,6 +22,8 @@ crates/           # library crates (9)
   mcje_downloader/# MC jar/lib downloader
   mcre_static_data_gen/ # generates Rust source from JSON (build-dep of mcre_world)
   mcre_fs/      # platform-agnostic filesystem (embedded-io-async traits, native + web backends)
+  mcre_resource_pack/ # blockstate/model resolution + baked lookup table (ResourcePackData)
+  mcre_renderer/   # WGPU renderer: texture atlas, chunk meshing, `examples/viewer.rs`
 tasks/            # binary tasks (1)
   data_gen/       # extracts block/state JSON from MC jar via JNI
 ```
