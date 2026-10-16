@@ -6,7 +6,7 @@ MCRE is an experimental Minecraft Java Edition client in Rust. Targets the versi
 
 ## Toolchain
 
-- **Rust 1.97.0** (pinned in `rust-toolchain.toml`), edition 2024, resolver `"3"`
+- **Rust 1.99.0** (pinned in `rust-toolchain.toml`), edition 2024, resolver `"3"`
 - **`just` recipes** provide all dev commands. Nix flake provides an **optional** dev shell (JDK 25, clang, etc.).
 
 ## Workspace
@@ -98,7 +98,7 @@ Manual steps (if auto fails or you need a specific version):
 | `.cargo/config.toml` | Alias definitions (`ck`, `lint`) |
 | `.typos.toml` | Excludes `**/*.bin` from spell check |
 | `.gitignore` | Ignores `/target`, `**/logs`, `/crates/mcre_assets/assets` |
-| `rust-toolchain.toml` | Pins Rust 1.97.0 |
+| `rust-toolchain.toml` | Pins Rust 1.99.0 |
 
 ## Style Conventions
 
