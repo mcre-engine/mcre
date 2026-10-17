@@ -234,7 +234,25 @@ M7 — Shape-aware light + vanilla lightmap — done
       semantics)
 - [x] Viewer Brightness slider (0..=1) re-baking the lightmap live
 
-Next in the queue: M9 clouds → M8 liquids → M10 animations (texture
+M9 — Clouds — done
+- [x] `mcre_renderer::clouds`: vanilla `CloudRenderer` port — 12x4-block
+      cells from `textures/environment/clouds.png` (1-bit grayscale + tRNS,
+      alpha<10 empty; neighbor-emptiness bits packed like `packCellData`),
+      cell-anchored mesh around the camera's cell (ring enumeration, caps for
+      above/inside/below, inside-face hull, `0,1,2,2,3,0` quads), drift
+      `0.030000001`/tick with the `+3.96` z offset and texture wrap
+- [x] `clouds.wgsl`: port of `clouds.vsh`/`clouds.fsh` (packed
+      direction/flags, `0xF03CC3`/`0x6666F0`/`0xC3F066` corner bits, face
+      colors 0.7/1.0/0.8/0.9, inside-face corner reversal, distance fog fade
+      by `min(range*16, 2048)`)
+- [x] Renderer: pipelines (fancy cull back / flat no cull, alpha blend,
+      depth write), per-cell mesh cache rebuilt when the camera crosses a
+      cell, status (Off/Fast/Fancy) + range (2..=128, viewer default 32)
+      + height (192.33) + color setters; viewer loads the texture through the
+      pack stack, drifts on real time (20 ticks/s), tints by the day/night
+      scalar (`Timelines.NIGHT_CLOUD_COLOR_MULTIPLIER`)
+
+Next in the queue: M8 liquids → M10 animations (texture
 animations + torch flicker) → particles → block entities → entities
 (M11-M13). 2C (wasm) is independent and can land at any point.
 

@@ -127,7 +127,14 @@ Storage decisions (locked):
       per-vertex shader sample; raw-level vertex light attribute; viewer
       Brightness slider).
 
-Order: M1 → M2 → M3 → M4 → M5 → M6 → M7.
+## M9 — Clouds
+
+- [x] `clouds` module: `CloudRenderer` port (cell texture with tRNS alpha
+      holes, ring mesh with caps/hull, drift + wrap, fog end
+      `min(range*16, 2048)`), `clouds.wgsl`, renderer pipelines + per-cell
+      mesh cache, viewer Off/Fast/Fancy + range UI and day/night tint.
+
+Order: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M9. Next: M8 (liquids).
 Verify each milestone: `cargo ck`, `cargo lint -- -D warnings`,
 `cargo test --workspace --all-features`, `cargo fmt --check`, `typos`,
 25s viewer smoke (expect exit 124).
