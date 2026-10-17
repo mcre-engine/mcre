@@ -55,12 +55,16 @@ impl Default for MeshOptions {
 #[derive(Default)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
+    /// Opaque quads (block models and lava fluids).
     pub indices: Vec<u32>,
+    /// Translucent quads (water fluids), drawn in a blended pass after
+    /// `indices`.
+    pub translucent_indices: Vec<u32>,
 }
 
 impl Mesh {
     pub fn is_empty(&self) -> bool {
-        self.indices.is_empty()
+        self.indices.is_empty() && self.translucent_indices.is_empty()
     }
 }
 
@@ -111,15 +115,18 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
     mode: LightMode,
     options: MeshOptions,
 ) -> Mesh {
-    let mut vertices = Vec::new();
-    let mut indices = Vec::new();
+    let mut mesh = Mesh::default();
 
     for (local_x, y, local_z, state) in chunk.iter_blocks() {
+        let block_pos = [origin[0] + local_x, y, origin[1] + local_z];
+        if let Some(fluid) = mcre_world::fluid_state(state) {
+            crate::fluid::mesh_fluid(
+                &mut mesh, data, atlas, access, block_pos, state, fluid, options,
+            );
+        }
         let Some(entry) = data.entries.get(u16::from(state) as usize) else {
             continue;
         };
-
-        let block_pos = [origin[0] + local_x, y, origin[1] + local_z];
         for_each_variant(entry, block_pos, |variant| {
             for quad in &variant.quads {
                 if let Some(direction) = quad.cullface {
@@ -157,7 +164,7 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                     flat_face(access, quad.direction, block_pos, state, base_color)
                 };
 
-                let base = vertices.len() as u32;
+                let base = mesh.vertices.len() as u32;
                 for i in 0..4 {
                     let v = &quad.vertices[i];
                     let uv = &quad.uvs[i];
@@ -166,7 +173,7 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                         y as f32 + v[1] / 16.0,
                         origin[1] as f32 + local_z as f32 + v[2] / 16.0,
                     ];
-                    vertices.push(Vertex {
+                    mesh.vertices.push(Vertex {
                         position,
                         uv: atlas_uv(region, atlas, uv),
                         color: colors[i],
@@ -174,9 +181,16 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                     });
                 }
 
-                indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                mesh.indices.extend_from_slice(&[
+                    base,
+                    base + 1,
+                    base + 2,
+                    base,
+                    base + 2,
+                    base + 3,
+                ]);
                 if options.double_sided_liquids && state.block().liquid_fluid().is_some() {
-                    indices.extend_from_slice(&[
+                    mesh.indices.extend_from_slice(&[
                         base + 2,
                         base + 1,
                         base,
@@ -189,7 +203,7 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
         });
     }
 
-    Mesh { vertices, indices }
+    mesh
 }
 
 /// Vanilla `Block.getShadeBrightness`: collision-full cells darken
@@ -206,7 +220,7 @@ fn is_light_permeable(state: BlockState) -> bool {
 
 /// Vanilla `LightCoordsUtil.getLightCoords`: stored cell light raised to the
 /// sampling block's own emission.
-fn sample_light<A: BlockAccess + ?Sized>(access: &A, pos: [i32; 3]) -> (u8, u8) {
+pub(crate) fn sample_light<A: BlockAccess + ?Sized>(access: &A, pos: [i32; 3]) -> (u8, u8) {
     let state = access.block_at(pos[0], pos[1], pos[2]);
     if state.emissive_rendering() {
         return (15, 15);
@@ -836,7 +850,7 @@ fn connection_prop(state: BlockState, direction: Direction) -> bool {
 /// edge-to-edge with zero gutter, so the mapping is inset by a sub-texel
 /// epsilon: edge UVs land just inside the region instead of on texel centers
 /// of the first/last texel row.
-fn atlas_uv(region: AtlasRegion, atlas: &Atlas, uv: &[f32; 2]) -> [f32; 2] {
+pub(crate) fn atlas_uv(region: AtlasRegion, atlas: &Atlas, uv: &[f32; 2]) -> [f32; 2] {
     let u = (uv[0] / 16.0).clamp(0.0, 1.0);
     let v = (uv[1] / 16.0).clamp(0.0, 1.0);
     let eps = 0.01;
@@ -872,6 +886,20 @@ fn rgb_to_float(rgb: [u8; 3]) -> [f32; 3] {
         f32::from(rgb[1]) / 255.0,
         f32::from(rgb[2]) / 255.0,
     ]
+}
+
+/// Vanilla `BlockTintSources.water()` / `BiomeColors.getAverageWaterColor`.
+pub(crate) fn water_tint<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    access: &A,
+    pos: [i32; 3],
+) -> [f32; 3] {
+    rgb_to_float(average_biome_color(
+        access,
+        pos,
+        &data.colormaps,
+        biome_water_color,
+    ))
 }
 
 fn quad_tint<A: BlockAccess + ?Sized>(

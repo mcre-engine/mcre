@@ -1,6 +1,7 @@
 pub mod atlas;
 pub mod camera;
 pub mod clouds;
+pub mod fluid;
 pub mod frustum;
 pub mod lightmap;
 pub mod math;
