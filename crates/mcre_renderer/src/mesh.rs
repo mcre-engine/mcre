@@ -1072,6 +1072,7 @@ mod tests {
             variants: vec![BlockVariant { weight: 1, quads }],
         }];
         ResourcePackData {
+            fluid_textures: Default::default(),
             entries,
             texture_table: vec![],
             culling: Default::default(),
@@ -1085,6 +1086,7 @@ mod tests {
 
     fn empty_data() -> ResourcePackData {
         ResourcePackData {
+            fluid_textures: Default::default(),
             entries: vec![],
             texture_table: vec![],
             culling: Default::default(),
@@ -1108,6 +1110,7 @@ mod tests {
             variants: vec![mcre_resource_pack::lookup::BlockVariant { weight: 1, quads }],
         }];
         ResourcePackData {
+            fluid_textures: Default::default(),
             entries,
             texture_table: vec![],
             culling: Default::default(),
@@ -1131,6 +1134,7 @@ mod tests {
                 .collect(),
         }];
         ResourcePackData {
+            fluid_textures: Default::default(),
             entries,
             texture_table: vec![],
             culling: Default::default(),

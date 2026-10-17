@@ -61,6 +61,29 @@ pub struct CullingOverride {
     pub culling_tags: Option<Vec<String>>,
 }
 
+/// Texture IDs backing the built-in fluid models (vanilla
+/// `FluidStateModelSet`: water still/flow/overlay, lava still/flow).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FluidTextureIds {
+    pub water_still: u32,
+    pub water_flow: u32,
+    pub water_overlay: u32,
+    pub lava_still: u32,
+    pub lava_flow: u32,
+}
+
+impl FluidTextureIds {
+    fn intern(interner: &mut StringInterner) -> Self {
+        Self {
+            water_still: interner.intern("minecraft:block/water_still"),
+            water_flow: interner.intern("minecraft:block/water_flow"),
+            water_overlay: interner.intern("minecraft:block/water_overlay"),
+            lava_still: interner.intern("minecraft:block/lava_still"),
+            lava_flow: interner.intern("minecraft:block/lava_flow"),
+        }
+    }
+}
+
 /// Final lookup table mapping block state IDs to baked rendering data.
 ///
 /// All string IDs (texture paths, model paths) are replaced with compact
@@ -70,6 +93,8 @@ pub struct ResourcePackData {
     pub entries: Vec<BlockStateEntry>,
     /// Interned texture path strings, indexed by `texture_id` in `BakedQuadEntry`.
     pub texture_table: Vec<Box<str>>,
+    /// Texture IDs for the built-in fluid models; always present in the table.
+    pub fluid_textures: FluidTextureIds,
     /// Face-culling overrides keyed by block name (`"oak_leaves"`), merged
     /// across packs with last-pack-wins per block.
     pub culling: HashMap<String, CullingOverride>,
@@ -80,13 +105,15 @@ pub struct ResourcePackData {
 impl ResourcePackData {
     pub fn new(
         entries: Vec<BlockStateEntry>,
-        interner: StringInterner,
+        mut interner: StringInterner,
         culling: HashMap<String, CullingOverride>,
         colormaps: Colormaps,
     ) -> Self {
+        let fluid_textures = FluidTextureIds::intern(&mut interner);
         Self {
             entries,
             texture_table: interner.into_strings(),
+            fluid_textures,
             culling,
             colormaps,
         }

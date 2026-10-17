@@ -205,6 +205,7 @@ mod tests {
 
     fn test_data() -> ResourcePackData {
         ResourcePackData {
+            fluid_textures: Default::default(),
             entries: vec![],
             texture_table: vec![],
             culling: Default::default(),
