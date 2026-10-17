@@ -1548,6 +1548,62 @@ mod tests {
     }
 
     #[test]
+    fn water_surface_is_seamless_across_chunk_borders() {
+        let data = empty_data();
+        let atlas = test_atlas();
+        let mut world = World::new(1);
+        for (chunk_x, chunk_z) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            let mut chunk = Chunk::new_at(mcre_world::ChunkPos::new(chunk_x, chunk_z));
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    chunk.set_block(lx, 63, lz, Block::STONE.default_state());
+                    chunk.set_block(lx, 64, lz, Block::WATER.default_state());
+                }
+            }
+            world.replace_chunk(chunk);
+        }
+
+        let surface_y = 64.0 + 8.0 / 9.0 - 0.001;
+        for (chunk_x, chunk_z, origin) in [
+            (0, 0, [0, 0]),
+            (1, 0, [16, 0]),
+            (0, 1, [0, 16]),
+            (1, 1, [16, 16]),
+        ] {
+            let pos = mcre_world::ChunkPos::new(chunk_x, chunk_z);
+            let chunk = world.chunk_at_pos(pos).unwrap();
+            let mesh = mesh_chunk(
+                &data,
+                &atlas,
+                chunk,
+                &world,
+                origin,
+                LightMode::Flat,
+                MeshOptions::default(),
+            );
+            let mut border_vertices = 0;
+            for quad in mesh.translucent_indices.chunks(6) {
+                for &i in quad {
+                    let p = mesh.vertices[i as usize].position;
+                    let interior = p[2] > 2.0 && p[2] < 30.0;
+                    if (p[0] - 16.0).abs() < 1e-4 && interior {
+                        border_vertices += 1;
+                        assert!(
+                            (p[1] - surface_y).abs() < 1e-3,
+                            "vertex at shared chunk border has y={} (expected {surface_y})",
+                            p[1]
+                        );
+                    }
+                }
+            }
+            assert!(
+                border_vertices > 0,
+                "no water quads reach the shared border in chunk ({chunk_x}, {chunk_z})"
+            );
+        }
+    }
+
+    #[test]
     fn class_specific_skip_rules() {
         let data = empty_data();
 
