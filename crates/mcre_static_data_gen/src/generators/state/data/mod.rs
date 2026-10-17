@@ -95,6 +95,14 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
                     mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.self_skip),
                 }),
                 Box::new(SubByteGen {
+                    name: "face_sturdy".to_string(),
+                    is_bool: false,
+                    min: 0,
+                    max: 63,
+                    list: self.states,
+                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.face_sturdy),
+                }),
+                Box::new(SubByteGen {
                     name: "collision_full".to_string(),
                     is_bool: true,
                     min: 0,
@@ -103,6 +111,14 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
                     mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
                         state.collision_full as u8
                     }),
+                }),
+                Box::new(SubByteGen {
+                    name: "solid".to_string(),
+                    is_bool: true,
+                    min: 0,
+                    max: 1,
+                    list: self.states,
+                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| state.solid as u8),
                 }),
                 Box::new(StringGen {
                     name: "fluid".to_string(),
@@ -144,6 +160,7 @@ impl UnitGen for StateDataRootUnit {
             pub(crate) mod block;
             pub(crate) mod collision_full;
             pub(crate) mod emissive_rendering;
+            pub(crate) mod face_sturdy;
             pub(crate) mod fluid;
             pub(crate) mod is_randomly_ticking;
             pub(crate) mod light_dampening;
@@ -152,6 +169,7 @@ impl UnitGen for StateDataRootUnit {
             pub(crate) mod propagates_skylight_down;
             pub(crate) mod self_skip;
             pub(crate) mod shapes;
+            pub(crate) mod solid;
             pub(crate) mod solid_render;
             pub(crate) mod use_shape_for_light_occlusion;
 

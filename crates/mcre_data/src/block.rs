@@ -34,6 +34,18 @@ pub struct Block {
     pub max_vertical_offset: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liquid_fluid: Option<String>,
+    /// `block instanceof IceBlock`: `FlowingFluid.isSolidFace` ignores ice
+    /// when accumulating the falling-water flow vector.
+    #[serde(default)]
+    pub is_ice: bool,
+    /// `block instanceof HalfTransparentBlock` (ice, slime, honey, glass).
+    /// Fluid side faces use the `water_overlay` texture next to these.
+    #[serde(default)]
+    pub half_transparent: bool,
+    /// `#minecraft:blocks_fluid_flow` tag membership: blocks that stop the
+    /// fluid-flow below-neighbor lookup in `FlowingFluid.getFlow`.
+    #[serde(default)]
+    pub blocks_fluid_flow: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skip_against_tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

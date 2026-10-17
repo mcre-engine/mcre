@@ -192,8 +192,16 @@ impl UnitGen for StateRootUnit<'_> {
                     data::self_skip::get(self.0)
                 }
 
+                pub fn face_sturdy(self) -> u8 {
+                    data::face_sturdy::get(self.0)
+                }
+
                 pub fn collision_full(self) -> bool {
                     data::collision_full::get(self.0)
+                }
+
+                pub fn solid(self) -> bool {
+                    data::solid::get(self.0)
                 }
 
                 pub fn fluid(self) -> Option<&'static str> {

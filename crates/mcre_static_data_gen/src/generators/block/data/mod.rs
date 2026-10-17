@@ -239,6 +239,34 @@ impl<'a> ScopeGen<'a> for BlockDataScope<'a> {
                     mapping_fn: Box::new(|block| block.liquid_fluid.as_deref().unwrap_or("")),
                 }),
                 Box::new(SubByteGen {
+                    name: "is_ice".to_string(),
+                    is_bool: true,
+                    min: 0,
+                    max: 1,
+                    list: self.blocks,
+                    mapping_fn: Box::new(|block, _analysis: &Analysis<'_>| block.is_ice as u8),
+                }),
+                Box::new(SubByteGen {
+                    name: "half_transparent".to_string(),
+                    is_bool: true,
+                    min: 0,
+                    max: 1,
+                    list: self.blocks,
+                    mapping_fn: Box::new(|block, _analysis: &Analysis<'_>| {
+                        block.half_transparent as u8
+                    }),
+                }),
+                Box::new(SubByteGen {
+                    name: "blocks_fluid_flow".to_string(),
+                    is_bool: true,
+                    min: 0,
+                    max: 1,
+                    list: self.blocks,
+                    mapping_fn: Box::new(|block, _analysis: &Analysis<'_>| {
+                        block.blocks_fluid_flow as u8
+                    }),
+                }),
+                Box::new(SubByteGen {
                     name: "skip_against_tags".to_string(),
                     is_bool: false,
                     min: 0,
@@ -277,6 +305,7 @@ impl UnitGen for BlockDataRootUnit {
         let code = quote! {
             pub(crate) mod bounce_restitution;
             pub(crate) mod can_occlude;
+            pub(crate) mod blocks_fluid_flow;
             pub(crate) mod culling_tags;
             pub(crate) mod default_state;
             pub(crate) mod destroy_speed;
@@ -284,10 +313,12 @@ impl UnitGen for BlockDataRootUnit {
             pub(crate) mod explosion_resistance;
             pub(crate) mod fall_distance_reduction;
             pub(crate) mod friction;
+            pub(crate) mod half_transparent;
             pub(crate) mod has_collision;
             pub(crate) mod ignited_by_lava;
             pub(crate) mod instrument;
             pub(crate) mod is_air;
+            pub(crate) mod is_ice;
             pub(crate) mod jump_factor;
             pub(crate) mod liquid_fluid;
             pub(crate) mod max_horizontal_offset;

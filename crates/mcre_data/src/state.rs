@@ -18,9 +18,17 @@ pub struct BlockState {
     /// true (bit `n` = `Direction::index() == n`).
     #[serde(default)]
     pub self_skip: u8,
+    /// 6-bit mask of directions for which `state.isFaceSturdy(...)` is true
+    /// (bit `n` = `Direction::index() == n`).
+    #[serde(default)]
+    pub face_sturdy: u8,
     /// `state.isCollisionShapeFullBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)`
     #[serde(default)]
     pub collision_full: bool,
+    /// Legacy `state.isSolid()` (`BlockBehaviour.BlockStateBase.legacySolid`),
+    /// consumed by the fluid corner-height averaging.
+    #[serde(default)]
+    pub solid: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fluid: Option<String>,
     #[serde(default)]

@@ -210,6 +210,18 @@ impl UnitGen for BlockRootUnit<'_> {
                     }
                 }
 
+        pub fn is_ice(self) -> bool {
+            data::is_ice::get(self.0)
+        }
+
+        pub fn half_transparent(self) -> bool {
+            data::half_transparent::get(self.0)
+        }
+
+        pub fn blocks_fluid_flow(self) -> bool {
+            data::blocks_fluid_flow::get(self.0)
+        }
+
                 pub fn skip_against_tags(self) -> &'static [&'static str] {
                     match data::skip_against_tags::get(self.0) {
                         #( #skip_arms, )*

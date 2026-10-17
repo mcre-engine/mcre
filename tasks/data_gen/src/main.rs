@@ -23,6 +23,7 @@ const SHAPE_DATA_PATH: &str = "crates/mcre_data/shapes.json";
 const ICE_TAG: &str = "face_occluding_ice_blocks";
 const BARS_TAG: &str = "bars";
 const LEAVES_TAG: &str = "leaves";
+const FLUID_FLOW_TAG: &str = "blocks_fluid_flow";
 
 const ICE_TAG_FALLBACK: &[&str] = &["ice", "brittle_ice", "frosted_ice"];
 const BARS_TAG_FALLBACK: &[&str] = &[
@@ -44,23 +45,44 @@ fn read_block_tag(jar_version: &str, root: &std::path::Path, tag: &str) -> Optio
         .join("mc.jar");
     let file = std::fs::File::open(&jar_path).ok()?;
     let mut archive = zip::ZipArchive::new(file).ok()?;
+    let mut members = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    resolve_block_tag(&mut archive, tag, &mut members, &mut visited)?;
+    Some(members)
+}
+
+fn resolve_block_tag(
+    archive: &mut zip::ZipArchive<std::fs::File>,
+    tag: &str,
+    members: &mut Vec<String>,
+    visited: &mut std::collections::HashSet<String>,
+) -> Option<()> {
+    if !visited.insert(tag.to_string()) {
+        return Some(());
+    }
     let mut entry = archive
         .by_name(&format!("data/minecraft/tags/block/{tag}.json"))
         .ok()?;
     let mut text = String::new();
     std::io::Read::read_to_string(&mut entry, &mut text).ok()?;
+    drop(entry);
     let json: serde_json::Value = serde_json::from_str(&text).ok()?;
     let values = json.get("values")?.as_array()?;
-    let mut members = Vec::new();
-    for value in values {
-        let name = value.as_str()?;
-        if let Some(name) = name.strip_prefix("minecraft:") {
+    let names = values
+        .iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .collect::<Vec<_>>();
+    for name in names {
+        if let Some(name) = name.strip_prefix('#') {
+            let name = name.strip_prefix("minecraft:").unwrap_or(name);
+            resolve_block_tag(archive, name, members, visited);
+        } else if let Some(name) = name.strip_prefix("minecraft:") {
             members.push(name.to_string());
-        } else if !name.starts_with('#') {
-            members.push(name.to_string());
+        } else {
+            members.push(name);
         }
     }
-    Some(members)
+    Some(())
 }
 
 fn face_occluding_ice_blocks() -> Vec<String> {
@@ -93,6 +115,21 @@ fn bars_tag_members() -> Vec<String> {
                 "[WARN] Could not read bars tag from mc.jar, using fallback {BARS_TAG_FALLBACK:?}"
             );
             BARS_TAG_FALLBACK.iter().map(|s| s.to_string()).collect()
+        }
+    }
+}
+
+fn fluid_flow_tag_members() -> Vec<String> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../");
+    let version = fs::read_to_string(root.join("mc-version")).map(|s| s.trim().to_string());
+    let result: Option<Vec<String>> = version
+        .ok()
+        .and_then(|version| read_block_tag(&version, &root, FLUID_FLOW_TAG));
+    match result {
+        Some(members) => members,
+        None => {
+            eprintln!("[WARN] Could not read {FLUID_FLOW_TAG} from mc.jar");
+            Vec::new()
         }
     }
 }
@@ -293,8 +330,14 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
     let leaves_class = env
         .find_class(jni_str!("net/minecraft/world/level/block/LeavesBlock"))
         .unwrap();
+    let half_transparent_class = env
+        .find_class(jni_str!(
+            "net/minecraft/world/level/block/HalfTransparentBlock"
+        ))
+        .unwrap();
     let ice_tag_members = face_occluding_ice_blocks();
     let bars_tag_members = bars_tag_members();
+    let fluid_flow_tag_members = fluid_flow_tag_members();
     let fluid_registry = get_registry(env, "FLUID", "DefaultedRegistry");
 
     iterate(&block_registry, env, |i, block, env| {
@@ -538,6 +581,10 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
             None
         };
 
+        let is_ice = env.is_instance_of(&block, &ice_class).unwrap();
+        let half_transparent = env.is_instance_of(&block, &half_transparent_class).unwrap();
+        let blocks_fluid_flow = fluid_flow_tag_members.contains(&name);
+
         let skip_against_tags = if env.is_instance_of(&block, &ice_class).unwrap() {
             vec![ICE_TAG.to_string()]
         } else {
@@ -582,6 +629,9 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
             max_horizontal_offset,
             max_vertical_offset,
             liquid_fluid,
+            is_ice,
+            half_transparent,
+            blocks_fluid_flow,
             skip_against_tags,
             culling_tags,
         });
@@ -810,6 +860,27 @@ fn process_block_state<'a>(
         }
     }
 
+    let mut face_sturdy = 0u8;
+    for (i, dir) in ctx.directions.iter().enumerate() {
+        let sturdy = env
+            .call_method(
+                block_state,
+                jni_str!("isFaceSturdy"),
+                jni_sig!("(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/Direction;)Z"),
+                &[
+                    JValue::Object(&ctx.empty_getter),
+                    JValue::Object(&ctx.block_pos_zero),
+                    JValue::Object(dir),
+                ],
+            )
+            .unwrap()
+            .z()
+            .unwrap();
+        if sturdy {
+            face_sturdy |= 1 << i;
+        }
+    }
+
     let collision_full = env
         .call_method(
             block_state,
@@ -820,6 +891,12 @@ fn process_block_state<'a>(
                 JValue::Object(&ctx.block_pos_zero),
             ],
         )
+        .unwrap()
+        .z()
+        .unwrap();
+
+    let solid = env
+        .get_field(block_state, jni_str!("legacySolid"), jni_sig!("Z"))
         .unwrap()
         .z()
         .unwrap();
@@ -851,7 +928,9 @@ fn process_block_state<'a>(
         solid_render,
         is_randomly_ticking,
         self_skip,
+        face_sturdy,
         collision_full,
+        solid,
         fluid,
         occlusion_shape,
         emissive_rendering,
