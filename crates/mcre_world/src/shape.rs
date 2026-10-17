@@ -152,6 +152,54 @@ pub fn is_covered(own: &[[f32; 6]], occluder: &[[f32; 6]]) -> bool {
     true
 }
 
+/// Vanilla `Shapes.blockOccludes(shape, occluder, direction)` for the fluid
+/// box `own`: the box's face toward `direction` is hidden when it reaches the
+/// face side and the occluder's opposite face slab covers it.
+pub fn box_occludes(own: &[f32; 6], occluder: &[[f32; 6]], direction: Direction) -> bool {
+    if occluder.is_empty() {
+        return false;
+    }
+    let axis = face_axis(direction);
+    let (first_max, second_min) = if direction.is_positive() {
+        (
+            own[axis + 3],
+            occluder
+                .iter()
+                .map(|b| b[axis])
+                .fold(f32::INFINITY, f32::min),
+        )
+    } else {
+        (
+            occluder
+                .iter()
+                .map(|b| b[axis + 3])
+                .fold(f32::NEG_INFINITY, f32::max),
+            own[axis],
+        )
+    };
+    const EPS: f32 = 1.0e-7;
+    if (first_max - 1.0).abs() > EPS || second_min.abs() > EPS {
+        return false;
+    }
+    let mut own_face = *own;
+    own_face[axis] = 0.0;
+    own_face[axis + 3] = 1.0;
+    let occluder_face = face_boxes(occluder, direction.opposite());
+    is_covered(&[own_face], &occluder_face)
+}
+
+/// Vanilla `FluidRenderer.isFaceOccludedByState` for the fluid box
+/// `(0, 0, 0, 1, height, 1)` against a state's face-occlusion shape.
+pub fn fluid_face_occluded(direction: Direction, height: f32, occluder: &[[f32; 6]]) -> bool {
+    if occluder.is_empty() {
+        return false;
+    }
+    if occluder.len() == 1 && occluder[0] == FULL_CUBE[0] {
+        return direction != Direction::Up || height == 1.0;
+    }
+    box_occludes(&[0.0, 0.0, 0.0, 1.0, height, 1.0], occluder, direction)
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::vec;
@@ -192,5 +240,50 @@ mod tests {
         assert_eq!(face_boxes(&bottom_half, Direction::North).len(), 1);
         let empty: [[f32; 6]; 0] = [];
         assert!(face_boxes(&empty, Direction::Up).is_empty());
+    }
+
+    #[test]
+    fn full_cube_occludes_fluid_except_above() {
+        let full = [[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]];
+        for direction in [
+            Direction::Down,
+            Direction::North,
+            Direction::South,
+            Direction::West,
+            Direction::East,
+        ] {
+            assert!(fluid_face_occluded(direction, 0.5, &full), "{direction:?}");
+            assert!(fluid_face_occluded(direction, 1.0, &full), "{direction:?}");
+        }
+        assert!(fluid_face_occluded(Direction::Up, 1.0, &full));
+        assert!(!fluid_face_occluded(Direction::Up, 0.5, &full));
+    }
+
+    #[test]
+    fn empty_shape_never_occludes() {
+        let empty: [[f32; 6]; 0] = [];
+        assert!(!fluid_face_occluded(Direction::Down, 1.0, &empty));
+    }
+
+    #[test]
+    fn slab_occludes_matching_side_only() {
+        let bottom_half = [[0.0, 0.0, 0.0, 1.0, 0.5, 1.0]];
+        let top_half = [[0.0, 0.5, 0.0, 1.0, 1.0, 1.0]];
+        assert!(fluid_face_occluded(Direction::Down, 1.0, &top_half));
+        assert!(!fluid_face_occluded(Direction::Down, 1.0, &bottom_half));
+        assert!(fluid_face_occluded(Direction::Up, 1.0, &bottom_half));
+        assert!(!fluid_face_occluded(Direction::Up, 0.5, &bottom_half));
+        assert!(!fluid_face_occluded(Direction::Up, 1.0, &top_half));
+        let north_post = [[0.0, 0.0, 0.5, 1.0, 1.0, 1.0]];
+        assert!(fluid_face_occluded(Direction::North, 1.0, &north_post));
+        assert!(!fluid_face_occluded(Direction::North, 1.0, &bottom_half));
+        assert!(!fluid_face_occluded(Direction::North, 1.0, &top_half));
+    }
+
+    #[test]
+    fn partial_face_does_not_occlude() {
+        let west_post = [[0.0, 0.0, 0.0, 0.25, 1.0, 1.0]];
+        assert!(!fluid_face_occluded(Direction::North, 1.0, &west_post));
+        assert!(!fluid_face_occluded(Direction::Down, 1.0, &west_post));
     }
 }
