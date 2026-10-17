@@ -51,16 +51,16 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     return out;
 }
 
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn terrain_color(in: VertexOutput, cutout: bool) -> vec4<f32> {
     var rgb: vec3<f32>;
+    var alpha = 1.0;
     if ((params.flags.x & 2u) != 0u) {
         let t = clamp(max(in.raw_light.x, in.raw_light.y) / 15.0, 0.0, 1.0);
         let cool = mix(vec3<f32>(0.0, 0.0, 0.55), vec3<f32>(0.0, 0.85, 0.05), smoothstep(0.0, 0.5, t));
         rgb = mix(cool, vec3<f32>(1.0, 0.05, 0.0), smoothstep(0.5, 1.0, t));
     } else {
         let texel = textureSample(atlas_texture, atlas_sampler, in.uv);
-        if (texel.a < 0.5) {
+        if (cutout && texel.a < 0.5) {
             discard;
         }
         var light = in.light;
@@ -68,12 +68,23 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             light = vec3<f32>(1.0);
         }
         rgb = texel.rgb * in.color * light;
+        alpha = texel.a;
     }
     if ((params.flags.x & 4u) == 0u) {
         let fog = smoothstep(params.fog_color_start.w, params.fog_end_sky.x, in.distance);
         rgb = mix(rgb, params.fog_color_start.rgb, fog);
     }
-    return vec4<f32>(rgb, 1.0);
+    return vec4<f32>(rgb, alpha);
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return terrain_color(in, true);
+}
+
+@fragment
+fn fs_translucent(in: VertexOutput) -> @location(0) vec4<f32> {
+    return terrain_color(in, false);
 }
 
 struct LineOutput {

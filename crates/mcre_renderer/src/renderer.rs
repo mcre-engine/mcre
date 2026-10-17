@@ -46,7 +46,10 @@ struct GpuMesh {
     version: u64,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    /// Total index count (opaque followed by translucent).
     index_count: u32,
+    /// First index of the translucent range.
+    translucent_start: u32,
 }
 
 #[repr(C)]
@@ -144,6 +147,7 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipelines: [wgpu::RenderPipeline; 4],
+    translucent_pipelines: [wgpu::RenderPipeline; 4],
     wireframe: bool,
     cull_back: bool,
     debug_flags: DebugFlags,
@@ -234,6 +238,7 @@ impl Renderer {
             queue,
             config,
             pipelines: set.mains,
+            translucent_pipelines: set.translucent,
             wireframe: false,
             cull_back: true,
             debug_flags: DebugFlags::default(),
@@ -555,7 +560,7 @@ impl Renderer {
                 .get(&chunk.origin)
                 .is_none_or(|cached| cached.version != chunk.version);
             if stale {
-                let (vertex_buffer, index_buffer, index_count) =
+                let (vertex_buffer, index_buffer, index_count, translucent_start) =
                     create_mesh_buffers(&self.device, chunk.mesh);
                 self.mesh_cache.insert(
                     chunk.origin,
@@ -564,6 +569,7 @@ impl Renderer {
                         vertex_buffer,
                         index_buffer,
                         index_count,
+                        translucent_start,
                     },
                 );
             }
@@ -604,7 +610,13 @@ impl Renderer {
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_vertex_buffer(0, cached.vertex_buffer.slice(..));
             pass.set_index_buffer(cached.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..cached.index_count, 0, 0..1);
+            pass.draw_indexed(0..cached.translucent_start, 0, 0..1);
+            if cached.index_count > cached.translucent_start {
+                pass.set_pipeline(
+                    &self.translucent_pipelines[pipeline_index(self.wireframe, self.cull_back)],
+                );
+                pass.draw_indexed(cached.translucent_start..cached.index_count, 0, 0..1);
+            }
             first = false;
         }
         if first {
@@ -789,6 +801,8 @@ fn border_vertices() -> Vec<BorderVertex> {
 
 struct PipelineSet {
     mains: [wgpu::RenderPipeline; 4],
+    /// Alpha-blended variants for translucent fluid quads.
+    translucent: [wgpu::RenderPipeline; 4],
     border: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -1024,6 +1038,7 @@ fn create_pipeline(
             surface_format,
             wgpu::PolygonMode::Fill,
             Some(wgpu::Face::Back),
+            false,
         ),
         build_main_pipeline(
             device,
@@ -1032,6 +1047,7 @@ fn create_pipeline(
             surface_format,
             wgpu::PolygonMode::Fill,
             None,
+            false,
         ),
         build_main_pipeline(
             device,
@@ -1040,6 +1056,7 @@ fn create_pipeline(
             surface_format,
             wgpu::PolygonMode::Line,
             Some(wgpu::Face::Back),
+            false,
         ),
         build_main_pipeline(
             device,
@@ -1048,6 +1065,46 @@ fn create_pipeline(
             surface_format,
             wgpu::PolygonMode::Line,
             None,
+            false,
+        ),
+    ];
+
+    let translucent = [
+        build_main_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            surface_format,
+            wgpu::PolygonMode::Fill,
+            Some(wgpu::Face::Back),
+            true,
+        ),
+        build_main_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            surface_format,
+            wgpu::PolygonMode::Fill,
+            None,
+            true,
+        ),
+        build_main_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            surface_format,
+            wgpu::PolygonMode::Line,
+            Some(wgpu::Face::Back),
+            true,
+        ),
+        build_main_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            surface_format,
+            wgpu::PolygonMode::Line,
+            None,
+            true,
         ),
     ];
 
@@ -1154,6 +1211,7 @@ fn create_pipeline(
 
     PipelineSet {
         mains,
+        translucent,
         border,
         bind_group,
         bind_group_layout,
@@ -1238,6 +1296,7 @@ fn build_main_pipeline(
     surface_format: wgpu::TextureFormat,
     polygon_mode: wgpu::PolygonMode,
     cull_mode: Option<wgpu::Face>,
+    translucent: bool,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("mcre-pipeline"),
@@ -1279,11 +1338,19 @@ fn build_main_pipeline(
         multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fs_main"),
+            entry_point: Some(if translucent {
+                "fs_translucent"
+            } else {
+                "fs_main"
+            }),
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format: surface_format,
-                blend: None,
+                blend: if translucent {
+                    Some(wgpu::BlendState::ALPHA_BLENDING)
+                } else {
+                    None
+                },
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
@@ -1310,16 +1377,25 @@ fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Te
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-fn create_mesh_buffers(device: &wgpu::Device, mesh: &Mesh) -> (wgpu::Buffer, wgpu::Buffer, u32) {
+fn create_mesh_buffers(
+    device: &wgpu::Device,
+    mesh: &Mesh,
+) -> (wgpu::Buffer, wgpu::Buffer, u32, u32) {
     let vertex_contents: &[u8] = if mesh.vertices.is_empty() {
         &[0u8; 4]
     } else {
         bytemuck::cast_slice(&mesh.vertices)
     };
-    let index_contents: &[u8] = if mesh.indices.is_empty() {
+    let indices = mesh
+        .indices
+        .iter()
+        .chain(mesh.translucent_indices.iter())
+        .copied()
+        .collect::<Vec<_>>();
+    let index_contents: &[u8] = if indices.is_empty() {
         &[0u8; 4]
     } else {
-        bytemuck::cast_slice(&mesh.indices)
+        bytemuck::cast_slice(&indices)
     };
 
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1333,7 +1409,12 @@ fn create_mesh_buffers(device: &wgpu::Device, mesh: &Mesh) -> (wgpu::Buffer, wgp
         usage: wgpu::BufferUsages::INDEX,
     });
 
-    (vertex_buffer, index_buffer, mesh.indices.len() as u32)
+    (
+        vertex_buffer,
+        index_buffer,
+        indices.len() as u32,
+        mesh.indices.len() as u32,
+    )
 }
 
 fn create_border_buffers(device: &wgpu::Device) -> (wgpu::Buffer, u32) {
