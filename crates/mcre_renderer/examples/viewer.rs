@@ -10,6 +10,7 @@ use mcre_renderer::{
     MeshWorker, RenderChunk, Renderer, StreamSource, build_atlas, mesh_chunk,
 };
 use mcre_resource_pack::{ResourcePackData, ResourcePackSet, download};
+use mcre_world::fluid::{FluidKind, fluid_state, is_face_sturdy};
 use mcre_world::{Block, CHUNK_WIDTH, Chunk, ChunkPos, PropVal, WORLD_HEIGHT, WORLD_MIN_Y, World};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
@@ -23,6 +24,14 @@ const NIGHT_FOG_COLOR: [f32; 3] = [0.03, 0.05, 0.12];
 /// Vanilla `Timelines.NIGHT_CLOUD_COLOR_MULTIPLIER`.
 const NIGHT_CLOUD_COLOR: [f32; 3] = [0.1, 0.1, 0.15];
 const DAY_LENGTH_SECS: f32 = 600.0;
+/// Vanilla `EnvironmentAttributes.WATER_FOG_COLOR` default (`#050533`).
+const WATER_FOG_COLOR: [f32; 3] = [5.0 / 255.0, 5.0 / 255.0, 51.0 / 255.0];
+/// Vanilla `LavaFogEnvironment.COLOR` (`#991900`).
+const LAVA_FOG_COLOR: [f32; 3] = [153.0 / 255.0, 25.0 / 255.0, 0.0];
+const FOV_SURFACE: f32 = 70.0 * std::f32::consts::PI / 180.0;
+/// Vanilla `Camera.modifyFovBasedOnDeathOrFluid` at the default
+/// `fovEffectScale` of 1.0 (`70 * 0.85714287 = 60`).
+const FOV_UNDERWATER: f32 = 60.0 * std::f32::consts::PI / 180.0;
 
 struct ChunkMesh {
     origin: [i32; 2],
@@ -104,6 +113,7 @@ fn main() {
         fog_enabled: true,
         fog_start: 64.0,
         fog_end: 160.0,
+        submerged: None,
         sky_factor: 1.0,
         brightness: mcre_renderer::lightmap::DEFAULT_BRIGHTNESS,
         cloud_texture,
@@ -548,7 +558,7 @@ fn log_mesh(label: &str, mesh: &Mesh) {
         .count();
     eprintln!(
         "viewer: {label} {} quads ({shaded} shaded verts: AO darkened or tinted)",
-        mesh.indices.len() / 6,
+        (mesh.indices.len() + mesh.translucent_indices.len()) / 6,
     );
 }
 
@@ -680,6 +690,12 @@ fn demo_chunk() -> Chunk {
     chunk.set_block(7, 2, 9, Block::OAK_SAPLING.default_state());
     chunk.set_block(8, 2, 8, Block::GLOWSTONE.default_state());
 
+    for x in 12..15 {
+        for z in 12..15 {
+            chunk.set_block(x, 2, z, Block::WATER.default_state());
+        }
+    }
+
     for x in 10..13 {
         chunk.set_block(
             x,
@@ -771,6 +787,7 @@ struct Viewer {
     fog_enabled: bool,
     fog_start: f32,
     fog_end: f32,
+    submerged: Option<FluidKind>,
     sky_factor: f32,
     brightness: f32,
     cloud_texture: Option<CloudTexture>,
@@ -1086,6 +1103,15 @@ impl Viewer {
         self.camera.position[1] += vertical * speed;
 
         let aspect = size.width as f32 / size.height as f32;
+        let old_submerged = self.submerged;
+        self.submerged = self.fog_fluid();
+        if self.submerged != old_submerged {
+            self.camera.fov = if self.submerged.is_some() {
+                FOV_UNDERWATER
+            } else {
+                FOV_SURFACE
+            };
+        }
         let view_proj = self.camera.view_projection(aspect);
         let camera_pos = self.camera.position;
 
@@ -1268,7 +1294,7 @@ impl Viewer {
                             "Quads: {} Verts: {}",
                             self.meshes
                                 .iter()
-                                .map(|m| m.mesh.indices.len() / 6)
+                                .map(|m| (m.mesh.indices.len() + m.mesh.translucent_indices.len()) / 6)
                                 .sum::<usize>(),
                             self.meshes
                                 .iter()
@@ -1409,13 +1435,22 @@ impl Viewer {
             renderer.set_backface_culling(self.backface_cull);
             renderer.set_chunk_borders(self.chunk_borders);
         }
-        if (self.fog_start, self.fog_end, self.sky_factor) != old_fog {
-            let scale = fog_density_scale(self.sky_factor);
-            renderer.set_fog(
-                fog_color_for(self.sky_factor),
-                self.fog_start * scale,
-                self.fog_end.max(self.fog_start) * scale,
-            );
+        if self.submerged != old_submerged
+            || (self.fog_start, self.fog_end, self.sky_factor) != old_fog
+        {
+            let (color, start, end) = match self.submerged {
+                Some(FluidKind::Water) => (WATER_FOG_COLOR, -8.0, 96.0),
+                Some(FluidKind::Lava) => (LAVA_FOG_COLOR, 0.25, 1.0),
+                None => {
+                    let scale = fog_density_scale(self.sky_factor);
+                    (
+                        fog_color_for(self.sky_factor),
+                        self.fog_start * scale,
+                        self.fog_end.max(self.fog_start) * scale,
+                    )
+                }
+            };
+            renderer.set_fog(color, start, end);
         }
         if self.sky_factor != old_sky {
             renderer.set_sky_factor(self.sky_factor);
@@ -1482,6 +1517,26 @@ impl Viewer {
             double_sided_liquids: self.double_sided_liquids,
             fast_leaves: self.fast_leaves,
         }
+    }
+
+    /// Camera fog fluid per vanilla `Camera.calculateFogType` (water only; the
+    /// lava near-plane probe is approximated by the eye block).
+    fn fog_fluid(&self) -> Option<FluidKind> {
+        let [x, y, z] = self.camera.position;
+        let block_pos = (x.floor() as i32, y.floor() as i32, z.floor() as i32);
+        let fluid = fluid_state(self.world.get_block(block_pos)?)?;
+        let top = block_pos.1 as f32
+            + if fluid.is_source()
+                && self
+                    .world
+                    .get_block((block_pos.0, block_pos.1 + 1, block_pos.2))
+                    .is_some_and(|above| is_face_sturdy(above, Direction::Down))
+            {
+                1.0
+            } else {
+                fluid.own_height()
+            };
+        (y < top).then_some(fluid.kind)
     }
 
     fn render_visible(
