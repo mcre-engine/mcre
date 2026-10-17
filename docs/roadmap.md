@@ -174,9 +174,11 @@ compatible — no Dear ImGui).
 - [x] Renderer GPU buffer cache (`RenderChunk{origin, version}`): steady
       state uploads zero (was ~13MB/frame re-upload); upload once per remesh
 - [x] Spawn camera placed above its own column; shader `MIN_LIGHT` floor so
-      light 0 renders dark instead of pure black
+      light 0 renders dark instead of pure black (superseded in M7: the
+      vanilla lightmap makes light 0 true black again, as vanilla)
 - [x] Vanilla lightmap curve (`Lightmap.getBrightness`: `v/(4-3v)`,
-      additive block+sky in shader): AO mids render correctly dark, tunnel
+      additive block+sky in shader; superseded by the full `lightmap.fsh`
+      port in M7): AO mids render correctly dark, tunnel
       fade reaches true black with no shelf; diagonal dirty-marking
       (corner edits + streamed chunks remesh all 8 neighbors) so freshly
       loaded corners don't show stale baked AO/light
@@ -208,6 +210,33 @@ compatible — no Dear ImGui).
       screenshot comparison vs native demo render
 - [ ] Design constraints: single-threaded wasm (mesh + `compute_light`
       budgets), OPFS origin-private paths (export/import for user saves)
+
+### 2D. Milestone queue after Phase 2 (approved order)
+
+M7 — Shape-aware light + vanilla lightmap — done
+- [x] Shape-aware light transport in `mcre_world`: new `shape` module
+      (`is_empty_shape`, `shape_occludes`, face slabs/boxes) shared with the
+      mesher; every relight path applies per-edge occlusion and the sky
+      column only free-falls from level 15 through non-occluding, non-damping
+      cells; removal cascades use the propagated-removal bound
+- [x] JVM oracle probe (16 representative states: slab/stairs orientations,
+      fence, panes, carpet, snow, leaves, fluids) captured state properties,
+      face occlusion pairs and the full `shapeOccludes` matrix; tests assert
+      properties, the 16x16x6 matrix, slab column behavior (bottom slab
+      blocks the column below, top slab keeps it above), and removal/restore
+      of shape blocks; differential relight fuzz extended with both slab
+      halves
+- [x] Vanilla lightmap: CPU port of `lightmap.fsh` (`mcre_renderer::lightmap`)
+      with the default attributes (block tint `#FFD88C`, block factor 1.4,
+      brightness = gamma, default 0.5); baked to a 16x16 RGBA texture on
+      sky-factor/brightness change; vertices carry raw `(block, sky)` levels
+      and the vertex shader samples the lightmap per vertex (`block.vsh`
+      semantics)
+- [x] Viewer Brightness slider (0..=1) re-baking the lightmap live
+
+Next in the queue: M9 clouds → M8 liquids → M10 animations (texture
+animations + torch flicker) → particles → block entities → entities
+(M11-M13). 2C (wasm) is independent and can land at any point.
 
 ## 5. Open decisions / risks
 - UI toolkit locked to `egui` (native + wasm). Revisit only if it fights

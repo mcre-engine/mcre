@@ -116,7 +116,18 @@ Storage decisions (locked):
       overrides + dark-forest modifier done; swamp noise + snowy-skip done;
       pack UI + hot reload landed in Phase 2B.)
 
-Order: M1 → M2 → M3 → M4 → M5 → M6.
+## M7 — Shape-aware light + vanilla lightmap
+
+- [x] Shape-aware light transport (`mcre_world::shape` shared occlusion
+      helpers; per-edge occlusion in all relight paths; sky column only
+      free-falls from level 15 under shapes; JVM oracle matrix + behavior
+      tests; differential fuzz extended with slabs).
+- [x] Vanilla lightmap (`mcre_renderer::lightmap`: CPU port of `lightmap.fsh`,
+      16x16 baked RGBA texture regenerated on sky-factor/brightness change,
+      per-vertex shader sample; raw-level vertex light attribute; viewer
+      Brightness slider).
+
+Order: M1 → M2 → M3 → M4 → M5 → M6 → M7.
 Verify each milestone: `cargo ck`, `cargo lint -- -D warnings`,
 `cargo test --workspace --all-features`, `cargo fmt --check`, `typos`,
 25s viewer smoke (expect exit 124).
