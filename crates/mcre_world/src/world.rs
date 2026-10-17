@@ -21,6 +21,7 @@ pub struct World {
     chunks: Box<[Chunk]>,
     loaded: Box<[bool]>,
     dirty: Vec<ChunkPos>,
+    evicted: Vec<ChunkPos>,
     light_edits: Vec<(i32, i32, i32, BlockState)>,
     light_full: bool,
 }
@@ -44,6 +45,7 @@ impl World {
             chunks,
             loaded: vec![false; num_chunks].into_boxed_slice(),
             dirty: Vec::new(),
+            evicted: Vec::new(),
             light_edits: Vec::new(),
             light_full: true,
         }
@@ -125,6 +127,24 @@ impl World {
 
     pub fn take_dirty(&mut self) -> Vec<ChunkPos> {
         core::mem::take(&mut self.dirty)
+    }
+
+    /// Chunk positions whose slot data was overwritten by a different
+    /// position (torus-ring aliasing) since the last call. Their meshes and
+    /// their neighbors' baked borders are stale and must be dropped/remeshed.
+    pub fn take_evicted(&mut self) -> Vec<ChunkPos> {
+        core::mem::take(&mut self.evicted)
+    }
+
+    /// Records the position stored in `chunk_idx` as evicted when a loaded
+    /// chunk occupies it under a different position.
+    fn record_eviction(&mut self, chunk_idx: usize, new_pos: ChunkPos) -> Option<ChunkPos> {
+        let old_pos = self.chunks[chunk_idx].pos();
+        if self.loaded[chunk_idx] && old_pos != new_pos {
+            self.evicted.push(old_pos);
+            return Some(old_pos);
+        }
+        None
     }
 
     /// Positions with uncomputed light edits, in edit order.
@@ -658,6 +678,7 @@ impl World {
 
     pub fn add_chunk(&mut self, chunk: Chunk) {
         let chunk_idx = Self::chunk_idx(self.radius, (chunk.pos().x, chunk.pos().z));
+        self.record_eviction(chunk_idx, chunk.pos());
         self.chunks[chunk_idx] = chunk;
         self.loaded[chunk_idx] = true;
         self.light_full = true;
@@ -675,6 +696,7 @@ impl World {
     pub fn replace_chunk(&mut self, chunk: Chunk) {
         let pos = chunk.pos();
         let chunk_idx = Self::chunk_idx(self.radius, (pos.x, pos.z));
+        let evicted = self.record_eviction(chunk_idx, pos);
         self.chunks[chunk_idx] = chunk;
         self.loaded[chunk_idx] = true;
         // All eight neighbors: vertex AO/light taps reach diagonally, so a
@@ -682,6 +704,16 @@ impl World {
         for dz in -1..=1 {
             for dx in -1..=1 {
                 self.mark_chunk(ChunkPos::new(pos.x + dx, pos.z + dz));
+            }
+        }
+        if let Some(old_pos) = evicted {
+            // The evicted chunk's mesh must be dropped and its neighbors
+            // remeshed: their baked borders still sampled data that just
+            // vanished from the ring.
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    self.mark_chunk(ChunkPos::new(old_pos.x + dx, old_pos.z + dz));
+                }
             }
         }
         if !self.light_full && self.light_edits.len() + 2 < LIGHT_TRACK_CAP {
@@ -719,7 +751,9 @@ impl World {
     /// Raw slot replace with no dirty or light bookkeeping. Used when the
     /// caller applies worker-computed light/meshes itself.
     pub fn set_chunk(&mut self, chunk: Chunk) {
-        let chunk_idx = Self::chunk_idx(self.radius, (chunk.pos().x, chunk.pos().z));
+        let pos = chunk.pos();
+        let chunk_idx = Self::chunk_idx(self.radius, (pos.x, pos.z));
+        self.record_eviction(chunk_idx, pos);
         self.chunks[chunk_idx] = chunk;
         self.loaded[chunk_idx] = true;
     }
@@ -778,6 +812,39 @@ mod tests {
                 assert!(dirty.contains(&ChunkPos::new(dx, dz)));
             }
         }
+    }
+
+    #[test]
+    fn replace_chunk_records_alias_evictions_and_marks_their_border() {
+        let mut world = World::new(1);
+        world.compute_light();
+
+        // (1, 0) and (-2, 0) share a ring slot (side 3).
+        world.replace_chunk(Chunk::new_at(ChunkPos::new(1, 0)));
+        assert!(world.take_evicted().is_empty());
+        let _ = world.take_dirty();
+
+        world.replace_chunk(Chunk::new_at(ChunkPos::new(-2, 0)));
+        assert_eq!(world.take_evicted(), vec![ChunkPos::new(1, 0)]);
+        let dirty = world.take_dirty();
+        // (0, 0) and (0, 1) are victim-only neighbors: their baked borders
+        // sampled the data that just vanished, so they must be remeshed.
+        assert!(dirty.contains(&ChunkPos::new(0, 0)));
+        assert!(dirty.contains(&ChunkPos::new(0, 1)));
+        // The victim's own position is gone from the ring.
+        assert!(!dirty.contains(&ChunkPos::new(1, 0)));
+    }
+
+    #[test]
+    fn set_chunk_records_alias_evictions_without_dirty_marks() {
+        let mut world = World::new(1);
+        world.replace_chunk(Chunk::new_at(ChunkPos::new(1, 0)));
+        let _ = world.take_evicted();
+        let _ = world.take_dirty();
+
+        world.set_chunk(Chunk::new_at(ChunkPos::new(-2, 0)));
+        assert_eq!(world.take_evicted(), vec![ChunkPos::new(1, 0)]);
+        assert!(world.take_dirty().is_empty());
     }
 
     #[test]
