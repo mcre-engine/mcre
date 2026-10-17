@@ -308,26 +308,28 @@ fn try_build_cell(
     if cell.neighbor_empty(EAST_OFFSET) && x < 0 {
         encode_face(out, x, z, 5, 0);
     }
+    // Deviation from vanilla, which emits all six interior faces for the
+    // 3x3 near cells (doubling every wall between adjacent cells): interior
+    // walls are emitted at every empty neighbor instead, so solid neighbors
+    // merge into one volume from inside while distant cloud edges still
+    // wall the camera in. Caps stay limited to the near cells (vanilla):
+    // the grid has no vertical neighbors, so a cap is always a real
+    // boundary.
+    if cell.neighbor_empty(NORTH_OFFSET) {
+        encode_face(out, x, z, 2, FLAG_INSIDE_FACE);
+    }
+    if cell.neighbor_empty(SOUTH_OFFSET) {
+        encode_face(out, x, z, 3, FLAG_INSIDE_FACE);
+    }
+    if cell.neighbor_empty(WEST_OFFSET) {
+        encode_face(out, x, z, 4, FLAG_INSIDE_FACE);
+    }
+    if cell.neighbor_empty(EAST_OFFSET) {
+        encode_face(out, x, z, 5, FLAG_INSIDE_FACE);
+    }
     if x.abs() <= 1 && z.abs() <= 1 {
-        // Deviation from vanilla, which emits all six interior faces for the
-        // near cells (producing doubled faces between adjacent cells): the
-        // hull only gets horizontal interior faces at cloud edges, so solid
-        // neighbors visually merge into one volume from inside. The caps stay
-        // unconditional: the grid has no vertical neighbors.
         encode_face(out, x, z, 0, FLAG_INSIDE_FACE);
         encode_face(out, x, z, 1, FLAG_INSIDE_FACE);
-        if cell.neighbor_empty(NORTH_OFFSET) {
-            encode_face(out, x, z, 2, FLAG_INSIDE_FACE);
-        }
-        if cell.neighbor_empty(SOUTH_OFFSET) {
-            encode_face(out, x, z, 3, FLAG_INSIDE_FACE);
-        }
-        if cell.neighbor_empty(WEST_OFFSET) {
-            encode_face(out, x, z, 4, FLAG_INSIDE_FACE);
-        }
-        if cell.neighbor_empty(EAST_OFFSET) {
-            encode_face(out, x, z, 5, FLAG_INSIDE_FACE);
-        }
     }
 }
 
@@ -482,6 +484,39 @@ mod tests {
                 "missing interior wall for direction {direction}"
             );
         }
+    }
+
+    #[test]
+    fn distant_cloud_edges_still_wall_the_inside() {
+        // 8x2 texture: top row solid, bottom row empty. Every strip cell has
+        // an empty north/south neighbor, so the merged hull must keep their
+        // interior walls even cells away from the camera; along the strip the
+        // solid east/west neighbors stay seamless.
+        let mut rgba = vec![0_u8; 8 * 2 * 4];
+        for x in 0..8 {
+            rgba[x * 4 + 3] = 255;
+        }
+        let texture = CloudTexture::from_rgba(8, 2, &rgba).unwrap();
+        let mesh = build_cloud_mesh(
+            &texture,
+            CloudStatus::Fancy,
+            4,
+            4,
+            0,
+            RelativeCameraPos::InsideClouds,
+        );
+        assert!(
+            mesh.iter()
+                .any(|v| v.dir_flags == (2 | FLAG_INSIDE_FACE) && v.cell == [-3.0, 0.0]),
+            "distant edge cell lost its interior wall"
+        );
+        assert!(
+            !mesh
+                .iter()
+                .any(|v| v.dir_flags == (4 | FLAG_INSIDE_FACE)
+                    || v.dir_flags == (5 | FLAG_INSIDE_FACE)),
+            "solid east/west neighbors must stay merged"
+        );
     }
 
     #[test]
