@@ -19,6 +19,7 @@ pub trait WorldStorage {
 pub struct World {
     radius: u32,
     chunks: Box<[Chunk]>,
+    loaded: Box<[bool]>,
     dirty: Vec<ChunkPos>,
     light_edits: Vec<(i32, i32, i32, BlockState)>,
     light_full: bool,
@@ -41,6 +42,7 @@ impl World {
         Self {
             radius,
             chunks,
+            loaded: vec![false; num_chunks].into_boxed_slice(),
             dirty: Vec::new(),
             light_edits: Vec::new(),
             light_full: true,
@@ -657,6 +659,7 @@ impl World {
     pub fn add_chunk(&mut self, chunk: Chunk) {
         let chunk_idx = Self::chunk_idx(self.radius, (chunk.pos().x, chunk.pos().z));
         self.chunks[chunk_idx] = chunk;
+        self.loaded[chunk_idx] = true;
         self.light_full = true;
         self.light_edits.clear();
     }
@@ -673,6 +676,7 @@ impl World {
         let pos = chunk.pos();
         let chunk_idx = Self::chunk_idx(self.radius, (pos.x, pos.z));
         self.chunks[chunk_idx] = chunk;
+        self.loaded[chunk_idx] = true;
         // All eight neighbors: vertex AO/light taps reach diagonally, so a
         // fresh chunk changes its diagonal neighbors' baked corners too.
         for dz in -1..=1 {
@@ -704,11 +708,20 @@ impl World {
         (chunk.pos() == pos).then_some(chunk)
     }
 
+    /// Whether `pos` holds real chunk data (imported, streamed, or added)
+    /// rather than the empty placeholder `new` fills the ring with. The
+    /// streamer uses this to tell "not loaded yet" from "loaded and empty".
+    pub fn is_chunk_loaded(&self, pos: ChunkPos) -> bool {
+        let idx = Self::chunk_idx(self.radius, (pos.x, pos.z));
+        self.loaded[idx] && self.chunks[idx].pos() == pos
+    }
+
     /// Raw slot replace with no dirty or light bookkeeping. Used when the
     /// caller applies worker-computed light/meshes itself.
     pub fn set_chunk(&mut self, chunk: Chunk) {
         let chunk_idx = Self::chunk_idx(self.radius, (chunk.pos().x, chunk.pos().z));
         self.chunks[chunk_idx] = chunk;
+        self.loaded[chunk_idx] = true;
     }
 
     /// Marks every chunk mesh-dirty (debug "Remesh" path).
@@ -795,6 +808,25 @@ mod tests {
         assert!(world.take_dirty().is_empty());
         assert!(world.pending_light_edits().is_empty());
         assert!(!world.light_full);
+    }
+
+    #[test]
+    fn placeholders_are_unloaded_until_chunk_data_arrives() {
+        let mut world = World::new(1);
+        for pos in [ChunkPos::new(0, 0), ChunkPos::new(1, 1)] {
+            assert!(world.chunk_at_pos(pos).is_some());
+            assert!(!world.is_chunk_loaded(pos));
+        }
+
+        world.replace_chunk(Chunk::new_at(ChunkPos::new(0, 0)));
+        assert!(world.is_chunk_loaded(ChunkPos::new(0, 0)));
+        assert!(!world.is_chunk_loaded(ChunkPos::new(1, 1)));
+
+        world.add_chunk(Chunk::new_at(ChunkPos::new(1, 1)));
+        assert!(world.is_chunk_loaded(ChunkPos::new(1, 1)));
+
+        world.set_chunk(Chunk::new_at(ChunkPos::new(-1, 0)));
+        assert!(world.is_chunk_loaded(ChunkPos::new(-1, 0)));
     }
 
     #[test]
