@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use mcre_core::{Axis, Direction};
 use mcre_fs::native::NativeFs;
+use mcre_renderer::clouds::{CLOUD_HEIGHT, CloudStatus, CloudTexture};
 use mcre_renderer::{
     Atlas, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4, Mesh, MeshOptions,
     MeshWorker, RenderChunk, Renderer, StreamSource, build_atlas, mesh_chunk,
@@ -19,6 +20,8 @@ use winit::window::{Window, WindowId};
 
 const FOG_COLOR: [f32; 3] = [0.53, 0.81, 0.92];
 const NIGHT_FOG_COLOR: [f32; 3] = [0.03, 0.05, 0.12];
+/// Vanilla `Timelines.NIGHT_CLOUD_COLOR_MULTIPLIER`.
+const NIGHT_CLOUD_COLOR: [f32; 3] = [0.1, 0.1, 0.15];
 const DAY_LENGTH_SECS: f32 = 600.0;
 
 struct ChunkMesh {
@@ -40,6 +43,19 @@ fn fog_density_scale(sky: f32) -> f32 {
     0.5 + 0.5 * sky.clamp(0.0, 1.0)
 }
 
+/// Approximation of the vanilla `CLOUD_COLOR` timeline keyed on the same
+/// day/night scalar as the fog: white at day, dark blue-grey at night, with
+/// the overworld's 0.8 alpha.
+fn cloud_color_for(sky: f32) -> [f32; 4] {
+    let t = sky.clamp(0.0, 1.0);
+    [
+        NIGHT_CLOUD_COLOR[0] + (1.0 - NIGHT_CLOUD_COLOR[0]) * t,
+        NIGHT_CLOUD_COLOR[1] + (1.0 - NIGHT_CLOUD_COLOR[1]) * t,
+        NIGHT_CLOUD_COLOR[2] + (1.0 - NIGHT_CLOUD_COLOR[2]) * t,
+        0.8,
+    ]
+}
+
 fn chunk_aabb(origin: [i32; 2]) -> ([f32; 3], [f32; 3]) {
     (
         [origin[0] as f32, WORLD_MIN_Y as f32, origin[1] as f32],
@@ -55,7 +71,8 @@ fn main() {
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let args = ViewerArgs::parse();
     let reload_test = args.reload_test;
-    let (data, atlas, world, meshes, camera_pos, streamer, packs) = runtime.block_on(prepare(args));
+    let (data, atlas, cloud_texture, world, meshes, camera_pos, streamer, packs) =
+        runtime.block_on(prepare(args));
     let total_chunks = meshes.len();
 
     let mut viewer = Viewer {
@@ -89,6 +106,10 @@ fn main() {
         fog_end: 160.0,
         sky_factor: 1.0,
         brightness: mcre_renderer::lightmap::DEFAULT_BRIGHTNESS,
+        cloud_texture,
+        cloud_status: CloudStatus::Fancy,
+        cloud_range: 32,
+        cloud_ticks: 0.0,
         cycle_enabled: false,
         cycle_paused: false,
         cycle_speed: 1.0,
@@ -113,6 +134,7 @@ async fn prepare(
 ) -> (
     Arc<ResourcePackData>,
     Arc<Atlas>,
+    Option<CloudTexture>,
     World,
     Vec<ChunkMesh>,
     [f32; 3],
@@ -123,7 +145,7 @@ async fn prepare(
     let app_root = fs.root().clone();
 
     let mut packs = PackManager::new(fs, app_root, args.packs.clone()).await;
-    let (atlas, data) = packs.rebuild().await.expect("bake packs");
+    let (atlas, cloud_texture, data) = packs.rebuild().await.expect("bake packs");
     for err in &packs.errors {
         eprintln!("viewer: {err}");
     }
@@ -175,6 +197,7 @@ async fn prepare(
     (
         Arc::new(data),
         Arc::new(atlas),
+        cloud_texture,
         world,
         meshes,
         camera_pos,
@@ -345,7 +368,14 @@ impl PackManager {
     /// unless even the default pack fails.
     async fn rebuild(
         &mut self,
-    ) -> Result<(mcre_renderer::Atlas, mcre_resource_pack::ResourcePackData), String> {
+    ) -> Result<
+        (
+            mcre_renderer::Atlas,
+            Option<CloudTexture>,
+            mcre_resource_pack::ResourcePackData,
+        ),
+        String,
+    > {
         use mcre_fs::path::FsPath;
         self.errors.clear();
         let mut set = ResourcePackSet::new();
@@ -389,7 +419,12 @@ impl PackManager {
         let atlas = build_atlas(&self.fs, &roots, &data.texture_table)
             .await
             .map_err(|err| err.to_string())?;
-        Ok((atlas, data))
+        let cloud_texture = CloudTexture::load(&self.fs, &roots).await;
+        if cloud_texture.is_none() {
+            self.errors
+                .push("clouds: textures/environment/clouds.png not found".to_string());
+        }
+        Ok((atlas, cloud_texture, data))
     }
 }
 
@@ -738,6 +773,10 @@ struct Viewer {
     fog_end: f32,
     sky_factor: f32,
     brightness: f32,
+    cloud_texture: Option<CloudTexture>,
+    cloud_status: CloudStatus,
+    cloud_range: u32,
+    cloud_ticks: f64,
     cycle_enabled: bool,
     cycle_paused: bool,
     cycle_speed: f32,
@@ -779,6 +818,11 @@ impl ApplicationHandler for Viewer {
         renderer.set_fog(FOG_COLOR, self.fog_start, self.fog_end);
         renderer.set_sky_factor(self.sky_factor);
         renderer.set_brightness(self.brightness);
+        renderer.set_cloud_texture(self.cloud_texture.clone());
+        renderer.set_cloud_status(self.cloud_status);
+        renderer.set_cloud_range(self.cloud_range);
+        renderer.set_cloud_height(CLOUD_HEIGHT);
+        renderer.set_cloud_color(cloud_color_for(self.sky_factor));
 
         let egui_ctx = egui::Context::default();
         let egui_state = egui_winit::State::new(
@@ -1003,6 +1047,8 @@ impl Viewer {
             self.sky_factor =
                 (self.sky_factor + dt * self.cycle_speed / DAY_LENGTH_SECS).rem_euclid(1.0);
         }
+        // Cloud drift follows real time, like vanilla world time.
+        self.cloud_ticks += f64::from(dt) * 20.0;
 
         let mut forward = 0.0;
         if self.keys.contains(&KeyCode::KeyW) {
@@ -1053,6 +1099,7 @@ impl Viewer {
         let old_fog = (self.fog_start, self.fog_end, self.sky_factor);
         let old_sky = self.sky_factor;
         let old_brightness = self.brightness;
+        let old_clouds = (self.cloud_status, self.cloud_range);
         let old_cycle = (self.cycle_enabled, self.cycle_paused);
         let old_mesh_options = (self.double_sided_liquids, self.fast_leaves);
 
@@ -1100,6 +1147,21 @@ impl Viewer {
                     ui.collapsing("Mesh", |ui| {
                         ui.checkbox(&mut self.double_sided_liquids, "Double-sided liquids");
                         ui.checkbox(&mut self.fast_leaves, "Fast leaves");
+                    });
+                    ui.collapsing("Clouds", |ui| {
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut self.cloud_status, CloudStatus::Off, "Off");
+                            ui.selectable_value(&mut self.cloud_status, CloudStatus::Fast, "Fast");
+                            ui.selectable_value(
+                                &mut self.cloud_status,
+                                CloudStatus::Fancy,
+                                "Fancy",
+                            );
+                        });
+                        ui.add(
+                            egui::Slider::new(&mut self.cloud_range, 2..=128)
+                                .text("Range (chunks)"),
+                        );
                     });
                     ui.collapsing("Packs", |ui| {
                         ui.label("Default pack (always active)");
@@ -1361,6 +1423,15 @@ impl Viewer {
         if self.brightness != old_brightness {
             renderer.set_brightness(self.brightness);
         }
+        if (self.cloud_status, self.cloud_range) != old_clouds {
+            renderer.set_cloud_status(self.cloud_status);
+            renderer.set_cloud_range(self.cloud_range);
+        }
+        renderer.set_cloud_time(
+            self.cloud_ticks.floor() as i64,
+            self.cloud_ticks.fract() as f32,
+        );
+        renderer.set_cloud_color(cloud_color_for(self.sky_factor));
         self.render_visible(
             view_proj.0,
             camera_pos,
@@ -1471,12 +1542,14 @@ impl Viewer {
         self.pending_reload = false;
         let result = self.tokio_handle.block_on(self.packs.rebuild());
         match result {
-            Ok((atlas, data)) => {
+            Ok((atlas, cloud_texture, data)) => {
                 let data = Arc::new(data);
                 let atlas = Arc::new(atlas);
                 if let Some(renderer) = self.renderer.as_mut() {
                     renderer.set_atlas(&atlas);
+                    renderer.set_cloud_texture(cloud_texture.clone());
                 }
+                self.cloud_texture = cloud_texture;
                 self.atlas = atlas.clone();
                 let source = self.streamer.as_ref().map(|s| s.source.clone());
                 self.worker = MeshWorker::new(data, atlas, source);
