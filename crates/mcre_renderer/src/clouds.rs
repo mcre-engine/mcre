@@ -309,12 +309,13 @@ fn try_build_cell(
         encode_face(out, x, z, 5, 0);
     }
     // Deviation from vanilla, which emits all six interior faces for the
-    // 3x3 near cells (doubling every wall between adjacent cells): interior
-    // walls are emitted at every empty neighbor instead, so solid neighbors
-    // merge into one volume from inside while distant cloud edges still
-    // wall the camera in. Caps stay limited to the near cells (vanilla):
-    // the grid has no vertical neighbors, so a cap is always a real
-    // boundary.
+    // 3x3 near cells (doubling every wall between adjacent cells) and leaves
+    // the rest of the cloud see-through from inside. Here the merged hull
+    // emits an interior face at every real boundary: walls at empty
+    // horizontal neighbors, caps everywhere (the grid has no vertical
+    // neighbors, so every cap is a real boundary). The inside of a cloud is
+    // then one solid volume at any distance instead of a 3x3 shell that
+    // follows the camera; solid neighbors stay seamless.
     if cell.neighbor_empty(NORTH_OFFSET) {
         encode_face(out, x, z, 2, FLAG_INSIDE_FACE);
     }
@@ -327,10 +328,8 @@ fn try_build_cell(
     if cell.neighbor_empty(EAST_OFFSET) {
         encode_face(out, x, z, 5, FLAG_INSIDE_FACE);
     }
-    if x.abs() <= 1 && z.abs() <= 1 {
-        encode_face(out, x, z, 0, FLAG_INSIDE_FACE);
-        encode_face(out, x, z, 1, FLAG_INSIDE_FACE);
-    }
+    encode_face(out, x, z, 0, FLAG_INSIDE_FACE);
+    encode_face(out, x, z, 1, FLAG_INSIDE_FACE);
 }
 
 fn encode_face(out: &mut Vec<CloudVertex>, x: i32, z: i32, direction: u32, flags: u32) {
@@ -517,6 +516,32 @@ mod tests {
                     || v.dir_flags == (5 | FLAG_INSIDE_FACE)),
             "solid east/west neighbors must stay merged"
         );
+    }
+
+    #[test]
+    fn distant_cells_keep_their_interior_caps() {
+        // 4x4 all-solid texture, radius 3: interior caps used to be limited
+        // to the 3x3 near cells, so from inside the cloud the ceiling and
+        // floor ended three cells out in a see-through patch that followed
+        // the camera. Every cell must carry both interior caps.
+        let texture = CloudTexture::from_rgba(4, 4, &[255; 4 * 4 * 4]).unwrap();
+        let mesh = build_cloud_mesh(
+            &texture,
+            CloudStatus::Fancy,
+            3,
+            2,
+            2,
+            RelativeCameraPos::InsideClouds,
+        );
+        for &cell in &[[-3.0, 0.0], [0.0, 3.0], [2.0, -2.0]] {
+            for direction in 0..=1 {
+                assert!(
+                    mesh.iter()
+                        .any(|v| v.dir_flags == (direction | FLAG_INSIDE_FACE) && v.cell == cell),
+                    "missing interior cap for direction {direction} at {cell:?}"
+                );
+            }
+        }
     }
 
     #[test]
