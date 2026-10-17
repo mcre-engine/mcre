@@ -88,6 +88,7 @@ fn main() {
         fog_start: 64.0,
         fog_end: 160.0,
         sky_factor: 1.0,
+        brightness: mcre_renderer::lightmap::DEFAULT_BRIGHTNESS,
         cycle_enabled: false,
         cycle_paused: false,
         cycle_speed: 1.0,
@@ -736,6 +737,7 @@ struct Viewer {
     fog_start: f32,
     fog_end: f32,
     sky_factor: f32,
+    brightness: f32,
     cycle_enabled: bool,
     cycle_paused: bool,
     cycle_speed: f32,
@@ -776,6 +778,7 @@ impl ApplicationHandler for Viewer {
         renderer.set_chunk_borders(self.chunk_borders);
         renderer.set_fog(FOG_COLOR, self.fog_start, self.fog_end);
         renderer.set_sky_factor(self.sky_factor);
+        renderer.set_brightness(self.brightness);
 
         let egui_ctx = egui::Context::default();
         let egui_state = egui_winit::State::new(
@@ -1049,6 +1052,7 @@ impl Viewer {
         let old_geometry = (self.wireframe, self.backface_cull, self.chunk_borders);
         let old_fog = (self.fog_start, self.fog_end, self.sky_factor);
         let old_sky = self.sky_factor;
+        let old_brightness = self.brightness;
         let old_cycle = (self.cycle_enabled, self.cycle_paused);
         let old_mesh_options = (self.double_sided_liquids, self.fast_leaves);
 
@@ -1078,6 +1082,9 @@ impl Viewer {
                             egui::Slider::new(&mut self.sky_factor, 0.0..=1.0).text("Day/night"),
                         );
                         self.scrubbing = scrub.dragged();
+                        ui.add(
+                            egui::Slider::new(&mut self.brightness, 0.0..=1.0).text("Brightness"),
+                        );
                         ui.checkbox(&mut self.cycle_enabled, "Cycle");
                         ui.checkbox(&mut self.cycle_paused, "Pause");
                         ui.add(
@@ -1350,6 +1357,9 @@ impl Viewer {
         }
         if self.sky_factor != old_sky {
             renderer.set_sky_factor(self.sky_factor);
+        }
+        if self.brightness != old_brightness {
+            renderer.set_brightness(self.brightness);
         }
         self.render_visible(
             view_proj.0,

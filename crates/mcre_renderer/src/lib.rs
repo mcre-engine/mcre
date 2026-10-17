@@ -1,6 +1,7 @@
 pub mod atlas;
 pub mod camera;
 pub mod frustum;
+pub mod lightmap;
 pub mod math;
 pub mod mesh;
 pub mod remesh;

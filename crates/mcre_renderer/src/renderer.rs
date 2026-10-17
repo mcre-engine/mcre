@@ -7,6 +7,7 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::atlas::Atlas;
+use crate::lightmap::{BLOCK_LIGHT_FACTOR, DEFAULT_BRIGHTNESS, lightmap_rgba};
 use crate::mesh::{Mesh, Vertex};
 
 const SKY: wgpu::Color = wgpu::Color {
@@ -50,7 +51,8 @@ struct Uniforms {
     camera_pos: [f32; 4],
     /// Fog color in `rgb`, fog start distance in `a`.
     fog_color_start: [f32; 4],
-    /// Fog end distance in `x`, sky-light factor in `y`.
+    /// Fog end distance in `x`; `y` is unused (the sky-light factor is baked
+    /// into the lightmap texture instead).
     fog_end_sky: [f32; 4],
     /// Debug bits in `x` (`unlit`, `heatmap`, `fog_off`), `yzw` padding.
     flags: [u32; 4],
@@ -125,10 +127,15 @@ pub struct Renderer {
     mesh_cache: HashMap<[i32; 2], GpuMesh>,
     bind_group_layout: wgpu::BindGroupLayout,
     atlas_sampler: wgpu::Sampler,
+    lightmap_texture: wgpu::Texture,
+    lightmap_view: wgpu::TextureView,
+    /// `(sky_factor, brightness)` the lightmap texture was baked for.
+    lightmap_key: (f32, f32),
     fog_color: [f32; 3],
     fog_start: f32,
     fog_end: f32,
     sky_factor: f32,
+    brightness: f32,
 }
 
 impl Renderer {
@@ -200,6 +207,9 @@ impl Renderer {
             bind_group: set.bind_group,
             bind_group_layout: set.bind_group_layout,
             atlas_sampler: set.atlas_sampler,
+            lightmap_texture: set.lightmap_texture,
+            lightmap_view: set.lightmap_view,
+            lightmap_key: set.lightmap_key,
             uniform_buffer: set.uniform_buffer,
             depth_view,
             mesh_cache: HashMap::new(),
@@ -207,6 +217,7 @@ impl Renderer {
             fog_start: 64.0,
             fog_end: 160.0,
             sky_factor: 1.0,
+            brightness: DEFAULT_BRIGHTNESS,
         })
     }
 
@@ -219,8 +230,31 @@ impl Renderer {
     }
 
     /// Multiplier applied to the sky-light channel (1.0 = full daylight).
+    /// Re-bakes the lightmap texture when the value changes.
     pub fn set_sky_factor(&mut self, factor: f32) {
-        self.sky_factor = factor;
+        if self.sky_factor != factor {
+            self.sky_factor = factor;
+            self.refresh_lightmap();
+        }
+    }
+
+    /// Vanilla `Options.gamma` in `0.0..=1.0`. Re-bakes the lightmap
+    /// texture when the value changes.
+    pub fn set_brightness(&mut self, brightness: f32) {
+        let brightness = brightness.clamp(0.0, 1.0);
+        if self.brightness != brightness {
+            self.brightness = brightness;
+            self.refresh_lightmap();
+        }
+    }
+
+    fn refresh_lightmap(&mut self) {
+        let key = (self.sky_factor, self.brightness);
+        if key == self.lightmap_key {
+            return;
+        }
+        self.lightmap_key = key;
+        upload_lightmap(&self.queue, &self.lightmap_texture, key.0, key.1);
     }
 
     pub fn set_debug_flags(&mut self, flags: DebugFlags) {
@@ -266,6 +300,10 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.atlas_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&self.lightmap_view),
                 },
             ],
         });
@@ -558,7 +596,63 @@ struct PipelineSet {
     bind_group: wgpu::BindGroup,
     bind_group_layout: wgpu::BindGroupLayout,
     atlas_sampler: wgpu::Sampler,
+    lightmap_texture: wgpu::Texture,
+    lightmap_view: wgpu::TextureView,
+    lightmap_key: (f32, f32),
     uniform_buffer: wgpu::Buffer,
+}
+
+/// Creates and bakes the 16x16 lightmap texture (block level on `x`, sky
+/// level on `y`).
+fn create_lightmap_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    sky_factor: f32,
+    brightness: f32,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("lightmap"),
+        size: wgpu::Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("lightmap-view"),
+        ..Default::default()
+    });
+    upload_lightmap(queue, &texture, sky_factor, brightness);
+    (texture, view)
+}
+
+fn upload_lightmap(queue: &wgpu::Queue, texture: &wgpu::Texture, sky_factor: f32, brightness: f32) {
+    let pixels = lightmap_rgba(sky_factor, BLOCK_LIGHT_FACTOR, brightness);
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        bytemuck::cast_slice(&pixels),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(16 * 4),
+            rows_per_image: None,
+        },
+        wgpu::Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+    );
 }
 
 /// Uploads atlas pixels into a fresh texture + view. Split out so hot reload
@@ -674,8 +768,21 @@ fn create_pipeline(
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
         ],
     });
+
+    let (lightmap_texture, lightmap_view) =
+        create_lightmap_texture(device, queue, 1.0, DEFAULT_BRIGHTNESS);
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("mcre-bind-group"),
@@ -692,6 +799,10 @@ fn create_pipeline(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(&lightmap_view),
             },
         ],
     });
@@ -792,6 +903,9 @@ fn create_pipeline(
         bind_group,
         bind_group_layout,
         atlas_sampler: sampler,
+        lightmap_texture,
+        lightmap_view,
+        lightmap_key: (1.0, DEFAULT_BRIGHTNESS),
         uniform_buffer,
     }
 }

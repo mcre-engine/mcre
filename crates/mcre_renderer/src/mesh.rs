@@ -19,7 +19,8 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub uv: [f32; 2],
     pub color: [f32; 3],
-    /// Normalized `(block, sky)` light levels sampled around the face.
+    /// Raw `(block, sky)` light levels (0-15) sampled around the face; the
+    /// shader looks them up in the lightmap texture per vertex.
     pub light: [f32; 2],
 }
 
@@ -203,16 +204,6 @@ fn is_light_permeable(state: BlockState) -> bool {
     !state.solid_render() || state.light_dampening() == 0
 }
 
-/// Vanilla `Lightmap.getBrightness` core curve for the overworld
-/// (`ambient_light` 0.0): strongly concave falloff, so mid levels render
-/// much darker than linear and the fade reaches true black with no shelf.
-/// Deliberately not ported: block flicker factor, tints, night vision,
-/// gamma/`notGamma` stage (those need the full lightmap pipeline).
-fn light_brightness(level: u8) -> f32 {
-    let v = f32::from(level) / 15.0;
-    v / (4.0 - 3.0 * v)
-}
-
 /// Vanilla `LightCoordsUtil.getLightCoords`: stored cell light raised to the
 /// sampling block's own emission.
 fn sample_light<A: BlockAccess + ?Sized>(access: &A, pos: [i32; 3]) -> (u8, u8) {
@@ -328,7 +319,7 @@ fn flat_face<A: BlockAccess + ?Sized>(
     } else {
         (block.max(owner.light_emission()), sky)
     };
-    let light = [light_brightness(block), light_brightness(sky)];
+    let light = [f32::from(block), f32::from(sky)];
     ([color; 4], [light; 4])
 }
 
@@ -415,7 +406,7 @@ fn smooth_face<A: BlockAccess + ?Sized>(
             let (diag_light, diag_shade) = diagonal(a, b);
             let blended = smooth_blend(edge_light[a], edge_light[b], diag_light, center_light);
             let ambient = (edge_shade[a] + edge_shade[b] + diag_shade + center_shade) * 0.25;
-            lights[i] = [light_brightness(blended.0), light_brightness(blended.1)];
+            lights[i] = [f32::from(blended.0), f32::from(blended.1)];
             colors[i] = [color[0] * ambient, color[1] * ambient, color[2] * ambient];
         }
         return (colors, lights);
@@ -444,7 +435,7 @@ fn smooth_face<A: BlockAccess + ?Sized>(
             + tshade[2] * weights[2]
             + tshade[3] * weights[3])
             .clamp(0.0, 1.0);
-        lights[i] = [light_brightness(blended.0), light_brightness(blended.1)];
+        lights[i] = [f32::from(blended.0), f32::from(blended.1)];
         colors[i] = [color[0] * ambient, color[1] * ambient, color[2] * ambient];
     }
     (colors, lights)
@@ -1949,7 +1940,7 @@ mod tests {
         assert_color(&mesh.vertices[2], 1.0);
         assert_color(&mesh.vertices[3], 1.0);
         for vertex in &mesh.vertices {
-            assert_eq!(vertex.light, [1.0, 1.0]);
+            assert_eq!(vertex.light, [15.0, 15.0]);
         }
     }
 
@@ -1997,9 +1988,14 @@ mod tests {
             [1.0; 3],
             stone,
         );
-        for (c, l) in colors.iter().zip(lights.iter()) {
-            for v in c.iter().chain(l.iter()) {
+        for c in &colors {
+            for v in c {
                 assert!(v.is_finite() && (0.0..=1.0).contains(v), "{v}");
+            }
+        }
+        for l in &lights {
+            for v in l {
+                assert!(v.is_finite() && (0.0..=15.0).contains(v), "{v}");
             }
         }
         assert!(colors[0][0] < colors[2][0], "west edge should be darker");
@@ -2083,7 +2079,7 @@ mod tests {
         assert_eq!(mesh.vertices.len(), 4);
         for vertex in &mesh.vertices {
             assert_color(vertex, 1.0);
-            assert_eq!(vertex.light, [1.0, 1.0]);
+            assert_eq!(vertex.light, [15.0, 15.0]);
         }
     }
 
@@ -2105,7 +2101,7 @@ mod tests {
         );
         for vertex in &mesh.vertices {
             assert_color(vertex, 1.0);
-            assert_eq!(vertex.light, [1.0, 1.0]);
+            assert_eq!(vertex.light, [15.0, 15.0]);
         }
 
         let mut no_ao = quad(Some(Direction::Up));
@@ -2122,7 +2118,7 @@ mod tests {
         );
         for vertex in &mesh.vertices {
             assert_color(vertex, 1.0);
-            assert_eq!(vertex.light, [1.0, 1.0]);
+            assert_eq!(vertex.light, [15.0, 15.0]);
         }
     }
 
@@ -2163,34 +2159,12 @@ mod tests {
         assert_eq!(mesh.vertices.len(), 4);
         for vertex in &mesh.vertices {
             assert_color(vertex, 1.0);
-            assert_eq!(vertex.light, [1.0, 1.0]);
+            assert_eq!(vertex.light, [15.0, 15.0]);
         }
     }
 
     #[test]
-    fn light_brightness_matches_java_lightmap_curve() {
-        // Oracle values from vanilla `Lightmap.getBrightness` /
-        // `lightmap.fsh get_brightness`: v / (4 - 3v) with v = level / 15.
-        assert_eq!(light_brightness(0), 0.0);
-        assert_eq!(light_brightness(15), 1.0);
-        let cases = [
-            (1, 0.01754),
-            (5, 0.11111),
-            (7, 0.17949),
-            (10, 0.33333),
-            (14, 0.77778),
-        ];
-        for (level, expected) in cases {
-            assert!(
-                (light_brightness(level) - expected).abs() < 1e-4,
-                "level {level}: got {}, want {expected}",
-                light_brightness(level),
-            );
-        }
-    }
-
-    #[test]
-    fn flat_light_channels_use_lightmap_curve() {
+    fn flat_light_channels_carry_raw_levels() {
         struct Dim;
         impl BlockAccess for Dim {
             fn block_at(&self, _x: i32, _y: i32, _z: i32) -> BlockState {
@@ -2218,7 +2192,7 @@ mod tests {
         );
         assert_eq!(mesh.vertices.len(), 4);
         for vertex in &mesh.vertices {
-            assert_eq!(vertex.light, [light_brightness(8), light_brightness(4)]);
+            assert_eq!(vertex.light, [8.0, 4.0]);
         }
     }
 
