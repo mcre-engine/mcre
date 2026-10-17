@@ -7,6 +7,11 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::atlas::Atlas;
+use crate::clouds::{
+    CELL_HEIGHT, CELL_SIZE, CLOUD_HEIGHT, CloudStatus, CloudTexture, CloudVertex,
+    DEFAULT_CLOUD_RANGE, RelativeCameraPos, build_cloud_mesh, cloud_fog_end, cloud_origin,
+    radius_cells,
+};
 use crate::lightmap::{BLOCK_LIGHT_FACTOR, DEFAULT_BRIGHTNESS, lightmap_rgba};
 use crate::mesh::{Mesh, Vertex};
 
@@ -46,13 +51,39 @@ struct GpuMesh {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct CloudUniforms {
+    color: [f32; 4],
+    offset: [f32; 4],
+    cell_size: [f32; 4],
+}
+
+/// Identity of the generated cloud mesh: a new mesh is only built when the
+/// camera crosses a cell boundary or the status/relative position changes.
+type CloudMeshKey = (CloudStatus, i32, i32, RelativeCameraPos);
+
+struct CloudMeshGpu {
+    key: CloudMeshKey,
+    vertex_buffer: Option<wgpu::Buffer>,
+    vertex_count: u32,
+}
+
+struct CloudGpu {
+    pipeline_fancy: wgpu::RenderPipeline,
+    pipeline_flat: wgpu::RenderPipeline,
+    bind_group: wgpu::BindGroup,
+    uniform_buffer: wgpu::Buffer,
+    mesh: Option<CloudMeshGpu>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     view_proj: [f32; 16],
     camera_pos: [f32; 4],
     /// Fog color in `rgb`, fog start distance in `a`.
     fog_color_start: [f32; 4],
-    /// Fog end distance in `x`; `y` is unused (the sky-light factor is baked
-    /// into the lightmap texture instead).
+    /// Fog end distance in `x`; cloud fog fade-out distance in `y` (the
+    /// sky-light factor is baked into the lightmap texture instead).
     fog_end_sky: [f32; 4],
     /// Debug bits in `x` (`unlit`, `heatmap`, `fog_off`), `yzw` padding.
     flags: [u32; 4],
@@ -136,6 +167,13 @@ pub struct Renderer {
     fog_end: f32,
     sky_factor: f32,
     brightness: f32,
+    cloud_texture: Option<CloudTexture>,
+    cloud_gpu: Option<CloudGpu>,
+    cloud_status: CloudStatus,
+    cloud_color: [f32; 4],
+    cloud_height: f32,
+    cloud_range_chunks: u32,
+    cloud_time: (i64, f32),
 }
 
 impl Renderer {
@@ -218,6 +256,13 @@ impl Renderer {
             fog_end: 160.0,
             sky_factor: 1.0,
             brightness: DEFAULT_BRIGHTNESS,
+            cloud_texture: None,
+            cloud_gpu: set.clouds,
+            cloud_status: CloudStatus::default(),
+            cloud_color: [1.0, 1.0, 1.0, 0.8],
+            cloud_height: CLOUD_HEIGHT,
+            cloud_range_chunks: DEFAULT_CLOUD_RANGE,
+            cloud_time: (0, 0.0),
         })
     }
 
@@ -255,6 +300,105 @@ impl Renderer {
         }
         self.lightmap_key = key;
         upload_lightmap(&self.queue, &self.lightmap_texture, key.0, key.1);
+    }
+
+    /// Replaces the cloud cell texture (pack reload); `None` disables clouds
+    /// until a texture is available again.
+    pub fn set_cloud_texture(&mut self, texture: Option<CloudTexture>) {
+        self.cloud_texture = texture;
+        if let Some(clouds) = self.cloud_gpu.as_mut() {
+            clouds.mesh = None;
+        }
+    }
+
+    pub fn set_cloud_status(&mut self, status: CloudStatus) {
+        self.cloud_status = status;
+    }
+
+    /// Vanilla `CLOUD_COLOR` (rgb with its alpha).
+    pub fn set_cloud_color(&mut self, color: [f32; 4]) {
+        self.cloud_color = color;
+    }
+
+    /// Vanilla `CLOUD_HEIGHT` (192.33 in the overworld).
+    pub fn set_cloud_height(&mut self, height: f32) {
+        self.cloud_height = height;
+    }
+
+    /// Cloud mesh radius in chunks; the layer also fades out by
+    /// `min(chunks * 16, 2048)` blocks, so the mesh edge is invisible.
+    pub fn set_cloud_range(&mut self, chunks: u32) {
+        self.cloud_range_chunks = chunks;
+        if let Some(clouds) = self.cloud_gpu.as_mut() {
+            clouds.mesh = None;
+        }
+    }
+
+    /// `game_ticks` drives the cloud drift; it advances regardless of the
+    /// day/night cycle, like vanilla world time.
+    pub fn set_cloud_time(&mut self, game_ticks: i64, partial_ticks: f32) {
+        self.cloud_time = (game_ticks, partial_ticks);
+    }
+
+    /// Rebuilds the cell-anchored cloud mesh if the camera crossed a cell or
+    /// the status changed, and refreshes the cloud uniform (color, offset,
+    /// cell size).
+    fn prepare_clouds(&mut self, camera_pos: [f32; 3]) {
+        if self.cloud_status == CloudStatus::Off || self.cloud_texture.is_none() {
+            return;
+        }
+        let (origin, key, vertices) = {
+            let texture = self.cloud_texture.as_ref().expect("checked above");
+            let origin = cloud_origin(
+                texture.width,
+                texture.height,
+                self.cloud_height,
+                camera_pos,
+                self.cloud_time.0,
+                self.cloud_time.1,
+            );
+            let key = (
+                self.cloud_status,
+                origin.cell_x,
+                origin.cell_z,
+                origin.relative_pos,
+            );
+            let stale = self
+                .cloud_gpu
+                .as_ref()
+                .and_then(|clouds| clouds.mesh.as_ref())
+                .is_none_or(|mesh| mesh.key != key);
+            let vertices = stale.then(|| {
+                build_cloud_mesh(
+                    texture,
+                    self.cloud_status,
+                    radius_cells(self.cloud_range_chunks),
+                    origin.cell_x,
+                    origin.cell_z,
+                    origin.relative_pos,
+                )
+            });
+            (origin, key, vertices)
+        };
+
+        let Some(clouds) = self.cloud_gpu.as_mut() else {
+            return;
+        };
+        if let Some(vertices) = vertices {
+            clouds.mesh = Some(CloudMeshGpu {
+                key,
+                vertex_buffer: create_cloud_buffer(&self.device, &vertices),
+                vertex_count: vertices.len() as u32,
+            });
+        }
+
+        let uniforms = CloudUniforms {
+            color: self.cloud_color,
+            offset: [origin.offset[0], origin.offset[1], origin.offset[2], 0.0],
+            cell_size: [CELL_SIZE, CELL_HEIGHT, CELL_SIZE, 0.0],
+        };
+        self.queue
+            .write_buffer(&clouds.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }
 
     pub fn set_debug_flags(&mut self, flags: DebugFlags) {
@@ -378,6 +522,8 @@ impl Renderer {
             }
         };
 
+        self.prepare_clouds(camera_pos);
+
         let uniforms = Uniforms {
             view_proj,
             camera_pos: [camera_pos[0], camera_pos[1], camera_pos[2], 0.0],
@@ -387,7 +533,12 @@ impl Renderer {
                 self.fog_color[2],
                 self.fog_start,
             ],
-            fog_end_sky: [self.fog_end, self.sky_factor, 0.0, 0.0],
+            fog_end_sky: [
+                self.fog_end,
+                cloud_fog_end(self.cloud_range_chunks),
+                0.0,
+                0.0,
+            ],
             flags: [debug_bits(&self.debug_flags), 0, 0, 0],
         };
         self.queue
@@ -481,6 +632,52 @@ impl Renderer {
                 multiview_mask: None,
             });
             drop(pass);
+        }
+
+        let cloud_draw = self.cloud_gpu.as_ref().and_then(|clouds| {
+            clouds
+                .mesh
+                .as_ref()
+                .filter(|mesh| self.cloud_status != CloudStatus::Off && mesh.vertex_count > 0)
+                .and_then(|mesh| {
+                    mesh.vertex_buffer
+                        .as_ref()
+                        .map(|buffer| (clouds, mesh, buffer))
+                })
+        });
+        if let Some((clouds, mesh, vertex_buffer)) = cloud_draw {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("clouds-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(if self.cloud_status == CloudStatus::Fancy {
+                &clouds.pipeline_fancy
+            } else {
+                &clouds.pipeline_flat
+            });
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(1, &clouds.bind_group, &[]);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..mesh.vertex_count, 0..1);
         }
 
         if self.chunk_borders {
@@ -599,6 +796,7 @@ struct PipelineSet {
     lightmap_texture: wgpu::Texture,
     lightmap_view: wgpu::TextureView,
     lightmap_key: (f32, f32),
+    clouds: Option<CloudGpu>,
     uniform_buffer: wgpu::Buffer,
 }
 
@@ -853,6 +1051,63 @@ fn create_pipeline(
         ),
     ];
 
+    let cloud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("mcre-cloud-shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("clouds.wgsl").into()),
+    });
+    let cloud_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("mcre-cloud-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+    let cloud_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("cloud-info"),
+        size: size_of::<CloudUniforms>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let cloud_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("mcre-cloud-bind-group"),
+        layout: &cloud_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: cloud_uniform_buffer.as_entire_binding(),
+        }],
+    });
+    let cloud_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("mcre-cloud-pipeline-layout"),
+        bind_group_layouts: &[Some(&bind_group_layout), Some(&cloud_bind_group_layout)],
+        immediate_size: 0,
+    });
+    let clouds = Some(CloudGpu {
+        pipeline_fancy: build_cloud_pipeline(
+            device,
+            &cloud_pipeline_layout,
+            &cloud_shader,
+            surface_format,
+            Some(wgpu::Face::Back),
+        ),
+        pipeline_flat: build_cloud_pipeline(
+            device,
+            &cloud_pipeline_layout,
+            &cloud_shader,
+            surface_format,
+            None,
+        ),
+        bind_group: cloud_bind_group,
+        uniform_buffer: cloud_uniform_buffer,
+        mesh: None,
+    });
+
     let border = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("mcre-border-pipeline"),
         layout: Some(&pipeline_layout),
@@ -906,8 +1161,74 @@ fn create_pipeline(
         lightmap_texture,
         lightmap_view,
         lightmap_key: (1.0, DEFAULT_BRIGHTNESS),
+        clouds,
         uniform_buffer,
     }
+}
+
+fn build_cloud_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    surface_format: wgpu::TextureFormat,
+    cull_mode: Option<wgpu::Face>,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("mcre-cloud-pipeline"),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_clouds"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: size_of::<CloudVertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Uint32, 2 => Uint32],
+            })],
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_clouds"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn create_cloud_buffer(device: &wgpu::Device, vertices: &[CloudVertex]) -> Option<wgpu::Buffer> {
+    if vertices.is_empty() {
+        return None;
+    }
+    Some(
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("cloud-vertices"),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+    )
 }
 
 fn build_main_pipeline(
