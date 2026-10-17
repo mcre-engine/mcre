@@ -1315,6 +1315,32 @@ impl Viewer {
                             self.camera.position[1],
                             self.camera.position[2]
                         ));
+                        let eye_block = [
+                            self.camera.position[0].floor() as i32,
+                            self.camera.position[1].floor() as i32,
+                            self.camera.position[2].floor() as i32,
+                        ];
+                        ui.label(format!(
+                            "Block: [{}, {}, {}]",
+                            eye_block[0], eye_block[1], eye_block[2]
+                        ));
+                        let eye_chunk = ChunkPos::from_block(eye_block[0], eye_block[2]);
+                        ui.label(format!(
+                            "Chunk: ({}, {}) loaded: {}",
+                            eye_chunk.x,
+                            eye_chunk.z,
+                            self.world.is_chunk_loaded(eye_chunk)
+                        ));
+                        ui.label(format!("Submerged: {:?}", self.submerged));
+                        if let Some(stream) = self.streamer.as_ref() {
+                            ui.label(format!(
+                                "Stream: center ({}, {}), pending {}, inflight {}",
+                                stream.center.0,
+                                stream.center.1,
+                                stream.pending.len(),
+                                self.inflight
+                            ));
+                        }
                         ui.label(format!("Light mode: {:?}", self.light_mode));
                         ui.separator();
                         ui.heading("Block inspector");
