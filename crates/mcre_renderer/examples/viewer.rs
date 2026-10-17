@@ -133,6 +133,12 @@ fn main() {
         backface_cull: true,
         chunk_borders: false,
     };
+    if let Some(horizon) = viewer.stream_horizon() {
+        // Fog follows the loaded ring (like vanilla render-distance fog), so
+        // the stream frontier stays hidden instead of showing a hard cut.
+        viewer.fog_start = horizon * 0.75;
+        viewer.fog_end = horizon;
+    }
 
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
@@ -227,7 +233,7 @@ struct ViewerArgs {
 impl ViewerArgs {
     fn parse() -> Self {
         let mut world = None;
-        let mut radius = 4;
+        let mut radius = 8;
         let mut packs = Vec::new();
         let mut reload_test = false;
         let mut args = std::env::args().skip(1);
@@ -244,7 +250,7 @@ impl ViewerArgs {
                 radius = args
                     .next()
                     .and_then(|value| value.parse().ok())
-                    .unwrap_or(4)
+                    .unwrap_or(8)
                     .clamp(1, 16);
             } else if arg == "--help" || arg == "-h" {
                 eprintln!(
@@ -253,7 +259,7 @@ impl ViewerArgs {
                 eprintln!("  Packs stack bottom-to-top above the default pack, last wins.");
                 eprintln!("  --pack adds session packs (also manageable in the Packs panel).");
                 eprintln!("  --world loads the save around its spawn instead of the demo.");
-                eprintln!("  --radius sets the loaded ring radius in chunks (default 4).");
+                eprintln!("  --radius sets the loaded ring radius in chunks (default 8).");
                 eprintln!("  User packs live in <app-dir>/resourcepacks (folders or .zip).");
                 eprintln!("  --reload-test triggers one pack hot-reload on startup (testing).");
                 std::process::exit(0);
@@ -1453,6 +1459,7 @@ impl Viewer {
             self.reload_packs();
         }
 
+        let water_fog_end = self.stream_horizon().map_or(96.0, |h| (h - 8.0).min(96.0));
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };
@@ -1472,7 +1479,7 @@ impl Viewer {
             || (self.fog_start, self.fog_end, self.sky_factor) != old_fog
         {
             let (color, start, end) = match self.submerged {
-                Some(FluidKind::Water) => (WATER_FOG_COLOR, -8.0, 96.0),
+                Some(FluidKind::Water) => (WATER_FOG_COLOR, -8.0, water_fog_end),
                 Some(FluidKind::Lava) => (LAVA_FOG_COLOR, 0.25, 1.0),
                 None => {
                     let scale = fog_density_scale(self.sky_factor);
@@ -1800,6 +1807,15 @@ impl Viewer {
             let keep: Vec<[i32; 2]> = self.meshes.iter().map(|entry| entry.origin).collect();
             renderer.prune_mesh_cache(&keep);
         }
+    }
+
+    /// Distance in blocks at which the streamed ring ends, if streaming.
+    /// Fog is tied to it like vanilla render-distance fog so the frontier
+    /// (a hard terrain/water cut) stays hidden.
+    fn stream_horizon(&self) -> Option<f32> {
+        self.streamer
+            .as_ref()
+            .map(|stream| stream.radius as f32 * CHUNK_WIDTH as f32)
     }
 
     /// Streams save chunks around the camera: rebases the ring when the
