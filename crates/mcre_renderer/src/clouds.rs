@@ -153,8 +153,9 @@ impl CloudTexture {
 
 /// Scrolling state derived from the camera and game time (vanilla
 /// `CloudRenderer.prepare`). `offset` positions the mesh in world space for
-/// our absolute-coordinate view matrix: vanilla renders camera-relative, but
-/// adding the camera back is identical modulo the texture wrap.
+/// our absolute-coordinate view matrix: vanilla renders camera-relative
+/// (`-xInCell, bottomY - camera.y, -zInCell`), so x/z add the camera back
+/// and y is the absolute cloud base height.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CloudOrigin {
     pub cell_x: i32,
@@ -200,7 +201,7 @@ pub fn cloud_origin(
         relative_pos,
         offset: [
             camera_pos[0] - x_in_cell,
-            relative_bottom_y,
+            cloud_height,
             camera_pos[2] - z_in_cell,
         ],
     }
@@ -308,8 +309,24 @@ fn try_build_cell(
         encode_face(out, x, z, 5, 0);
     }
     if x.abs() <= 1 && z.abs() <= 1 {
-        for direction in 0..6 {
-            encode_face(out, x, z, direction, FLAG_INSIDE_FACE);
+        // Deviation from vanilla, which emits all six interior faces for the
+        // near cells (producing doubled faces between adjacent cells): the
+        // hull only gets horizontal interior faces at cloud edges, so solid
+        // neighbors visually merge into one volume from inside. The caps stay
+        // unconditional: the grid has no vertical neighbors.
+        encode_face(out, x, z, 0, FLAG_INSIDE_FACE);
+        encode_face(out, x, z, 1, FLAG_INSIDE_FACE);
+        if cell.neighbor_empty(NORTH_OFFSET) {
+            encode_face(out, x, z, 2, FLAG_INSIDE_FACE);
+        }
+        if cell.neighbor_empty(SOUTH_OFFSET) {
+            encode_face(out, x, z, 3, FLAG_INSIDE_FACE);
+        }
+        if cell.neighbor_empty(WEST_OFFSET) {
+            encode_face(out, x, z, 4, FLAG_INSIDE_FACE);
+        }
+        if cell.neighbor_empty(EAST_OFFSET) {
+            encode_face(out, x, z, 5, FLAG_INSIDE_FACE);
         }
     }
 }
@@ -395,11 +412,10 @@ mod tests {
     }
 
     #[test]
-    fn fancy_single_cell_gets_caps_inside_faces_and_boundary_sides() {
+    fn fancy_single_cell_gets_caps_and_merged_hull() {
         // 1x1 texture: the only cell wraps onto itself, so all four
         // horizontal neighbors are non-empty and no side faces are emitted
-        // at the cell's own position; the inside hull is emitted for cells
-        // within one of the center.
+        // at the cell's own position; the merged hull keeps only its caps.
         let texture = CloudTexture::from_rgba(1, 1, &[255, 255, 255, 255]).unwrap();
         let mesh = build_cloud_mesh(
             &texture,
@@ -409,12 +425,63 @@ mod tests {
             0,
             RelativeCameraPos::InsideClouds,
         );
-        // One cell at the center: up + down + six inside faces.
-        assert_eq!(mesh.len(), 8 * 6);
+        // One cell at the center: up + down + inside up + inside down.
+        assert_eq!(mesh.len(), 4 * 6);
         assert!(mesh.iter().any(|v| v.dir_flags == 1)); // up
         assert!(mesh.iter().any(|v| v.dir_flags == 0)); // down
         assert!(mesh.iter().any(|v| v.dir_flags == 16)); // inside down
-        assert!(mesh.iter().any(|v| v.dir_flags == 5 | 16)); // inside east
+        assert!(
+            !mesh
+                .iter()
+                .any(|v| v.dir_flags & FLAG_INSIDE_FACE != 0 && v.dir_flags & FLAG_MASK_DIR >= 2)
+        );
+    }
+
+    #[test]
+    fn interior_faces_merge_between_solid_neighbors() {
+        // 2x2 all-solid texture, radius 1: every interior neighbor is solid,
+        // so no interior side faces survive; each of the five cells keeps
+        // only its two caps and the hull's two cap faces.
+        let texture = CloudTexture::from_rgba(2, 2, &[255; 16]).unwrap();
+        let mesh = build_cloud_mesh(
+            &texture,
+            CloudStatus::Fancy,
+            1,
+            0,
+            0,
+            RelativeCameraPos::InsideClouds,
+        );
+        assert_eq!(mesh.len(), 5 * 4 * 6);
+        assert!(
+            !mesh
+                .iter()
+                .any(|v| v.dir_flags & FLAG_INSIDE_FACE != 0 && v.dir_flags & FLAG_MASK_DIR >= 2)
+        );
+    }
+
+    #[test]
+    fn interior_walls_survive_at_empty_neighbors() {
+        // Single solid cell with empty surroundings: the merged hull keeps
+        // its four interior side walls even though no regular side faces
+        // are emitted at z == 0 / x == 0.
+        let mut rgba = vec![0_u8; 2 * 2 * 4];
+        rgba[3] = 255;
+        let texture = CloudTexture::from_rgba(2, 2, &rgba).unwrap();
+        let mesh = build_cloud_mesh(
+            &texture,
+            CloudStatus::Fancy,
+            0,
+            0,
+            0,
+            RelativeCameraPos::InsideClouds,
+        );
+        for direction in 2..=5 {
+            assert!(
+                mesh.iter()
+                    .any(|v| v.dir_flags == direction | FLAG_INSIDE_FACE),
+                "missing interior wall for direction {direction}"
+            );
+        }
     }
 
     #[test]
@@ -513,7 +580,9 @@ mod tests {
         assert_eq!(origin.relative_pos, RelativeCameraPos::BelowClouds);
         assert!((origin.offset[0] - (100.0 - 4.0)).abs() < 1e-3);
         assert!((origin.offset[2] - (-50.0 - 1.96)).abs() < 1e-3);
-        assert!((origin.offset[1] - (CLOUD_HEIGHT - 70.0)).abs() < 1e-6);
+        // Absolute view matrix: the mesh sits at the world cloud height,
+        // not vanilla's camera-relative `bottomY - camera.y`.
+        assert!((origin.offset[1] - CLOUD_HEIGHT).abs() < 1e-6);
     }
 
     #[test]
