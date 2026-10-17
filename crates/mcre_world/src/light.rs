@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 
 use mcre_core::Direction;
 
-use crate::{BlockState, WORLD_HEIGHT, WORLD_MIN_Y};
+use crate::{BlockState, WORLD_HEIGHT, WORLD_MIN_Y, shape};
 
 pub const ALL_DIRECTIONS: [Direction; 6] = [
     Direction::Down,
@@ -163,17 +163,31 @@ impl ChunkLight {
     }
 }
 
-/// Vanilla `LightEngine` decay: skylight falls freely downward through
-/// `propagates_skylight_down` blocks, everything else loses `max(1, damp)`.
-pub(crate) fn decay(target: BlockState, direction: Direction, sky: bool) -> u8 {
+/// Vanilla `LightEngine` decay: skylight falls freely downward from a full
+/// level-15 column while the pair does not shape-occlude; everything else
+/// loses `max(1, damp)`.
+pub(crate) fn decay(from: u8, target: BlockState, direction: Direction, sky: bool) -> u8 {
     let damp = target.light_dampening();
-    if sky && direction == Direction::Down && damp == 0 && target.propagates_skylight_down() {
+    if sky && direction == Direction::Down && from == 15 && damp == 0 {
         0
     } else {
         damp.max(1)
     }
 }
 
-pub(crate) fn propagate(from: u8, target: BlockState, direction: Direction, sky: bool) -> u8 {
-    from.saturating_sub(decay(target, direction, sky))
+pub(crate) fn propagate(
+    from: u8,
+    from_state: BlockState,
+    target: BlockState,
+    direction: Direction,
+    sky: bool,
+) -> u8 {
+    let next = from.saturating_sub(decay(from, target, direction, sky));
+    if next == 0 {
+        return 0;
+    }
+    if shape::shape_occludes(from_state, target, direction) {
+        return 0;
+    }
+    next
 }

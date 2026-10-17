@@ -257,7 +257,7 @@ mod tests {
         world.set_block((0, 0, 0), Block::STONE.default_state());
         let dirty = world.take_dirty();
         assert!(!dirty.is_empty());
-        let light_edits = world.pending_light_edits().to_vec();
+        let light_edits = world.pending_light_edits();
         assert!(!light_edits.is_empty());
         let generation = worker.submit(
             world,

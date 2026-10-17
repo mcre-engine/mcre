@@ -1,8 +1,8 @@
 use alloc::collections::VecDeque;
 use alloc::{boxed::Box, vec, vec::Vec};
 
-use crate::light::{ALL_DIRECTIONS, ChunkLight, decay, propagate};
-use crate::{Biome, BlockState, CHUNK_WIDTH, Chunk, ChunkPos, WORLD_HEIGHT, WORLD_MIN_Y};
+use crate::light::{ALL_DIRECTIONS, ChunkLight, propagate};
+use crate::{Biome, Block, BlockState, CHUNK_WIDTH, Chunk, ChunkPos, WORLD_HEIGHT, WORLD_MIN_Y};
 
 const LIGHT_MARGIN: i32 = 16;
 const LIGHT_TRACK_CAP: usize = 65_536;
@@ -20,7 +20,7 @@ pub struct World {
     radius: u32,
     chunks: Box<[Chunk]>,
     dirty: Vec<ChunkPos>,
-    light_edits: Vec<(i32, i32, i32)>,
+    light_edits: Vec<(i32, i32, i32, BlockState)>,
     light_full: bool,
 }
 
@@ -69,17 +69,18 @@ impl World {
 
         let local_x = pos.0.rem_euclid(16);
         let local_z = pos.2.rem_euclid(16);
+        let old_state = chunk.get_block(local_x, pos.1, local_z);
         chunk.set_block(local_x, pos.1, local_z, block);
         self.mark_dirty(chunk_pos, local_x, local_z);
-        self.track_light_edit(pos);
+        self.track_light_edit(pos, old_state);
     }
 
-    fn track_light_edit(&mut self, pos: (i32, i32, i32)) {
+    fn track_light_edit(&mut self, pos: (i32, i32, i32), old_state: BlockState) {
         if self.light_full {
             return;
         }
         if self.light_edits.len() < LIGHT_TRACK_CAP {
-            self.light_edits.push(pos);
+            self.light_edits.push((pos.0, pos.1, pos.2, old_state));
         } else {
             self.light_full = true;
             self.light_edits.clear();
@@ -125,8 +126,11 @@ impl World {
     }
 
     /// Positions with uncomputed light edits, in edit order.
-    pub fn pending_light_edits(&self) -> &[(i32, i32, i32)] {
-        &self.light_edits
+    pub fn pending_light_edits(&self) -> Vec<(i32, i32, i32)> {
+        self.light_edits
+            .iter()
+            .map(|edit| (edit.0, edit.1, edit.2))
+            .collect()
     }
 
     /// Drops edit records whose light was recomputed elsewhere (worker
@@ -136,7 +140,8 @@ impl World {
         if self.light_full || applied.is_empty() {
             return;
         }
-        self.light_edits.retain(|edit| !applied.contains(edit));
+        self.light_edits
+            .retain(|edit| !applied.contains(&(edit.0, edit.1, edit.2)));
     }
 
     pub fn set_chunk_light(&mut self, pos: ChunkPos, light: ChunkLight) -> bool {
@@ -237,8 +242,8 @@ impl World {
             return;
         }
         if !self.light_full && self.light_edits.len() == 1 {
-            let (x, y, z) = self.light_edits[0];
-            self.update_light_at(x, y, z);
+            let (x, y, z, old_state) = self.light_edits[0];
+            self.update_light_at(x, y, z, old_state);
             self.light_edits.clear();
             return;
         }
@@ -256,7 +261,7 @@ impl World {
         let mut max_x = i32::MIN;
         let mut min_z = i32::MAX;
         let mut max_z = i32::MIN;
-        for &(x, _, z) in &self.light_edits {
+        for &(x, _, z, _) in &self.light_edits {
             min_x = min_x.min(x);
             max_x = max_x.max(x);
             min_z = min_z.min(z);
@@ -376,6 +381,9 @@ impl World {
                         if self.chunk_at(outside.0, outside.2).is_none() {
                             continue;
                         }
+                        let Some(outside_state) = self.get_block(outside) else {
+                            continue;
+                        };
                         for sky in [true, false] {
                             let incoming = if sky {
                                 self.sky_light(outside)
@@ -385,7 +393,7 @@ impl World {
                             if incoming == 0 {
                                 continue;
                             }
-                            let next = propagate(incoming, state, direction, sky);
+                            let next = propagate(incoming, outside_state, state, direction, sky);
                             if next > 0 {
                                 queue.push_back((x, y, z, next, sky));
                             }
@@ -405,7 +413,7 @@ impl World {
     /// whose light actually changes are visited, so this is O(affected)
     /// instead of O(region). Falls back to nothing when the recomputed level
     /// matches, which covers the common no-op edit.
-    fn update_light_at(&mut self, x: i32, y: i32, z: i32) {
+    fn update_light_at(&mut self, x: i32, y: i32, z: i32, old_state: BlockState) {
         if !(WORLD_MIN_Y..WORLD_MIN_Y + WORLD_HEIGHT).contains(&y) {
             return;
         }
@@ -413,7 +421,7 @@ impl World {
             return;
         };
         for sky in [false, true] {
-            self.update_channel_at(x, y, z, state, sky);
+            self.update_channel_at(x, y, z, state, old_state, sky);
         }
     }
 
@@ -439,7 +447,15 @@ impl World {
         }
     }
 
-    fn update_channel_at(&mut self, x: i32, y: i32, z: i32, state: BlockState, sky: bool) {
+    fn update_channel_at(
+        &mut self,
+        x: i32,
+        y: i32,
+        z: i32,
+        state: BlockState,
+        old_state: BlockState,
+        sky: bool,
+    ) {
         let old = self.channel_value(x, y, z, sky);
         let mut incoming = if sky { 0 } else { state.light_emission() };
         for direction in ALL_DIRECTIONS {
@@ -447,24 +463,62 @@ impl World {
             let (nx, ny, nz) = (x + to_neighbor[0], y + to_neighbor[1], z + to_neighbor[2]);
             // Unloaded neighbors feed nothing, mirroring drain_light_queue:
             // reads there use accessor defaults only inside loaded columns.
-            if self.get_block((nx, ny, nz)).is_none() {
+            let Some(neighbor_state) = self.get_block((nx, ny, nz)) else {
                 continue;
-            }
+            };
             let feed = self.channel_value(nx, ny, nz, sky);
             if feed == 0 {
                 continue;
             }
-            incoming = incoming.max(propagate(feed, state, direction.opposite(), sky));
+            incoming = incoming.max(propagate(
+                feed,
+                neighbor_state,
+                state,
+                direction.opposite(),
+                sky,
+            ));
         }
-        if incoming == old {
+        if incoming == old && state == old_state {
             return;
         }
+
+        if incoming < old {
+            self.remove_channel_at(x, y, z, old, sky);
+        }
+
+        // A state change alters how this cell feeds its neighbors even when
+        // its own level is unchanged (shape occlusion). Compare pre-edit and
+        // post-edit feed per direction: increased feeds push, and neighbors
+        // that could only have been fed by the old feed are cleared and
+        // reseeded.
+        let x_value = if incoming > old {
+            incoming
+        } else {
+            self.channel_value(x, y, z, sky)
+        };
+        let mut queue = VecDeque::new();
         if incoming > old {
-            let mut queue = VecDeque::from([(x, y, z, incoming, sky)]);
-            self.drain_light_queue(&mut queue, None);
-            return;
+            queue.push_back((x, y, z, incoming, sky));
         }
-        self.remove_channel_at(x, y, z, old, sky);
+        for direction in ALL_DIRECTIONS {
+            let delta = direction.delta();
+            let (nx, ny, nz) = (x + delta[0], y + delta[1], z + delta[2]);
+            if !(WORLD_MIN_Y..WORLD_MIN_Y + WORLD_HEIGHT).contains(&ny) {
+                continue;
+            }
+            let Some(neighbor_state) = self.get_block((nx, ny, nz)) else {
+                continue;
+            };
+            let current = self.channel_value(nx, ny, nz, sky);
+            let old_feed = propagate(old, old_state, neighbor_state, direction, sky);
+            let new_feed = propagate(x_value, state, neighbor_state, direction, sky);
+            if new_feed > current {
+                queue.push_back((nx, ny, nz, new_feed, sky));
+            } else if new_feed < current && current <= old_feed {
+                self.remove_channel_at(nx, ny, nz, current, sky);
+            }
+        }
+        self.drain_light_queue(&mut queue, None);
     }
 
     /// Removal wave for a light decrease at `(x, y, z)`: clears cells that
@@ -475,6 +529,9 @@ impl World {
         let mut wave = VecDeque::from([((x, y, z), removed)]);
         let mut cleared = vec![(x, y, z)];
         while let Some(((cx, cy, cz), removed_level)) = wave.pop_front() {
+            let Some(source) = self.get_block((cx, cy, cz)) else {
+                continue;
+            };
             for direction in ALL_DIRECTIONS {
                 let delta = direction.delta();
                 let (nx, ny, nz) = (cx + delta[0], cy + delta[1], cz + delta[2]);
@@ -488,8 +545,7 @@ impl World {
                 let Some(neighbor) = self.get_block((nx, ny, nz)) else {
                     continue;
                 };
-                let damp = decay(neighbor, direction, sky);
-                if (value as u16) + (damp as u16) <= removed_level as u16 {
+                if value <= propagate(removed_level, source, neighbor, direction, sky) {
                     self.set_channel_value(nx, ny, nz, sky, 0);
                     cleared.push((nx, ny, nz));
                     wave.push_back(((nx, ny, nz), value));
@@ -513,14 +569,14 @@ impl World {
                 if !(WORLD_MIN_Y..WORLD_MIN_Y + WORLD_HEIGHT).contains(&ny) {
                     continue;
                 }
-                if self.get_block((nx, ny, nz)).is_none() {
+                let Some(neighbor) = self.get_block((nx, ny, nz)) else {
                     continue;
-                }
+                };
                 let feed = self.channel_value(nx, ny, nz, sky);
                 if feed == 0 {
                     continue;
                 }
-                let next = propagate(feed, cleared_state, direction.opposite(), sky);
+                let next = propagate(feed, neighbor, cleared_state, direction.opposite(), sky);
                 if next > 0 {
                     queue.push_back((cx, cy, cz, next, sky));
                 }
@@ -563,6 +619,9 @@ impl World {
                     .light_mut()
                     .set_block_level(local_x, y, local_z, level);
             }
+            let Some(from_state) = self.get_block((x, y, z)) else {
+                continue;
+            };
 
             for direction in ALL_DIRECTIONS {
                 let delta = direction.delta();
@@ -581,7 +640,7 @@ impl World {
                 let Some(state) = self.get_block(neighbor) else {
                     continue;
                 };
-                let next = propagate(level, state, direction, sky);
+                let next = propagate(level, from_state, state, direction, sky);
                 if next > 0 {
                     queue.push_back((neighbor.0, neighbor.1, neighbor.2, next, sky));
                 }
@@ -623,9 +682,14 @@ impl World {
         }
         if !self.light_full && self.light_edits.len() + 2 < LIGHT_TRACK_CAP {
             let (x0, z0) = (pos.x * CHUNK_WIDTH, pos.z * CHUNK_WIDTH);
-            self.light_edits.push((x0, 0, z0));
             self.light_edits
-                .push((x0 + CHUNK_WIDTH - 1, 0, z0 + CHUNK_WIDTH - 1));
+                .push((x0, 0, z0, Block::AIR.default_state()));
+            self.light_edits.push((
+                x0 + CHUNK_WIDTH - 1,
+                0,
+                z0 + CHUNK_WIDTH - 1,
+                Block::AIR.default_state(),
+            ));
         } else if !self.light_full {
             self.light_full = true;
             self.light_edits.clear();

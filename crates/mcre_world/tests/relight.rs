@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-use mcre_world::{Block, BlockState, Chunk, ChunkPos, WORLD_HEIGHT, WORLD_MIN_Y, World};
+use mcre_world::{
+    Block, BlockState, Chunk, ChunkPos, PropVal, TypePropVal, WORLD_HEIGHT, WORLD_MIN_Y, World,
+};
 
 struct Rng(u64);
 
@@ -39,13 +41,25 @@ fn glowstone() -> BlockState {
     Block::GLOWSTONE.default_state()
 }
 
+fn slab() -> BlockState {
+    Block::STONE_SLAB.default_state()
+}
+
+fn slab_top() -> BlockState {
+    Block::STONE_SLAB
+        .state(&[PropVal::Type(TypePropVal::Top)])
+        .unwrap()
+}
+
 fn random_state(rng: &mut Rng) -> BlockState {
-    match rng.below(5) {
+    match rng.below(7) {
         0 => air(),
         1 => stone(),
         2 => glass(),
         3 => leaves(),
-        _ => glowstone(),
+        4 => glowstone(),
+        5 => slab(),
+        _ => slab_top(),
     }
 }
 
