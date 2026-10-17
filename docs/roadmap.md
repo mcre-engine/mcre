@@ -252,7 +252,30 @@ M9 — Clouds — done
       pack stack, drifts on real time (20 ticks/s), tints by the day/night
       scalar (`Timelines.NIGHT_CLOUD_COLOR_MULTIPLIER`)
 
-Next in the queue: M8 liquids → M10 animations (texture
+M8 — Liquids — done
+- [x] `mcre_world::fluid`: vanilla `FlowingFluid` state mapping
+      (`LiquidBlock.stateCache` 0→source, 1..7→`8 - level`, 8..15→falling;
+      waterlogged blocks hold a source), `ownHeight = amount / 9`,
+      `MAX_FLUID_HEIGHT`, `isFaceSturdy` from the extracted support mask
+- [x] Data extraction: `isFaceSturdy` 6-bit mask, `isIceBlock`,
+      `half_transparent`, recursive `BLOCKS_FLUID_FLOW` tag; shape occlusion
+      (`Shapes.blockOccludes` port) validated against the live JVM on all
+      30,864 state/direction pairs
+- [x] `mcre_renderer::fluid`: `FluidRenderer.tesselate` port — neighbor
+      heights + `calculateAverageHeight` weighting, `getFlow` (incl. falling
+      `-6` y pull and the recurse-below rule), top/bottom/side quads with
+      vanilla offsets (`bottomOffs`), flow-aligned top UVs, half-height side
+      UVs, `water_overlay` for half-transparent/leaves neighbors, exact face
+      occlusion, vanilla back faces behind the double-sided option
+- [x] Translucent fluid pass: `Mesh.translucent_indices`, alpha-blended
+      pipelines (`fs_translucent`), second draw range per chunk; water keeps
+      the texture alpha (vanilla 180/255) and 5x5 biome-blend tint, lava is
+      opaque untinted
+- [x] Viewer: demo pond, underwater fog (`Camera.calculateFogType` water +
+      eye-block lava approximation, `WATER_FOG_COLOR`/lava colors, 70° → 60°
+      FOV at the default `fovEffectScale`)
+
+Next in the queue: M10 animations (texture
 animations + torch flicker) → particles → block entities → entities
 (M11-M13). 2C (wasm) is independent and can land at any point.
 

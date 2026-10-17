@@ -134,7 +134,26 @@ Storage decisions (locked):
       `min(range*16, 2048)`), `clouds.wgsl`, renderer pipelines + per-cell
       mesh cache, viewer Off/Fast/Fancy + range UI and day/night tint.
 
-Order: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M9. Next: M8 (liquids).
+## M8 — Liquids
+
+- [x] Fluid state model (`mcre_world::fluid`): `LiquidBlock.stateCache` level
+      mapping (0→source, 1..7→`8 - level`, 8..15→falling), waterlogged
+      sources, `ownHeight`, `MAX_FLUID_HEIGHT`, `isFaceSturdy` from the
+      extracted support mask.
+- [x] Data: `half_transparent`, `face_sturdy` mask, `is_ice`, recursive
+      `BLOCKS_FLUID_FLOW` tag; `Shapes.blockOccludes` port
+      (`box_occludes`/`fluid_face_occluded`) proven on all 30,864
+      state/direction pairs against the live JVM.
+- [x] `FluidRenderer.tesselate` port (`mcre_renderer::fluid`): neighbor
+      heights + corner averaging, `getFlow`, top/bottom/side quads with
+      vanilla offsets/UVs, `water_overlay`, face + back-face rules; water
+      tint from the 5x5 biome blend.
+- [x] Translucent move: `Mesh.translucent_indices`, blended pipelines
+      (`fs_translucent`), second draw range per chunk.
+- [x] Viewer: demo pond, underwater fog + FOV
+      (`Camera.calculateFogType`, `WATER_FOG_COLOR`, lava fog, 60°).
+
+Order: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M9 → M8. Next: M10 (animations).
 Verify each milestone: `cargo ck`, `cargo lint -- -D warnings`,
 `cargo test --workspace --all-features`, `cargo fmt --check`, `typos`,
 25s viewer smoke (expect exit 124).
