@@ -7,7 +7,7 @@ use mcre_fs::native::NativeFs;
 use mcre_renderer::clouds::{CLOUD_HEIGHT, CloudStatus, CloudTexture};
 use mcre_renderer::{
     Atlas, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4, Mesh, MeshOptions,
-    MeshWorker, RenderChunk, Renderer, StreamSource, build_atlas, mesh_chunk,
+    MeshResult, MeshWorker, RenderChunk, Renderer, StreamSource, build_atlas, mesh_chunk,
 };
 use mcre_resource_pack::{ResourcePackData, ResourcePackSet, download};
 use mcre_world::fluid::{FluidKind, fluid_state, is_face_sturdy};
@@ -96,6 +96,7 @@ fn main() {
         pending_reload: reload_test,
         inflight: 0,
         generation: 0,
+        pending_stream_dirty: Vec::new(),
         light_mode: LightMode::Smooth,
         window: None,
         renderer: None,
@@ -770,6 +771,9 @@ struct Viewer {
     pending_reload: bool,
     inflight: u32,
     generation: u64,
+    /// Chunk positions whose streamed data was salvaged from a stale worker
+    /// result and still need a remesh with the current world.
+    pending_stream_dirty: Vec<ChunkPos>,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     keys: HashSet<KeyCode>,
@@ -1294,7 +1298,10 @@ impl Viewer {
                             "Quads: {} Verts: {}",
                             self.meshes
                                 .iter()
-                                .map(|m| (m.mesh.indices.len() + m.mesh.translucent_indices.len()) / 6)
+                                .map(
+                                    |m| (m.mesh.indices.len() + m.mesh.translucent_indices.len())
+                                        / 6
+                                )
                                 .sum::<usize>(),
                             self.meshes
                                 .iter()
@@ -1524,6 +1531,14 @@ impl Viewer {
     fn fog_fluid(&self) -> Option<FluidKind> {
         let [x, y, z] = self.camera.position;
         let block_pos = (x.floor() as i32, y.floor() as i32, z.floor() as i32);
+        if !self
+            .world
+            .is_chunk_loaded(ChunkPos::from_block(block_pos.0, block_pos.2))
+        {
+            // The eye chunk is still a placeholder: keep the previous state
+            // instead of snapping out of the water fog mid-stream.
+            return self.submerged;
+        }
         let fluid = fluid_state(self.world.get_block(block_pos)?)?;
         let top = block_pos.1 as f32
             + if fluid.is_source()
@@ -1610,6 +1625,7 @@ impl Viewer {
                 self.worker = MeshWorker::new(data, atlas, source);
                 self.generation = 0;
                 self.inflight = 0;
+                self.pending_stream_dirty.clear();
                 for err in &self.packs.errors {
                     eprintln!("viewer: {err}");
                 }
@@ -1620,10 +1636,46 @@ impl Viewer {
         }
     }
 
+    /// A stale result's meshes may predate newer edits, but any block data it
+    /// streamed in is still the only copy of that chunk: apply it (with its
+    /// light and provisional mesh) and queue a remesh of the chunk and its
+    /// border neighbors so the current world's edits and light win.
+    fn salvage_streamed(&mut self, result: MeshResult) {
+        for chunk in result.chunks {
+            let Some(data) = chunk.chunk else {
+                continue;
+            };
+            let origin = [chunk.pos.x * CHUNK_WIDTH, chunk.pos.z * CHUNK_WIDTH];
+            self.world.set_chunk(data);
+            self.world.set_chunk_light(chunk.pos, chunk.light);
+            match self.meshes.iter_mut().find(|entry| entry.origin == origin) {
+                Some(entry) => {
+                    entry.mesh = chunk.mesh;
+                    entry.version += 1;
+                }
+                None => self.meshes.push(ChunkMesh {
+                    origin,
+                    mesh: chunk.mesh,
+                    version: 0,
+                }),
+            }
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let pos = ChunkPos::new(chunk.pos.x + dx, chunk.pos.z + dz);
+                    if !self.pending_stream_dirty.contains(&pos) {
+                        self.pending_stream_dirty.push(pos);
+                    }
+                }
+            }
+        }
+        self.total_chunks = self.meshes.len();
+    }
+
     fn apply_results(&mut self) {
         for result in self.worker.poll() {
             self.inflight = self.inflight.saturating_sub(1);
             if result.generation != self.generation {
+                self.salvage_streamed(result);
                 continue;
             }
             self.world.acknowledge_light_edits(&result.light_edits);
@@ -1707,11 +1759,8 @@ impl Viewer {
             for dz in -stream.radius..=stream.radius {
                 for dx in -stream.radius..=stream.radius {
                     let pos = (center.0 + dx, center.1 + dz);
-                    let fresh = self
-                        .world
-                        .chunk_at_pos(ChunkPos::new(pos.0, pos.1))
-                        .is_none();
-                    if fresh {
+                    let loaded = self.world.is_chunk_loaded(ChunkPos::new(pos.0, pos.1));
+                    if !loaded {
                         needed.push((pos, dx.abs() + dz.abs()));
                     }
                 }
@@ -1728,14 +1777,18 @@ impl Viewer {
         if self.inflight > 0 {
             return;
         }
+        // Salvaged streamed chunks wait for a quiet frame too: their remesh
+        // must see every later edit.
+        if !self.pending_stream_dirty.is_empty() {
+            let dirty = std::mem::take(&mut self.pending_stream_dirty);
+            self.submit_job(Vec::new(), dirty);
+            return;
+        }
         // One chunk per quiet frame: keeps individual jobs short so an edit
         // landing mid-stream never waits long behind a big batch.
         while let Some(pos) = stream.pending.pop_front() {
-            let fresh = self
-                .world
-                .chunk_at_pos(ChunkPos::new(pos.0, pos.1))
-                .is_none();
-            if !fresh {
+            let loaded = self.world.is_chunk_loaded(ChunkPos::new(pos.0, pos.1));
+            if loaded {
                 continue;
             }
             self.submit_job(vec![pos], Vec::new());
