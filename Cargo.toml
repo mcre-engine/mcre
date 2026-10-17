@@ -62,7 +62,7 @@ pollster  = "1"
 thiserror = "2"
 flate2    = "1"
 libm      = "0.2"
-egui      = "0.37"
+egui      = { version = "0.37", features = ["monochrome_emoji_fonts"] }
 egui-winit  = "0.37"
 egui-wgpu   = "0.37"
 

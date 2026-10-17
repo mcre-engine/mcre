@@ -1438,6 +1438,23 @@ mod tests {
     }
 
     #[test]
+    fn egui_default_fonts_are_bundled() {
+        let fonts = egui::FontDefinitions::default();
+        for name in [
+            "Ubuntu-Light",
+            "Hack",
+            "egui-icons",
+            "NotoEmoji-Regular",
+            "emoji-icon-font",
+        ] {
+            assert!(
+                fonts.font_data.contains_key(name),
+                "egui {name} font missing — enable the default_fonts feature"
+            );
+        }
+    }
+
+    #[test]
     fn pipeline_covers_all_wireframe_cull_combos() {
         let indices = [
             pipeline_index(false, true),
