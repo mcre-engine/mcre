@@ -128,6 +128,11 @@ fn fallback_image() -> Image {
     }
 }
 
+pub(crate) fn decode_png_rgba(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    let image = decode_png(bytes)?;
+    Some((image.width, image.height, image.rgba))
+}
+
 fn decode_png(bytes: &[u8]) -> Option<Image> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
