@@ -1694,7 +1694,32 @@ impl Viewer {
                 }
             }
         }
+        self.drop_evicted_meshes();
         self.total_chunks = self.meshes.len();
+    }
+
+    /// Drops meshes for chunks the ring evicted (torus aliasing): their data
+    /// is gone (a different position owns the slot) and the worker already
+    /// remeshed their neighbors against the hole.
+    fn drop_evicted_meshes(&mut self) {
+        let evicted = self.world.take_evicted();
+        if evicted.is_empty() {
+            return;
+        }
+        let before = self.meshes.len();
+        self.meshes.retain(|entry| {
+            let pos = ChunkPos::new(
+                entry.origin[0].div_euclid(CHUNK_WIDTH),
+                entry.origin[1].div_euclid(CHUNK_WIDTH),
+            );
+            !evicted.contains(&pos)
+        });
+        if self.meshes.len() != before
+            && let Some(renderer) = self.renderer.as_mut()
+        {
+            let keep: Vec<[i32; 2]> = self.meshes.iter().map(|entry| entry.origin).collect();
+            renderer.prune_mesh_cache(&keep);
+        }
     }
 
     fn apply_results(&mut self) {
@@ -1737,6 +1762,7 @@ impl Viewer {
                 }
             }
             self.prune_far_meshes();
+            self.drop_evicted_meshes();
             self.total_chunks = self.meshes.len();
             eprintln!(
                 "viewer: remeshed {remeshed} chunks (generation {})",
@@ -1745,21 +1771,29 @@ impl Viewer {
         }
     }
 
-    /// Drops chunk meshes farther than `radius + 2` from the stream center
-    /// so long flights cannot grow CPU/GPU memory without bound. Demo mode
-    /// (no streamer) keeps everything.
+    /// Drops chunk meshes that are neither backed by loaded chunk data nor
+    /// within `radius + 2` of the stream center, so long flights cannot grow
+    /// CPU/GPU memory without bound. Loaded chunks always keep their meshes:
+    /// the streamer never re-requests them, so a pruned mesh would leave a
+    /// hole when the camera flies back.
     fn prune_far_meshes(&mut self) {
         let Some(stream) = self.streamer.as_ref() else {
             return;
         };
         let keep_radius = stream.radius + 2;
+        let center = stream.center;
         let before = self.meshes.len();
-        self.meshes.retain(|entry| {
+        let mut kept = Vec::with_capacity(before);
+        for entry in self.meshes.drain(..) {
             let cx = entry.origin[0].div_euclid(CHUNK_WIDTH);
             let cz = entry.origin[1].div_euclid(CHUNK_WIDTH);
-            (cx - stream.center.0).abs() <= keep_radius
-                && (cz - stream.center.1).abs() <= keep_radius
-        });
+            if self.world.is_chunk_loaded(ChunkPos::new(cx, cz))
+                || ((cx - center.0).abs() <= keep_radius && (cz - center.1).abs() <= keep_radius)
+            {
+                kept.push(entry);
+            }
+        }
+        self.meshes = kept;
         if self.meshes.len() != before
             && let Some(renderer) = self.renderer.as_mut()
         {
