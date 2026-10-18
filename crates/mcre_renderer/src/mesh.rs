@@ -6,7 +6,7 @@ use mcre_resource_pack::{
     lookup::{BlockRule, BlockVariant},
     tint_sources,
 };
-use mcre_world::shape::{face_boxes, is_covered};
+use mcre_world::shape::{face_boxes, face_shape_is_cube, is_covered};
 use mcre_world::{Biome, Block, BlockState, Chunk, DoubleBlockHalf, World};
 
 use crate::atlas::{Atlas, AtlasRegion};
@@ -747,10 +747,10 @@ fn for_each_variant(
     }
 }
 
-/// Vanilla `Block.shouldRenderFace` at full-cube fidelity: hide the face when
-/// the neighbor's occlusion shape is a full cube, or when the extracted
-/// `skipRendering` data says the pair culls. Partial-vs-partial shape
-/// intersection is deferred to the voxel-shape tier.
+/// Vanilla `Block.shouldRenderFace`, in order: a unit-cube occluder culls
+/// outright; then the extracted `skipRendering` data; then an empty occluder
+/// or an empty face shape of the state itself keeps the face; otherwise the
+/// face renders when the state's footprint pokes outside the occluder's.
 fn should_render_face(
     data: &ResourcePackData,
     state: BlockState,
@@ -764,11 +764,18 @@ fn should_render_face(
     if skip_rendering(data, state, neighbor, direction, options) {
         return false;
     }
-    let occluder = face_boxes(neighbor.occlusion_boxes(), direction.opposite());
+    let neighbor_boxes = neighbor.occlusion_boxes();
+    let occluder = face_boxes(neighbor_boxes, direction.opposite());
     if occluder.is_empty() {
         return true;
     }
+    if face_shape_is_cube(neighbor_boxes, direction.opposite()) {
+        return false;
+    }
     let shape = face_boxes(state.occlusion_boxes(), direction);
+    if shape.is_empty() {
+        return true;
+    }
     !is_covered(&shape, &occluder)
 }
 
@@ -1046,7 +1053,7 @@ mod tests {
     use super::*;
     use mcre_core::Vec3f;
     use mcre_resource_pack::lookup::BakedQuadEntry;
-    use mcre_world::{Half, SlabType, StairsShape};
+    use mcre_world::{Half, PropVal, SlabType, StairsShape};
 
     fn air() -> BlockState {
         Block::AIR.default_state()
@@ -1289,6 +1296,107 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn vanilla_skip_rendering_powder_snow() {
+        let data = empty_data();
+        let options = MeshOptions::default();
+        let snow = Block::POWDER_SNOW.default_state();
+        let stone = Block::STONE.default_state();
+
+        // PowderSnowBlock.skipRendering: cull only against powder snow.
+        for direction in Direction::ALL {
+            assert!(
+                !should_render_face(&data, snow, snow, direction, options),
+                "powder snow vs powder snow {direction:?}"
+            );
+        }
+        assert!(should_render_face(
+            &data,
+            snow,
+            air(),
+            Direction::Up,
+            options
+        ));
+        assert!(should_render_face(
+            &data,
+            snow,
+            Block::GLASS.default_state(),
+            Direction::North,
+            options
+        ));
+        assert!(!should_render_face(
+            &data,
+            snow,
+            stone,
+            Direction::Up,
+            options
+        ));
+
+        // Empty occlusion shape: powder snow hides no neighbor faces.
+        assert!(should_render_face(
+            &data,
+            stone,
+            snow,
+            Direction::Up,
+            options
+        ));
+    }
+
+    #[test]
+    fn vanilla_skip_rendering_copper_grate() {
+        let data = empty_data();
+        let options = MeshOptions::default();
+        let grate = Block::COPPER_GRATE.default_state();
+        let waterlogged = Block::COPPER_GRATE
+            .state(&[PropVal::Waterlogged(true)])
+            .expect("grate waterlogged");
+        let exposed = Block::EXPOSED_COPPER_GRATE.default_state();
+        let stone = Block::STONE.default_state();
+
+        // HalfTransparentBlock.skipRendering: cull only against the same
+        // grate block, regardless of state.
+        for direction in Direction::ALL {
+            assert!(
+                !should_render_face(&data, grate, grate, direction, options),
+                "grate vs grate {direction:?}"
+            );
+            assert!(
+                !should_render_face(&data, grate, waterlogged, direction, options),
+                "grate vs waterlogged grate {direction:?}"
+            );
+        }
+        assert!(should_render_face(
+            &data,
+            grate,
+            exposed,
+            Direction::Up,
+            options
+        ));
+        assert!(should_render_face(
+            &data,
+            grate,
+            air(),
+            Direction::Up,
+            options
+        ));
+        assert!(!should_render_face(
+            &data,
+            grate,
+            stone,
+            Direction::Up,
+            options
+        ));
+
+        // Empty occlusion shape: grates hide no neighbor faces.
+        assert!(should_render_face(
+            &data,
+            stone,
+            grate,
+            Direction::Up,
+            options
+        ));
+    }
+
     fn east_straight_stair() -> BlockState {
         (u16::from(Block::OAK_STAIRS.min_state())..=u16::from(Block::OAK_STAIRS.max_state()))
             .map(BlockState::from)
@@ -1325,6 +1433,193 @@ mod tests {
                     && !state.is_waterlogged()
             })
             .unwrap()
+    }
+
+    #[test]
+    fn empty_occlusion_shapes_render_against_partial_neighbors() {
+        let data = empty_data();
+        let options = MeshOptions::default();
+        let stone = Block::STONE.default_state();
+        let fence = Block::OAK_FENCE.default_state();
+        let stair = east_straight_stair();
+        let bot = bottom_slab();
+
+        // Vanilla renders the face when the state's own face shape is empty,
+        // even against partial occluders that do not reach the unit cube.
+        for state in [
+            Block::POWDER_SNOW.default_state(),
+            Block::GLASS.default_state(),
+            Block::COPPER_GRATE.default_state(),
+        ] {
+            assert!(should_render_face(
+                &data,
+                state,
+                fence,
+                Direction::Down,
+                options
+            ));
+            assert!(should_render_face(
+                &data,
+                state,
+                stair,
+                Direction::Up,
+                options
+            ));
+            assert!(should_render_face(
+                &data,
+                state,
+                stair,
+                Direction::Down,
+                options
+            ));
+            assert!(!should_render_face(
+                &data,
+                state,
+                stone,
+                Direction::Down,
+                options
+            ));
+            assert!(!should_render_face(
+                &data,
+                state,
+                bot,
+                Direction::Up,
+                options
+            ));
+        }
+
+        // A bottom slab's up face does not reach its cell boundary: render.
+        assert!(should_render_face(
+            &data,
+            bot,
+            fence,
+            Direction::Up,
+            options
+        ));
+
+        // Full cube faces still render against the fence post footprint.
+        assert!(should_render_face(
+            &data,
+            stone,
+            fence,
+            Direction::Down,
+            options
+        ));
+
+        // The lower bottom slab's up face culls against the upper one, whose
+        // down face is the unit-cube singleton.
+        assert!(!should_render_face(&data, bot, bot, Direction::Up, options));
+    }
+
+    /// State ids captured with `tasks/data_gen/examples/occlusion_probe.rs`:
+    /// stone, glass, oak_leaves, oak_stairs[east,straight,bottom], snow[1],
+    /// oak_fence[bare], oak_trapdoor[north,bottom,closed], glass_pane[bare],
+    /// hopper[down], oak_slab[top], oak_slab[bottom], powder_snow,
+    /// copper_grate. Re-run the probe after a version bump.
+    const PROBE_STATES: [u16; 13] = [
+        1, 661, 268, 5534, 8589, 8668, 8801, 10067, 13082, 15180, 15182, 30537, 32896,
+    ];
+
+    /// Vanilla `getFaceOcclusionShape` per direction: `c` = unit-cube
+    /// singleton, `e` = empty singleton, `o` = any other shape.
+    const PROBE_FACE_KINDS: [&str; 13] = [
+        "cccccc", "eeeeee", "eeeeee", "oooooo", "ceoooo", "ooeeee", "eeeeee", "eeeeee", "eeeeee",
+        "ecoooo", "ceoooo", "eeeeee", "eeeeee",
+    ];
+
+    /// Vanilla `Block.shouldRenderFace` masks from the same probe: bit `i`
+    /// set = direction with 3D data value `i` (down, up, north, south, west,
+    /// east) renders.
+    const PROBE_SHOULD_RENDER: [[u8; 13]; 13] = [
+        [
+            0x00, 0x3f, 0x3f, 0x2d, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x3d, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x00, 0x3f, 0x3f, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x3d, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x3f, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x3d, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x21, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x2d, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x03, 0x01, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x01, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x3d, 0x3d, 0x3c, 0x3f, 0x3f, 0x3f, 0x3e, 0x3d, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x3f, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x3d, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x3f, 0x3d, 0x3f, 0x3f, 0x3c, 0x3f, 0x3e, 0x3d, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x3f, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x3d, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x2d, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x02, 0x3d, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x03, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x01, 0x3f, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x3f, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x3d, 0x00, 0x3f,
+        ],
+        [
+            0x00, 0x3f, 0x3f, 0x3f, 0x3d, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x3d, 0x3f, 0x00,
+        ],
+    ];
+
+    #[test]
+    fn face_shapes_and_culling_match_vanilla_probe() {
+        let data = empty_data();
+        let options = MeshOptions::default();
+        let directions = [
+            Direction::Down,
+            Direction::Up,
+            Direction::North,
+            Direction::South,
+            Direction::West,
+            Direction::East,
+        ];
+        let states = PROBE_STATES.map(BlockState::from);
+
+        for (i, state) in states.iter().enumerate() {
+            let boxes = state.occlusion_boxes();
+            for (dir_idx, direction) in directions.iter().enumerate() {
+                let empty = face_boxes(boxes, *direction).is_empty();
+                let cube = face_shape_is_cube(boxes, *direction);
+                let expected = PROBE_FACE_KINDS[i].as_bytes()[dir_idx];
+                let actual = match (empty, cube) {
+                    (true, false) => b'e',
+                    (false, true) => b'c',
+                    (false, false) => b'o',
+                    (true, true) => unreachable!(),
+                };
+                assert_eq!(
+                    actual, expected,
+                    "face kind of state {} toward {direction:?}",
+                    PROBE_STATES[i]
+                );
+            }
+        }
+
+        for (i, state) in states.iter().enumerate() {
+            for (j, neighbor) in states.iter().enumerate() {
+                for (dir_idx, direction) in directions.iter().enumerate() {
+                    let expected = PROBE_SHOULD_RENDER[i][j] >> dir_idx & 1 == 1;
+                    assert_eq!(
+                        should_render_face(&data, *state, *neighbor, *direction, options),
+                        expected,
+                        "state {} neighbor {} toward {direction:?}",
+                        PROBE_STATES[i],
+                        PROBE_STATES[j]
+                    );
+                }
+            }
+        }
     }
 
     #[test]

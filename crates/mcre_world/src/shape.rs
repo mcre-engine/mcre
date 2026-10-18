@@ -152,6 +152,45 @@ pub fn is_covered(own: &[[f32; 6]], occluder: &[[f32; 6]]) -> bool {
     true
 }
 
+/// Vanilla `VoxelShape.isCubeLikeAlong`: the shape's merged coordinate grid
+/// on `axis` is exactly `[0.0, 1.0]`, so the shape spans the full axis and
+/// carries no interior planes.
+fn is_cube_like_along(boxes: &[[f32; 6]], axis: usize) -> bool {
+    if boxes.is_empty() {
+        return false;
+    }
+    let mut low = false;
+    let mut high = false;
+    for b in boxes {
+        let (min, max) = (b[axis], b[axis + 3]);
+        if (min != 0.0 && min != 1.0) || (max != 0.0 && max != 1.0) {
+            return false;
+        }
+        low |= min == 0.0 || max == 0.0;
+        high |= min == 1.0 || max == 1.0;
+    }
+    low && high
+}
+
+/// Vanilla `VoxelShape.calculateFace(...) == Shapes.block()`: the face slab
+/// toward `direction` is the unit-cube singleton. Such an occluder culls the
+/// state's face outright, unlike a footprint-filling slice whose shape has
+/// interior coordinate planes (e.g. a stair's bottom slab), which still
+/// yields to the state's own empty face shape.
+pub fn face_shape_is_cube(boxes: &[[f32; 6]], direction: Direction) -> bool {
+    if boxes.is_empty() {
+        return false;
+    }
+    let axis = face_axis(direction);
+    if is_cube_like_along(boxes, axis) {
+        return (0..3).all(|a| is_cube_like_along(boxes, a));
+    }
+    if face_boxes(boxes, direction).is_empty() {
+        return false;
+    }
+    (0..3).all(|a| a == axis || is_cube_like_along(boxes, a))
+}
+
 /// Vanilla `Shapes.blockOccludes(shape, occluder, direction)` for the fluid
 /// box `own`: the box's face toward `direction` is hidden when it reaches the
 /// face side and the occluder's opposite face slab covers it.
@@ -240,6 +279,26 @@ mod tests {
         assert_eq!(face_boxes(&bottom_half, Direction::North).len(), 1);
         let empty: [[f32; 6]; 0] = [];
         assert!(face_boxes(&empty, Direction::Up).is_empty());
+    }
+
+    #[test]
+    fn face_shape_is_cube_requires_unit_coordinate_grid() {
+        let slab = [[0.0, 0.0, 0.0, 1.0, 0.5, 1.0]];
+        let stair = [
+            [0.0, 0.0, 0.0, 1.0, 0.5, 1.0],
+            [0.5, 0.5, 0.0, 1.0, 1.0, 1.0],
+        ];
+        let full = [[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]];
+        let post = [[0.375, 0.0, 0.375, 0.625, 1.0, 0.625]];
+        let empty: [[f32; 6]; 0] = [];
+        assert!(face_shape_is_cube(&slab, Direction::Down));
+        assert!(!face_shape_is_cube(&slab, Direction::Up));
+        assert!(face_shape_is_cube(&full, Direction::Up));
+        assert!(!face_shape_is_cube(&stair, Direction::Down));
+        assert!(!face_shape_is_cube(&stair, Direction::Up));
+        assert!(!face_shape_is_cube(&post, Direction::Down));
+        assert!(!face_shape_is_cube(&post, Direction::Up));
+        assert!(!face_shape_is_cube(&empty, Direction::Down));
     }
 
     #[test]
