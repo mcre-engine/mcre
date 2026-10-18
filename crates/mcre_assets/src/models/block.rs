@@ -238,9 +238,9 @@ impl BlockModelElementRotation {
     }
 }
 
-fn build_quad(min: Vec3f, max: Vec3f, dir: Direction) -> [Vec3f; 4] {
-    let (x0, y0, z0) = (min[0], min[1], min[2]);
-    let (x1, y1, z1) = (max[0], max[1], max[2]);
+fn build_quad(from: Vec3f, to: Vec3f, dir: Direction) -> [Vec3f; 4] {
+    let (x0, y0, z0) = (from[0], from[1], from[2]);
+    let (x1, y1, z1) = (to[0], to[1], to[2]);
     let v = Vec3f::new;
     match dir {
         Direction::Down => [v(x0, y0, z1), v(x0, y0, z0), v(x1, y0, z0), v(x1, y0, z1)],
@@ -252,14 +252,14 @@ fn build_quad(min: Vec3f, max: Vec3f, dir: Direction) -> [Vec3f; 4] {
     }
 }
 
-fn default_face_uv(min: Vec3f, max: Vec3f, dir: Direction) -> Vec4f {
+fn default_face_uv(from: Vec3f, to: Vec3f, dir: Direction) -> Vec4f {
     match dir {
-        Direction::Down => Vec4f::new(min[0], 16.0 - max[2], max[0], 16.0 - min[2]),
-        Direction::Up => Vec4f::new(min[0], min[2], max[0], max[2]),
-        Direction::North => Vec4f::new(16.0 - max[0], 16.0 - max[1], 16.0 - min[0], 16.0 - min[1]),
-        Direction::South => Vec4f::new(min[0], 16.0 - max[1], max[0], 16.0 - min[1]),
-        Direction::West => Vec4f::new(min[2], 16.0 - max[1], max[2], 16.0 - min[1]),
-        Direction::East => Vec4f::new(16.0 - max[2], 16.0 - max[1], 16.0 - min[2], 16.0 - min[1]),
+        Direction::Down => Vec4f::new(from[0], 16.0 - to[2], to[0], 16.0 - from[2]),
+        Direction::Up => Vec4f::new(from[0], from[2], to[0], to[2]),
+        Direction::North => Vec4f::new(16.0 - to[0], 16.0 - to[1], 16.0 - from[0], 16.0 - from[1]),
+        Direction::South => Vec4f::new(from[0], 16.0 - to[1], to[0], 16.0 - from[1]),
+        Direction::West => Vec4f::new(from[2], 16.0 - to[1], to[2], 16.0 - from[1]),
+        Direction::East => Vec4f::new(16.0 - to[2], 16.0 - to[1], 16.0 - from[2], 16.0 - from[1]),
     }
 }
 
@@ -284,22 +284,53 @@ fn dir_unit(dir: Direction) -> Vec3f {
     }
 }
 
-fn vanilla_closest_direction(normal: Vec3f) -> Direction {
+fn vanilla_closest_direction(normal: Vec3f) -> Option<Direction> {
     if !(normal[0].is_finite() && normal[1].is_finite() && normal[2].is_finite()) {
-        return Direction::Up;
+        return None;
     }
 
-    let mut best = Direction::Up;
+    let mut best = None;
     let mut closest = 0.0f32;
     for dir in Direction::ALL {
         let unit = dir_unit(dir);
         let product = normal[0] * unit[0] + normal[1] * unit[1] + normal[2] * unit[2];
         if product >= 0.0 && product > closest {
             closest = product;
-            best = dir;
+            best = Some(dir);
         }
     }
     best
+}
+
+/// Port of vanilla `FaceBakery.recalculateWinding`: reorders the vertices (and
+/// their UVs) against the canonical vertex order for `direction`, taken from
+/// the per-quad bounding box. Inverted model elements bake faces whose winding
+/// opposes their authored face key, so this restores the canonical winding.
+fn recalculate_winding(
+    vertices: [Vec3f; 4],
+    uvs: [[f32; 2]; 4],
+    direction: Direction,
+) -> ([Vec3f; 4], [[f32; 2]; 4]) {
+    let mut min = vertices[0];
+    let mut max = vertices[0];
+    for vertex in &vertices[1..] {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(vertex[axis]);
+            max[axis] = max[axis].max(vertex[axis]);
+        }
+    }
+
+    let canonical = build_quad(min, max, direction);
+    let mut vertices = vertices;
+    let mut uvs = uvs;
+    for (i, target) in canonical.iter().enumerate() {
+        let j = (i..4)
+            .find(|&j| vertices[j] == *target)
+            .expect("canonical vertex not found");
+        vertices.swap(i, j);
+        uvs.swap(i, j);
+    }
+    (vertices, uvs)
 }
 
 pub struct BakedQuad {
@@ -432,19 +463,9 @@ impl BlockModelDefinition {
 
         let mut quads = Vec::new();
         for element in &elements {
-            let min = Vec3f::new(
-                element.from[0].min(element.to[0]),
-                element.from[1].min(element.to[1]),
-                element.from[2].min(element.to[2]),
-            );
-            let max = Vec3f::new(
-                element.from[0].max(element.to[0]),
-                element.from[1].max(element.to[1]),
-                element.from[2].max(element.to[2]),
-            );
             for direction in Direction::ALL {
                 if let Some(face) = element.faces.get(&direction) {
-                    let quad_vertices = build_quad(min, max, direction);
+                    let quad_vertices = build_quad(element.from, element.to, direction);
                     let rotated_quad_vertices = if let Some(rotation) = &element.rotation {
                         rotation.apply_on_quad(quad_vertices)
                     } else {
@@ -453,7 +474,7 @@ impl BlockModelDefinition {
 
                     let uv = face
                         .uv
-                        .unwrap_or_else(|| default_face_uv(min, max, direction));
+                        .unwrap_or_else(|| default_face_uv(element.from, element.to, direction));
                     let [u1, v1, u2, v2] = *uv;
                     let corners = [[u1, v1], [u1, v2], [u2, v2], [u2, v1]];
                     let shift = face.rotation.quadrant();
@@ -469,10 +490,19 @@ impl BlockModelDefinition {
                         RefOr::Value(id) => id.clone(),
                     };
 
+                    let facing = vanilla_closest_direction(quad_normal(rotated_quad_vertices));
+                    let (vertices, uvs) = if element.rotation.is_none()
+                        && let Some(facing) = facing
+                    {
+                        recalculate_winding(rotated_quad_vertices, uvs, facing)
+                    } else {
+                        (rotated_quad_vertices, uvs)
+                    };
+
                     quads.push(BakedQuad {
-                        vertices: rotated_quad_vertices,
+                        vertices,
                         uvs,
-                        direction: vanilla_closest_direction(quad_normal(rotated_quad_vertices)),
+                        direction: facing.unwrap_or(Direction::Up),
                         texture,
                         tintindex: face.tintindex,
                         cullface: face.cullface,
@@ -927,6 +957,141 @@ mod tests {
             .expect("top face");
         assert_eq!(top.shade_factor(), 1.0);
         assert_eq!(top.tintindex, Some(0));
+    }
+
+    #[test]
+    fn test_inverted_element_bakes_flipped_winding() {
+        let json = r##"{
+            "elements": [
+                {
+                    "from": [16, 0, 0],
+                    "to": [0, 16, 16],
+                    "faces": {
+                        "down": { "texture": "minecraft:block/a" },
+                        "up": { "uv": [0, 0, 16, 16], "texture": "minecraft:block/b" },
+                        "north": { "texture": "minecraft:block/c" },
+                        "south": { "texture": "minecraft:block/d" },
+                        "west": { "texture": "minecraft:block/e" },
+                        "east": { "texture": "minecraft:block/f" }
+                    }
+                }
+            ]
+        }"##;
+
+        let def: BlockModelDefinition = serde_json::from_str(json).unwrap();
+        let quads = def.bake_quads(|_| None).unwrap();
+        assert_eq!(quads.len(), 6);
+
+        for (texture, direction) in [
+            ("a", Direction::Up),
+            ("b", Direction::Down),
+            ("c", Direction::South),
+            ("d", Direction::North),
+            ("e", Direction::West),
+            ("f", Direction::East),
+        ] {
+            let quad = quads
+                .iter()
+                .find(|q| q.texture.to_string().ends_with(texture))
+                .unwrap_or_else(|| panic!("missing quad {texture}"));
+            assert_eq!(quad.direction, direction, "texture {texture}");
+            let v: [[f32; 3]; 4] = quad.vertices.map(|v| [v[0], v[1], v[2]]);
+            let normal = cross(sub(v[1], v[0]), sub(v[2], v[0]));
+            let unit = dir_unit(direction);
+            let dot = normal[0] * unit[0] + normal[1] * unit[1] + normal[2] * unit[2];
+            assert!(
+                dot > 0.0,
+                "quad {texture} facing {:?} has inward winding (dot = {dot})",
+                quad.direction
+            );
+        }
+
+        let up = quads
+            .iter()
+            .find(|q| q.texture.to_string().ends_with('b'))
+            .unwrap();
+        for vertex in &up.vertices {
+            assert!((vertex[1] - 16.0).abs() < 1e-6, "up-key sits at to.y");
+        }
+        for (position, uv) in up.vertices.iter().zip(up.uvs) {
+            let expected = match [position[0] as i32, position[2] as i32] {
+                [0, 16] => [16.0, 16.0],
+                [0, 0] => [16.0, 0.0],
+                [16, 0] => [0.0, 0.0],
+                [16, 16] => [0.0, 16.0],
+                other => panic!("unexpected position {other:?}"),
+            };
+            assert_eq!(uv, expected, "uv follows its vertex during rewind");
+        }
+
+        let north = quads
+            .iter()
+            .find(|q| q.texture.to_string().ends_with('c'))
+            .unwrap();
+        assert_eq!(north.direction, Direction::South);
+        for vertex in &north.vertices {
+            assert!((vertex[2]).abs() < 1e-6, "north-key sits at from.z");
+        }
+    }
+
+    #[test]
+    fn test_trial_spawner_walls_are_double_sided() {
+        let assets = assets_dir();
+        let resolver = |id: &BlockModelId| -> Option<BlockModelDefinition> {
+            let name = id.to_string().rsplit('/').next()?.to_string();
+            let path = assets.join("models/block").join(format!("{name}.json"));
+            serde_json::from_reader(File::open(path).ok()?).ok()
+        };
+
+        let model: BlockModelDefinition = serde_json::from_reader(
+            File::open(assets.join("models/block/trial_spawner.json")).unwrap(),
+        )
+        .unwrap();
+        let quads = model.bake_quads(resolver).unwrap();
+        assert_eq!(quads.len(), 12);
+
+        for quad in &quads {
+            let v: [[f32; 3]; 4] = quad.vertices.map(|v| [v[0], v[1], v[2]]);
+            let normal = cross(sub(v[1], v[0]), sub(v[2], v[0]));
+            let unit = dir_unit(quad.direction);
+            let dot = normal[0] * unit[0] + normal[1] * unit[1] + normal[2] * unit[2];
+            assert!(
+                dot > 0.0,
+                "quad facing {:?} has inward winding (dot = {dot})",
+                quad.direction
+            );
+        }
+
+        let on_plane = |axis: usize, plane: f32| {
+            move |quad: &&crate::BakedQuad| {
+                quad.vertices.iter().all(|v| (v[axis] - plane).abs() < 1e-6)
+            }
+        };
+
+        for (axis, plane, outward, inward) in [
+            (2, 0.0, Direction::North, Direction::South),
+            (2, 16.0, Direction::South, Direction::North),
+            (0, 0.0, Direction::West, Direction::East),
+            (0, 16.0, Direction::East, Direction::West),
+            (1, 16.0, Direction::Up, Direction::Down),
+            (1, 0.0, Direction::Down, Direction::Up),
+        ] {
+            let outer = quads.iter().filter(on_plane(axis, plane));
+            assert!(
+                outer
+                    .clone()
+                    .any(|q| q.direction == outward && q.cullface == Some(outward)),
+                "missing outer {outward:?} wall at {plane}"
+            );
+            let inner_plane = if plane == 0.0 { 0.002 } else { plane - 0.002 };
+            assert!(
+                quads
+                    .iter()
+                    .filter(on_plane(axis, inner_plane))
+                    .any(|q| q.direction == inward),
+                "missing inner {inward:?} wall at {inner_plane}"
+            );
+        }
     }
 
     #[test]
