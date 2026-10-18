@@ -553,7 +553,6 @@ impl Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut first = true;
         for chunk in chunks {
             let stale = self
                 .mesh_cache
@@ -573,53 +572,9 @@ impl Renderer {
                     },
                 );
             }
-            let cached = &self.mesh_cache[&chunk.origin];
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("main-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: if first {
-                            wgpu::LoadOp::Clear(SKY)
-                        } else {
-                            wgpu::LoadOp::Load
-                        },
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: if first {
-                            wgpu::LoadOp::Clear(1.0)
-                        } else {
-                            wgpu::LoadOp::Load
-                        },
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            pass.set_pipeline(&self.pipelines[pipeline_index(self.wireframe, self.cull_back)]);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.set_vertex_buffer(0, cached.vertex_buffer.slice(..));
-            pass.set_index_buffer(cached.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..cached.translucent_start, 0, 0..1);
-            if cached.index_count > cached.translucent_start {
-                pass.set_pipeline(
-                    &self.translucent_pipelines[pipeline_index(self.wireframe, self.cull_back)],
-                );
-                pass.draw_indexed(cached.translucent_start..cached.index_count, 0, 0..1);
-            }
-            first = false;
         }
-        if first {
+
+        if chunks.is_empty() {
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -644,6 +599,85 @@ impl Renderer {
                 multiview_mask: None,
             });
             drop(pass);
+        } else {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("main-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(SKY),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipelines[pipeline_index(self.wireframe, self.cull_back)]);
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            for chunk in chunks {
+                let cached = &self.mesh_cache[&chunk.origin];
+                pass.set_vertex_buffer(0, cached.vertex_buffer.slice(..));
+                pass.set_index_buffer(cached.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..cached.translucent_start, 0, 0..1);
+            }
+        }
+
+        let mut translucent: Vec<&RenderChunk<'_>> = chunks
+            .iter()
+            .filter(|chunk| {
+                let cached = &self.mesh_cache[&chunk.origin];
+                cached.index_count > cached.translucent_start
+            })
+            .collect();
+        if !translucent.is_empty() {
+            translucent.sort_by(|a, b| {
+                chunk_distance_sq(b.origin, camera_pos)
+                    .total_cmp(&chunk_distance_sq(a.origin, camera_pos))
+            });
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("translucent-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(
+                &self.translucent_pipelines[pipeline_index(self.wireframe, self.cull_back)],
+            );
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            for chunk in translucent {
+                let cached = &self.mesh_cache[&chunk.origin];
+                pass.set_vertex_buffer(0, cached.vertex_buffer.slice(..));
+                pass.set_index_buffer(cached.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(cached.translucent_start..cached.index_count, 0, 0..1);
+            }
         }
 
         let cloud_draw = self.cloud_gpu.as_ref().and_then(|clouds| {
@@ -1327,7 +1361,7 @@ fn build_main_pipeline(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
+            depth_write_enabled: Some(!translucent),
             // Less-equal (vanilla terrain uses greater-equal with its
             // reverse-Z depth): coplanar overlay faces (grass/mycelium side
             // overlays) must resolve instead of losing to the base cube.
@@ -1357,6 +1391,12 @@ fn build_main_pipeline(
         multiview_mask: None,
         cache: None,
     })
+}
+
+fn chunk_distance_sq(origin: [i32; 2], camera_pos: [f32; 3]) -> f32 {
+    let dx = (origin[0] as f32 + 0.5) * 16.0 - camera_pos[0];
+    let dz = (origin[1] as f32 + 0.5) * 16.0 - camera_pos[2];
+    dx * dx + dz * dz
 }
 
 fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
