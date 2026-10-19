@@ -5,6 +5,7 @@ use std::time::Instant;
 use mcre_core::{Axis, Direction};
 use mcre_fs::native::NativeFs;
 use mcre_renderer::clouds::{CLOUD_HEIGHT, CloudStatus, CloudTexture};
+use mcre_renderer::lightmap::{DAY_LENGTH_TICKS, DEFAULT_BRIGHTNESS, sky_light_factor};
 use mcre_renderer::{
     Atlas, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4, Mesh, MeshOptions,
     MeshResult, MeshWorker, RenderChunk, Renderer, StreamSource, build_atlas, mesh_chunk,
@@ -116,7 +117,8 @@ fn main() {
         fog_end: 160.0,
         submerged: None,
         sky_factor: 1.0,
-        brightness: mcre_renderer::lightmap::DEFAULT_BRIGHTNESS,
+        time_ticks: 6000.0,
+        brightness: DEFAULT_BRIGHTNESS,
         cloud_texture,
         cloud_status: CloudStatus::Fancy,
         cloud_range: 32,
@@ -799,6 +801,7 @@ struct Viewer {
     fog_end: f32,
     submerged: Option<FluidKind>,
     sky_factor: f32,
+    time_ticks: f32,
     brightness: f32,
     cloud_texture: Option<CloudTexture>,
     cloud_status: CloudStatus,
@@ -843,7 +846,7 @@ impl ApplicationHandler for Viewer {
         renderer.set_backface_culling(self.backface_cull);
         renderer.set_chunk_borders(self.chunk_borders);
         renderer.set_fog(FOG_COLOR, self.fog_start, self.fog_end);
-        renderer.set_sky_factor(self.sky_factor);
+        renderer.set_time(self.time_ticks);
         renderer.set_brightness(self.brightness);
         renderer.set_cloud_texture(self.cloud_texture.clone());
         renderer.set_cloud_status(self.cloud_status);
@@ -1071,9 +1074,11 @@ impl Viewer {
         self.tick_stream();
 
         if self.cycle_enabled && !self.cycle_paused && !self.scrubbing {
-            self.sky_factor =
-                (self.sky_factor + dt * self.cycle_speed / DAY_LENGTH_SECS).rem_euclid(1.0);
+            self.time_ticks = (self.time_ticks
+                + dt * self.cycle_speed * (DAY_LENGTH_TICKS / DAY_LENGTH_SECS))
+                .rem_euclid(DAY_LENGTH_TICKS);
         }
+        self.sky_factor = sky_light_factor(self.time_ticks);
         // Cloud drift follows real time, like vanilla world time.
         self.cloud_ticks += f64::from(dt) * 20.0;
 
@@ -1133,7 +1138,7 @@ impl Viewer {
         let old_debug = (self.unlit, self.heatmap, self.fog_enabled);
         let old_geometry = (self.wireframe, self.backface_cull, self.chunk_borders);
         let old_fog = (self.fog_start, self.fog_end, self.sky_factor);
-        let old_sky = self.sky_factor;
+        let old_time = self.time_ticks;
         let old_brightness = self.brightness;
         let old_clouds = (self.cloud_status, self.cloud_range);
         let old_cycle = (self.cycle_enabled, self.cycle_paused);
@@ -1162,7 +1167,8 @@ impl Viewer {
                         );
                         ui.add(egui::Slider::new(&mut self.fog_end, 0.0..=400.0).text("Fog end"));
                         let scrub = ui.add(
-                            egui::Slider::new(&mut self.sky_factor, 0.0..=1.0).text("Day/night"),
+                            egui::Slider::new(&mut self.time_ticks, 0.0..=DAY_LENGTH_TICKS)
+                                .text("Time (ticks)"),
                         );
                         self.scrubbing = scrub.dragged();
                         ui.add(
@@ -1447,6 +1453,7 @@ impl Viewer {
             };
             (paint_jobs, screen_descriptor, output.textures_delta)
         };
+        self.sky_factor = sky_light_factor(self.time_ticks);
 
         if do_recompute {
             self.world.mark_light_full();
@@ -1492,8 +1499,8 @@ impl Viewer {
             };
             renderer.set_fog(color, start, end);
         }
-        if self.sky_factor != old_sky {
-            renderer.set_sky_factor(self.sky_factor);
+        if self.time_ticks != old_time {
+            renderer.set_time(self.time_ticks);
         }
         if self.brightness != old_brightness {
             renderer.set_brightness(self.brightness);

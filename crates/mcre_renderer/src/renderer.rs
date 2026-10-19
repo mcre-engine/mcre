@@ -12,7 +12,7 @@ use crate::clouds::{
     DEFAULT_CLOUD_RANGE, RelativeCameraPos, build_cloud_mesh, cloud_fog_end, cloud_origin,
     radius_cells,
 };
-use crate::lightmap::{BLOCK_LIGHT_FACTOR, DEFAULT_BRIGHTNESS, lightmap_rgba};
+use crate::lightmap::{LightmapParams, lightmap_rgba, sky_light_color, sky_light_factor};
 use crate::mesh::{Mesh, Vertex};
 
 const SKY: wgpu::Color = wgpu::Color {
@@ -164,13 +164,12 @@ pub struct Renderer {
     atlas_sampler: wgpu::Sampler,
     lightmap_texture: wgpu::Texture,
     lightmap_view: wgpu::TextureView,
-    /// `(sky_factor, brightness)` the lightmap texture was baked for.
-    lightmap_key: (f32, f32),
+    /// The lightmap parameters the texture was baked for.
+    lightmap_key: LightmapParams,
     fog_color: [f32; 3],
     fog_start: f32,
     fog_end: f32,
-    sky_factor: f32,
-    brightness: f32,
+    lightmap_params: LightmapParams,
     cloud_texture: Option<CloudTexture>,
     cloud_gpu: Option<CloudGpu>,
     cloud_status: CloudStatus,
@@ -259,8 +258,7 @@ impl Renderer {
             fog_color: [SKY.r as f32, SKY.g as f32, SKY.b as f32],
             fog_start: 64.0,
             fog_end: 160.0,
-            sky_factor: 1.0,
-            brightness: DEFAULT_BRIGHTNESS,
+            lightmap_params: LightmapParams::default(),
             cloud_texture: None,
             cloud_gpu: set.clouds,
             cloud_status: CloudStatus::default(),
@@ -279,32 +277,58 @@ impl Renderer {
         self.fog_end = end;
     }
 
+    /// Vanilla `Timelines.OVERWORLD_DAY` environment: sets the sky light
+    /// factor and color for `time_ticks` (0..24000, 0 = sunrise). Re-bakes
+    /// the lightmap texture when the values change.
+    pub fn set_time(&mut self, time_ticks: f32) {
+        self.set_lightmap_params(LightmapParams {
+            sky_factor: sky_light_factor(time_ticks),
+            sky_light_color: sky_light_color(time_ticks),
+            ..self.lightmap_params
+        });
+    }
+
     /// Multiplier applied to the sky-light channel (1.0 = full daylight).
     /// Re-bakes the lightmap texture when the value changes.
     pub fn set_sky_factor(&mut self, factor: f32) {
-        if self.sky_factor != factor {
-            self.sky_factor = factor;
-            self.refresh_lightmap();
-        }
+        self.set_lightmap_params(LightmapParams {
+            sky_factor: factor,
+            ..self.lightmap_params
+        });
+    }
+
+    /// `LightmapInfo.SkyLightColor` tint (white by day, bluish moonlight at
+    /// night). Re-bakes the lightmap texture when the value changes.
+    pub fn set_sky_light_color(&mut self, color: [f32; 3]) {
+        self.set_lightmap_params(LightmapParams {
+            sky_light_color: color,
+            ..self.lightmap_params
+        });
     }
 
     /// Vanilla `Options.gamma` in `0.0..=1.0`. Re-bakes the lightmap
     /// texture when the value changes.
     pub fn set_brightness(&mut self, brightness: f32) {
-        let brightness = brightness.clamp(0.0, 1.0);
-        if self.brightness != brightness {
-            self.brightness = brightness;
+        self.set_lightmap_params(LightmapParams {
+            brightness: brightness.clamp(0.0, 1.0),
+            ..self.lightmap_params
+        });
+    }
+
+    fn set_lightmap_params(&mut self, params: LightmapParams) {
+        if params != self.lightmap_params {
+            self.lightmap_params = params;
             self.refresh_lightmap();
         }
     }
 
     fn refresh_lightmap(&mut self) {
-        let key = (self.sky_factor, self.brightness);
+        let key = self.lightmap_params;
         if key == self.lightmap_key {
             return;
         }
         self.lightmap_key = key;
-        upload_lightmap(&self.queue, &self.lightmap_texture, key.0, key.1);
+        upload_lightmap(&self.queue, &self.lightmap_texture, &key);
     }
 
     /// Replaces the cloud cell texture (pack reload); `None` disables clouds
@@ -843,7 +867,7 @@ struct PipelineSet {
     atlas_sampler: wgpu::Sampler,
     lightmap_texture: wgpu::Texture,
     lightmap_view: wgpu::TextureView,
-    lightmap_key: (f32, f32),
+    lightmap_key: LightmapParams,
     clouds: Option<CloudGpu>,
     uniform_buffer: wgpu::Buffer,
 }
@@ -853,8 +877,7 @@ struct PipelineSet {
 fn create_lightmap_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    sky_factor: f32,
-    brightness: f32,
+    params: &LightmapParams,
 ) -> (wgpu::Texture, wgpu::TextureView) {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("lightmap"),
@@ -874,12 +897,12 @@ fn create_lightmap_texture(
         label: Some("lightmap-view"),
         ..Default::default()
     });
-    upload_lightmap(queue, &texture, sky_factor, brightness);
+    upload_lightmap(queue, &texture, params);
     (texture, view)
 }
 
-fn upload_lightmap(queue: &wgpu::Queue, texture: &wgpu::Texture, sky_factor: f32, brightness: f32) {
-    let pixels = lightmap_rgba(sky_factor, BLOCK_LIGHT_FACTOR, brightness);
+fn upload_lightmap(queue: &wgpu::Queue, texture: &wgpu::Texture, params: &LightmapParams) {
+    let pixels = lightmap_rgba(params);
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -1028,7 +1051,7 @@ fn create_pipeline(
     });
 
     let (lightmap_texture, lightmap_view) =
-        create_lightmap_texture(device, queue, 1.0, DEFAULT_BRIGHTNESS);
+        create_lightmap_texture(device, queue, &LightmapParams::default());
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("mcre-bind-group"),
@@ -1252,7 +1275,7 @@ fn create_pipeline(
         atlas_sampler: sampler,
         lightmap_texture,
         lightmap_view,
-        lightmap_key: (1.0, DEFAULT_BRIGHTNESS),
+        lightmap_key: LightmapParams::default(),
         clouds,
         uniform_buffer,
     }

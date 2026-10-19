@@ -21,6 +21,106 @@ pub const BLOCK_LIGHT_FACTOR: f32 = 1.4;
 /// Vanilla `Options.gamma` default.
 pub const DEFAULT_BRIGHTNESS: f32 = 0.5;
 
+/// Ticks in one overworld day (`Timeline` period).
+pub const DAY_LENGTH_TICKS: f32 = 24000.0;
+/// `Timelines.NIGHT_SKY_LIGHT_FACTOR`.
+pub const NIGHT_SKY_LIGHT_FACTOR: f32 = 0.24;
+/// `Timelines.NIGHT_SKY_LIGHT_COLOR`, `ARGB.colorFromFloat(1.0, 0.48, 0.48,
+/// 1.0)` quantized by the timeline's `ARGB.vector3fFromRGB24` round-trip.
+pub const NIGHT_SKY_LIGHT_COLOR: [f32; 3] = [122.0 / 255.0, 122.0 / 255.0, 1.0];
+
+/// `Timelines.OVERWORLD_DAY` `SKY_LIGHT_FACTOR` track keyframes
+/// `(tick, multiplier)`.
+const SKY_LIGHT_FACTOR_KEYFRAMES: [(f32, f32); 4] = [
+    (730.0, 1.0),
+    (11270.0, 1.0),
+    (13140.0, NIGHT_SKY_LIGHT_FACTOR),
+    (22860.0, NIGHT_SKY_LIGHT_FACTOR),
+];
+
+/// `Timelines.OVERWORLD_DAY` `SKY_LIGHT_COLOR` track keyframes
+/// `(tick, multiplier)`.
+const SKY_LIGHT_COLOR_KEYFRAMES: [(f32, [f32; 3]); 4] = [
+    (730.0, [1.0, 1.0, 1.0]),
+    (11270.0, [1.0, 1.0, 1.0]),
+    (13140.0, NIGHT_SKY_LIGHT_COLOR),
+    (22860.0, NIGHT_SKY_LIGHT_COLOR),
+];
+
+/// Linear keyframe track with the day period wrapping from the last
+/// keyframe back to the first.
+fn track(time_ticks: f32, keyframes: &[(f32, f32)]) -> f32 {
+    let time = time_ticks.rem_euclid(DAY_LENGTH_TICKS);
+    let count = keyframes.len();
+    for index in 0..count {
+        let (start, start_value) = keyframes[index];
+        let (mut end, end_value) = keyframes[(index + 1) % count];
+        if index + 1 == count {
+            end += DAY_LENGTH_TICKS;
+        }
+        let sample = if index + 1 == count && time < keyframes[0].0 {
+            time + DAY_LENGTH_TICKS
+        } else {
+            time
+        };
+        if sample >= start && sample < end {
+            let progress = (sample - start) / (end - start);
+            return start_value + (end_value - start_value) * progress;
+        }
+    }
+    keyframes[0].1
+}
+
+/// Vanilla overworld `SKY_LIGHT_FACTOR` at `time_ticks` (0 = `WAKE_UP_FROM_SLEEP`).
+pub fn sky_light_factor(time_ticks: f32) -> f32 {
+    track(time_ticks, &SKY_LIGHT_FACTOR_KEYFRAMES)
+}
+
+/// Vanilla overworld `SKY_LIGHT_COLOR` multiplier at `time_ticks`.
+pub fn sky_light_color(time_ticks: f32) -> [f32; 3] {
+    let mut color = [0.0; 3];
+    for (channel, slot) in color.iter_mut().enumerate() {
+        *slot = track(
+            time_ticks,
+            &SKY_LIGHT_COLOR_KEYFRAMES.map(|(tick, value)| (tick, value[channel])),
+        );
+    }
+    color
+}
+
+/// Inputs to one lightmap bake: the time-of-day sky multiplier and color
+/// plus the user-facing block factor and gamma option.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LightmapParams {
+    /// `LightmapInfo.SkyFactor`: [`sky_light_factor`].
+    pub sky_factor: f32,
+    /// `LightmapInfo.SkyLightColor`: [`sky_light_color`].
+    pub sky_light_color: [f32; 3],
+    /// `LightmapInfo.BlockFactor`: [`BLOCK_LIGHT_FACTOR`] plus flicker.
+    pub block_factor: f32,
+    /// Vanilla `Options.gamma`.
+    pub brightness: f32,
+}
+
+impl LightmapParams {
+    /// Noon with vanilla defaults.
+    pub fn noon() -> Self {
+        let time = 6000.0;
+        Self {
+            sky_factor: sky_light_factor(time),
+            sky_light_color: sky_light_color(time),
+            block_factor: BLOCK_LIGHT_FACTOR,
+            brightness: DEFAULT_BRIGHTNESS,
+        }
+    }
+}
+
+impl Default for LightmapParams {
+    fn default() -> Self {
+        Self::noon()
+    }
+}
+
 /// `lightmap.fsh get_brightness`: `v / (4 - 3v)` with `v = level / 15`.
 pub fn brightness_curve(level: u8) -> f32 {
     let v = f32::from(level.min(15)) / 15.0;
@@ -38,20 +138,12 @@ fn not_gamma(color: [f32; 3]) -> [f32; 3] {
     [color[0] * factor, color[1] * factor, color[2] * factor]
 }
 
-/// `lightmap.fsh main` for one `(block, sky)` level pair. `sky_factor` is
-/// the time-of-day multiplier (1.0 = noon), `block_factor` is
-/// [`BLOCK_LIGHT_FACTOR`] plus flicker, `brightness` is the gamma option.
-pub fn lightmap_color(
-    block_level: u8,
-    sky_level: u8,
-    sky_factor: f32,
-    block_factor: f32,
-    brightness: f32,
-) -> [f32; 3] {
+/// `lightmap.fsh main` for one `(block, sky)` level pair.
+pub fn lightmap_color(block_level: u8, sky_level: u8, params: &LightmapParams) -> [f32; 3] {
     let block_v = f32::from(block_level.min(15)) / 15.0;
 
-    let block_brightness = brightness_curve(block_level) * block_factor;
-    let sky_brightness = brightness_curve(sky_level) * sky_factor;
+    let block_brightness = brightness_curve(block_level) * params.block_factor;
+    let sky_brightness = brightness_curve(sky_level) * params.sky_factor;
 
     let parabolic = (2.0 * block_v - 1.0) * (2.0 * block_v - 1.0);
     let mix = 0.9 * parabolic;
@@ -64,16 +156,16 @@ pub fn lightmap_color(
     let mut color = [0.0; 3];
     for i in 0..3 {
         color[i] = AMBIENT_COLOR[i]
-            + SKY_LIGHT_COLOR[i] * sky_brightness
+            + params.sky_light_color[i] * sky_brightness
             + block_light_color[i] * block_brightness;
         color[i] = color[i].clamp(0.0, 1.0);
     }
 
     let gamma = not_gamma(color);
     [
-        color[0] + (gamma[0] - color[0]) * brightness,
-        color[1] + (gamma[1] - color[1]) * brightness,
-        color[2] + (gamma[2] - color[2]) * brightness,
+        color[0] + (gamma[0] - color[0]) * params.brightness,
+        color[1] + (gamma[1] - color[1]) * params.brightness,
+        color[2] + (gamma[2] - color[2]) * params.brightness,
     ]
 }
 
@@ -83,15 +175,9 @@ fn to_unorm8(value: f32) -> u8 {
 
 /// Bakes the full 16x16 RGBA8 lightmap: `x` is the block level, `y` the sky
 /// level, matching the `(u, v)` axes of vanilla's lightmap texture.
-pub fn lightmap_rgba(sky_factor: f32, block_factor: f32, brightness: f32) -> [[u8; 4]; 256] {
+pub fn lightmap_rgba(params: &LightmapParams) -> [[u8; 4]; 256] {
     std::array::from_fn(|i| {
-        let color = lightmap_color(
-            (i % 16) as u8,
-            (i / 16) as u8,
-            sky_factor,
-            block_factor,
-            brightness,
-        );
+        let color = lightmap_color((i % 16) as u8, (i / 16) as u8, params);
         [
             to_unorm8(color[0]),
             to_unorm8(color[1]),
@@ -128,14 +214,18 @@ mod tests {
 
     #[test]
     fn full_daylight_sky_level_is_white() {
-        let color = lightmap_color(0, 15, 1.0, BLOCK_LIGHT_FACTOR, DEFAULT_BRIGHTNESS);
+        let color = lightmap_color(0, 15, &LightmapParams::default());
         assert_eq!(color, [1.0, 1.0, 1.0]);
     }
 
     #[test]
     fn zero_levels_are_black() {
         for brightness in [0.0, 0.5, 1.0] {
-            let color = lightmap_color(0, 0, 1.0, BLOCK_LIGHT_FACTOR, brightness);
+            let params = LightmapParams {
+                brightness,
+                ..LightmapParams::default()
+            };
+            let color = lightmap_color(0, 0, &params);
             assert_eq!(color, [0.0, 0.0, 0.0], "brightness {brightness}");
         }
     }
@@ -144,14 +234,22 @@ mod tests {
     fn full_block_level_clamps_to_white() {
         // get_brightness(15/15) * 1.4 > 1: vanilla overbright clamps to
         // white, so the warm tint is invisible at maximum block light.
-        let color = lightmap_color(15, 0, 1.0, BLOCK_LIGHT_FACTOR, 0.0);
+        let params = LightmapParams {
+            brightness: 0.0,
+            ..LightmapParams::default()
+        };
+        let color = lightmap_color(15, 0, &params);
         assert_eq!(color, [1.0, 1.0, 1.0]);
     }
 
     #[test]
     fn mid_block_level_shows_warm_tint() {
         // Level 12: curve 0.5 * 1.4 = 0.7, parabolic mix 0.9 * 0.36 = 0.324.
-        let color = lightmap_color(12, 0, 1.0, BLOCK_LIGHT_FACTOR, 0.0);
+        let params = LightmapParams {
+            brightness: 0.0,
+            ..LightmapParams::default()
+        };
+        let color = lightmap_color(12, 0, &params);
         let expect = [0.7, 0.627_628, 0.486_596];
         for i in 0..3 {
             assert!(
@@ -165,23 +263,45 @@ mod tests {
 
     #[test]
     fn brightness_lifts_midtones_toward_not_gamma() {
-        let dim = lightmap_color(8, 0, 1.0, BLOCK_LIGHT_FACTOR, 0.0);
-        let gamma = lightmap_color(8, 0, 1.0, BLOCK_LIGHT_FACTOR, 1.0);
-        let half = lightmap_color(8, 0, 1.0, BLOCK_LIGHT_FACTOR, 0.5);
+        let dim = lightmap_color(
+            8,
+            0,
+            &LightmapParams {
+                brightness: 0.0,
+                ..LightmapParams::default()
+            },
+        );
+        let gamma = lightmap_color(
+            8,
+            0,
+            &LightmapParams {
+                brightness: 1.0,
+                ..LightmapParams::default()
+            },
+        );
+        let half = lightmap_color(
+            8,
+            0,
+            &LightmapParams {
+                brightness: 0.5,
+                ..LightmapParams::default()
+            },
+        );
         assert!(gamma[0] > dim[0]);
         assert!((half[0] - (dim[0] + gamma[0]) * 0.5).abs() < 1e-6);
     }
 
     #[test]
     fn texture_layout_maps_x_to_block_y_to_sky() {
-        let pixels = lightmap_rgba(1.0, BLOCK_LIGHT_FACTOR, DEFAULT_BRIGHTNESS);
+        let params = LightmapParams::default();
+        let pixels = lightmap_rgba(&params);
         assert_eq!(pixels[0], [0, 0, 0, 255]);
         assert_eq!(pixels[15], [255, 255, 255, 255]);
         assert_eq!(&pixels[15 * 16..16 * 16], &[[255, 255, 255, 255]; 16][..]);
         for (index, pixel) in pixels.iter().enumerate() {
             let block = (index % 16) as u8;
             let sky = (index / 16) as u8;
-            let color = lightmap_color(block, sky, 1.0, BLOCK_LIGHT_FACTOR, DEFAULT_BRIGHTNESS);
+            let color = lightmap_color(block, sky, &params);
             assert_eq!(
                 *pixel,
                 [
@@ -192,5 +312,53 @@ mod tests {
                 ],
             );
         }
+    }
+
+    #[test]
+    fn day_night_timeline_matches_vanilla_keyframes() {
+        assert_eq!(sky_light_factor(6000.0), 1.0);
+        assert_eq!(sky_light_factor(11270.0), 1.0);
+        assert_eq!(sky_light_factor(13140.0), NIGHT_SKY_LIGHT_FACTOR);
+        assert_eq!(sky_light_factor(18000.0), NIGHT_SKY_LIGHT_FACTOR);
+        assert_eq!(sky_light_factor(22860.0), NIGHT_SKY_LIGHT_FACTOR);
+
+        let night_color = sky_light_color(18000.0);
+        assert_eq!(night_color, NIGHT_SKY_LIGHT_COLOR);
+        assert_eq!(sky_light_color(6000.0), [1.0, 1.0, 1.0]);
+
+        let mid = sky_light_factor(12205.0);
+        assert!((mid - (1.0 + NIGHT_SKY_LIGHT_FACTOR) * 0.5).abs() < 1e-5);
+        let dawn = sky_light_factor(23795.0);
+        assert!((dawn - (1.0 + NIGHT_SKY_LIGHT_FACTOR) * 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn day_night_timeline_wraps_at_day_length() {
+        for time in [0.0, 100.0, 500.0, 729.0] {
+            assert_eq!(
+                sky_light_factor(time),
+                sky_light_factor(time + DAY_LENGTH_TICKS)
+            );
+            assert_eq!(
+                sky_light_color(time),
+                sky_light_color(time + DAY_LENGTH_TICKS)
+            );
+        }
+        assert_eq!(sky_light_factor(0.0), sky_light_factor(DAY_LENGTH_TICKS));
+        assert!(sky_light_factor(0.0) > NIGHT_SKY_LIGHT_FACTOR);
+        assert!(sky_light_factor(0.0) < 1.0);
+    }
+
+    #[test]
+    fn night_sky_light_is_dim_blue_moonlight() {
+        let night = LightmapParams {
+            sky_factor: sky_light_factor(18000.0),
+            sky_light_color: sky_light_color(18000.0),
+            ..LightmapParams::default()
+        };
+        let color = lightmap_color(0, 15, &night);
+        assert!(color[2] > color[0], "moonlight is blue-tinted: {color:?}");
+        assert!(color[0] > 0.05, "moonlit ground stays visible: {color:?}");
+        assert!(color[0] < 0.35, "moonlight stays dim: {color:?}");
     }
 }
