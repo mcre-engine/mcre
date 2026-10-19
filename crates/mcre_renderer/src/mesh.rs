@@ -161,7 +161,15 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                         state,
                     )
                 } else {
-                    flat_face(access, quad.direction, block_pos, state, base_color)
+                    flat_face(
+                        access,
+                        quad.direction,
+                        block_pos,
+                        &quad.vertices,
+                        quad.cullface.is_some(),
+                        state,
+                        base_color,
+                    )
                 };
 
                 let base = mesh.vertices.len() as u32;
@@ -207,10 +215,11 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
 }
 
 /// Vanilla `Block.getShadeBrightness`: collision-full cells darken
-/// neighboring corner samples to 0.2
-/// (`state.isCollisionShapeFullBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)`).
+/// neighboring corner samples to 0.2, with per-block overrides (glass and
+/// friends stay at 1.0, snow layer 8 and soul sand reach 0.2). Extracted
+/// from the game at data-gen time.
 fn shade_of(state: BlockState) -> f32 {
-    if state.collision_full() { 0.2 } else { 1.0 }
+    state.shade_brightness()
 }
 
 /// Vanilla `BlockStateBase.isLightPermeable` (BlockBehaviour.java:812).
@@ -317,17 +326,26 @@ fn smooth_blend(n1: (u8, u8), n2: (u8, u8), n3: (u8, u8), center: (u8, u8)) -> (
     (block as u8, sky as u8)
 }
 
-/// Vanilla `prepareQuadFlat`: one light sample on the outside of the face,
-/// raised to the quad owner's emission; no corner AO.
+/// Vanilla `prepareQuadFlat`: one light sample, raised to the quad owner's
+/// emission; no corner AO. Culled and cubic faces sample the neighbor cell,
+/// partial unculled faces sample the owning cell.
 fn flat_face<A: BlockAccess + ?Sized>(
     access: &A,
     direction: Direction,
     block_pos: [i32; 3],
+    verts: &[mcre_core::Vec3f; 4],
+    culled: bool,
     owner: BlockState,
     color: [f32; 3],
 ) -> ([[f32; 3]; 4], [[f32; 2]; 4]) {
-    let base = offset(block_pos, direction);
-    let (block, sky) = access.light_at(base[0], base[1], base[2]);
+    let bounds = face_bounds(verts);
+    let cubic = face_cubic(direction, &bounds, owner.collision_full());
+    let sample = if culled || cubic {
+        offset(block_pos, direction)
+    } else {
+        block_pos
+    };
+    let (block, sky) = access.light_at(sample[0], sample[1], sample[2]);
     let (block, sky) = if owner.emissive_rendering() {
         (15, 15)
     } else {
@@ -337,9 +355,10 @@ fn flat_face<A: BlockAccess + ?Sized>(
     ([color; 4], [light; 4])
 }
 
-/// Vanilla `prepareQuadAmbientOcclusion`, cubic-face branch: per-vertex blend
-/// of two edge cells, their diagonal, and the face-center cell, with the
-/// four shade samples averaged into an AO multiplier.
+/// Vanilla `prepareQuadAmbientOcclusion`: per-vertex blend of two edge cells,
+/// their diagonal, and the face-center cell, with the four shade samples
+/// averaged into an AO multiplier. Cubic faces sample around the cell in
+/// front; partial faces sample around the owning cell itself.
 ///
 /// Deviation from vanilla: the edge-cell pair for each vertex is derived from
 /// the vertex position relative to the block center instead of the vertex
@@ -355,7 +374,13 @@ fn smooth_face<A: BlockAccess + ?Sized>(
     color: [f32; 3],
     owner: BlockState,
 ) -> ([[f32; 3]; 4], [[f32; 2]; 4]) {
-    let base = offset(block_pos, direction);
+    let bounds = face_bounds(verts);
+    let partial = face_partial(direction, &bounds);
+    let cubic = face_cubic(direction, &bounds, owner.collision_full());
+    let front = offset(block_pos, direction);
+    // Cubic faces sample around the cell in front; partial faces sample
+    // around the owning cell itself (vanilla `basePosition`).
+    let base = if cubic { front } else { block_pos };
     let corners = adjacency_corners(direction);
 
     let mut edge_light = [(0_u8, 0_u8); 4];
@@ -366,7 +391,10 @@ fn smooth_face<A: BlockAccess + ?Sized>(
         edge_light[index] = sample_light(access, pos);
         let state = access.block_at(pos[0], pos[1], pos[2]);
         edge_shade[index] = shade_of(state);
-        edge_permeable[index] = is_light_permeable(state);
+        // The diagonal-reuse gate reads the cell one step further along the
+        // face normal (vanilla samples `basePosition + corner + direction`).
+        let gate = offset(pos, direction);
+        edge_permeable[index] = is_light_permeable(access.block_at(gate[0], gate[1], gate[2]));
     }
 
     // Diagonal cells: reused from the first edge sample when both adjacent
@@ -386,14 +414,16 @@ fn smooth_face<A: BlockAccess + ?Sized>(
         diagonal(1, 3),
     ];
 
-    let bounds = face_bounds(verts);
-    let partial = face_partial(direction, &bounds);
-    let cubic = face_cubic(direction, &bounds, owner.collision_full());
-    let neighbor = access.block_at(base[0], base[1], base[2]);
-    let (center_light, center_shade) = if cubic || !neighbor.solid_render() {
-        (sample_light(access, base), shade_of(neighbor))
+    let neighbor = access.block_at(front[0], front[1], front[2]);
+    let center_light = if cubic || !neighbor.solid_render() {
+        sample_light(access, front)
     } else {
-        (sample_light(access, block_pos), shade_of(owner))
+        sample_light(access, block_pos)
+    };
+    let center_shade = if cubic {
+        shade_of(neighbor)
+    } else {
+        shade_of(owner)
     };
 
     let pairings = [(3, 0), (2, 0), (2, 1), (3, 1)];
@@ -2443,6 +2473,152 @@ mod tests {
         // AO is active, not flat: the west edge stays darkened in both.
         assert!((colors_a[0][0] - 0.6).abs() < 1e-6);
         assert_eq!(colors_a[2], [1.0, 1.0, 1.0]);
+    }
+
+    struct FullBlockEast;
+
+    impl BlockAccess for FullBlockEast {
+        fn block_at(&self, x: i32, y: i32, z: i32) -> BlockState {
+            if (x, y, z) == (9, 0, 8) {
+                Block::STONE.default_state()
+            } else {
+                air()
+            }
+        }
+
+        fn light_at(&self, _x: i32, _y: i32, _z: i32) -> (u8, u8) {
+            (15, 15)
+        }
+    }
+
+    #[test]
+    fn partial_face_ao_samples_owner_cell() {
+        // Bottom slab top face: vanilla treats this as non-cubic, so the
+        // corner cells circle the slab's own cell; the full block east at
+        // the same level reaches the east corners.
+        let top = [
+            Vec3f::new(0.0, 8.0, 0.0),
+            Vec3f::new(0.0, 8.0, 16.0),
+            Vec3f::new(16.0, 8.0, 16.0),
+            Vec3f::new(16.0, 8.0, 0.0),
+        ];
+        let (colors, _) = smooth_face(
+            &FullBlockEast,
+            Direction::Up,
+            [8, 0, 8],
+            &top,
+            [1.0; 3],
+            Block::STONE_SLAB.default_state(),
+        );
+        assert_eq!(colors[0], [1.0, 1.0, 1.0]);
+        assert_eq!(colors[1], [1.0, 1.0, 1.0]);
+        assert!((colors[2][0] - 0.8).abs() < 1e-6, "{}", colors[2][0]);
+        assert!((colors[3][0] - 0.8).abs() < 1e-6, "{}", colors[3][0]);
+    }
+
+    struct PillarOverhang;
+
+    impl BlockAccess for PillarOverhang {
+        fn block_at(&self, x: i32, y: i32, z: i32) -> BlockState {
+            match (x, y, z) {
+                (9, 1, 8) | (9, 2, 8) | (8, 2, 7) => Block::STONE.default_state(),
+                _ => air(),
+            }
+        }
+
+        fn light_at(&self, _x: i32, _y: i32, _z: i32) -> (u8, u8) {
+            (15, 15)
+        }
+    }
+
+    #[test]
+    fn diagonal_reuse_gate_samples_above_edge_cell() {
+        // Two-tall pillar east plus a floating block above the north edge
+        // cell: the near diagonal reuses the pillar's corner shade, the far
+        // diagonal reads the open cell.
+        let top = [
+            Vec3f::new(0.0, 16.0, 0.0),
+            Vec3f::new(0.0, 16.0, 16.0),
+            Vec3f::new(16.0, 16.0, 16.0),
+            Vec3f::new(16.0, 16.0, 0.0),
+        ];
+        let (colors, _) = smooth_face(
+            &PillarOverhang,
+            Direction::Up,
+            [8, 0, 8],
+            &top,
+            [1.0; 3],
+            Block::STONE.default_state(),
+        );
+        assert_eq!(colors[0], [1.0, 1.0, 1.0]);
+        assert_eq!(colors[1], [1.0, 1.0, 1.0]);
+        assert!((colors[2][0] - 0.8).abs() < 1e-6, "{}", colors[2][0]);
+        assert!((colors[3][0] - 0.6).abs() < 1e-6, "{}", colors[3][0]);
+    }
+
+    #[test]
+    fn shade_brightness_overrides_are_extracted() {
+        assert_eq!(shade_of(Block::STONE.default_state()), 0.2);
+        // TransparentBlock keeps soft shading despite a full collision shape.
+        assert_eq!(shade_of(Block::GLASS.default_state()), 1.0);
+        let layers = |state: BlockState| state.layers();
+        let snow_eight = (u16::from(Block::SNOW.min_state())..=u16::from(Block::SNOW.max_state()))
+            .map(BlockState::from)
+            .find(|state| layers(*state) == 8)
+            .unwrap();
+        assert_eq!(shade_of(snow_eight), 0.2);
+        let snow_one = (u16::from(Block::SNOW.min_state())..=u16::from(Block::SNOW.max_state()))
+            .map(BlockState::from)
+            .find(|state| layers(*state) == 1)
+            .unwrap();
+        assert_eq!(shade_of(snow_one), 1.0);
+    }
+
+    struct OwnerLightOnly;
+
+    impl BlockAccess for OwnerLightOnly {
+        fn block_at(&self, _x: i32, _y: i32, _z: i32) -> BlockState {
+            air()
+        }
+
+        fn light_at(&self, x: i32, y: i32, z: i32) -> (u8, u8) {
+            if (x, y, z) == (8, 0, 8) {
+                (14, 15)
+            } else {
+                (0, 15)
+            }
+        }
+    }
+
+    #[test]
+    fn flat_partial_quads_sample_owner_cell_light() {
+        let slab = Block::STONE_SLAB.default_state();
+        let top = [
+            Vec3f::new(0.0, 8.0, 0.0),
+            Vec3f::new(0.0, 8.0, 16.0),
+            Vec3f::new(16.0, 8.0, 16.0),
+            Vec3f::new(16.0, 8.0, 0.0),
+        ];
+        let (_, lights) = flat_face(
+            &OwnerLightOnly,
+            Direction::Up,
+            [8, 0, 8],
+            &top,
+            false,
+            slab,
+            [1.0; 3],
+        );
+        assert_eq!(lights, [[14.0, 15.0]; 4]);
+        let (_, lights) = flat_face(
+            &OwnerLightOnly,
+            Direction::Up,
+            [8, 0, 8],
+            &top,
+            true,
+            slab,
+            [1.0; 3],
+        );
+        assert_eq!(lights, [[0.0, 15.0]; 4]);
     }
 
     #[test]

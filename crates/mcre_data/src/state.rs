@@ -25,6 +25,9 @@ pub struct BlockState {
     /// `state.isCollisionShapeFullBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)`
     #[serde(default)]
     pub collision_full: bool,
+    /// `state.getShadeBrightness(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)`
+    #[serde(default = "default_shade_brightness")]
+    pub shade_brightness: f32,
     /// Legacy `state.isSolid()` (`BlockBehaviour.BlockStateBase.legacySolid`),
     /// consumed by the fluid corner-height averaging.
     #[serde(default)]
@@ -36,6 +39,10 @@ pub struct BlockState {
     #[serde(default)]
     pub emissive_rendering: bool,
     pub state_values: IndexMap<String, StateValue>,
+}
+
+fn default_shade_brightness() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

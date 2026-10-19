@@ -113,6 +113,16 @@ impl<'a> ScopeGen<'a> for StateDataScope<'a> {
                     }),
                 }),
                 Box::new(SubByteGen {
+                    name: "shade_brightness".to_string(),
+                    is_bool: false,
+                    min: 0,
+                    max: 255,
+                    list: self.states,
+                    mapping_fn: Box::new(|state, _analysis: &Analysis<'_>| {
+                        (state.shade_brightness * 255.0).round() as u8
+                    }),
+                }),
+                Box::new(SubByteGen {
                     name: "solid".to_string(),
                     is_bool: true,
                     min: 0,
@@ -168,6 +178,7 @@ impl UnitGen for StateDataRootUnit {
             pub(crate) mod occlusion_shape;
             pub(crate) mod propagates_skylight_down;
             pub(crate) mod self_skip;
+            pub(crate) mod shade_brightness;
             pub(crate) mod shapes;
             pub(crate) mod solid;
             pub(crate) mod solid_render;

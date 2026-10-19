@@ -895,6 +895,20 @@ fn process_block_state<'a>(
         .z()
         .unwrap();
 
+    let shade_brightness = env
+        .call_method(
+            block_state,
+            jni_str!("getShadeBrightness"),
+            jni_sig!("(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)F"),
+            &[
+                JValue::Object(&ctx.empty_getter),
+                JValue::Object(&ctx.block_pos_zero),
+            ],
+        )
+        .unwrap()
+        .f()
+        .unwrap();
+
     let solid = env
         .get_field(block_state, jni_str!("legacySolid"), jni_sig!("Z"))
         .unwrap()
@@ -930,6 +944,7 @@ fn process_block_state<'a>(
         self_skip,
         face_sturdy,
         collision_full,
+        shade_brightness,
         solid,
         fluid,
         occlusion_shape,

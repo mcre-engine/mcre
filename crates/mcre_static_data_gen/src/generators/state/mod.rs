@@ -200,6 +200,10 @@ impl UnitGen for StateRootUnit<'_> {
                     data::collision_full::get(self.0)
                 }
 
+                pub fn shade_brightness(self) -> f32 {
+                    f32::from(data::shade_brightness::get(self.0)) / 255.0
+                }
+
                 pub fn solid(self) -> bool {
                     data::solid::get(self.0)
                 }
