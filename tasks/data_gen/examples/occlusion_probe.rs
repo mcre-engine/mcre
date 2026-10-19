@@ -134,4 +134,80 @@ async fn main(env: &mut Env<'_>) {
             println!("[PROBE] srf {state_label} {neighbor_label} {mask:02x}");
         }
     }
+
+    println!("[PROBE] fluid occlusion");
+    let heights = [0.5_f64, 0.8888889, 1.0];
+    for (state, label) in &states {
+        for (dir_idx, dir) in directions.iter().enumerate() {
+            let opposite = env
+                .call_method(
+                    dir,
+                    jni_str!("getOpposite"),
+                    jni_sig!("()Lnet/minecraft/core/Direction;"),
+                    &[],
+                )
+                .unwrap()
+                .l()
+                .unwrap();
+            let occluder = env
+                .call_method(
+                    state,
+                    jni_str!("getFaceOcclusionShape"),
+                    jni_sig!(
+                        "(Lnet/minecraft/core/Direction;)Lnet/minecraft/world/phys/shapes/VoxelShape;"
+                    ),
+                    &[JValue::Object(&opposite)],
+                )
+                .unwrap()
+                .l()
+                .unwrap();
+            let empty = env.is_same_object(&occluder, &empty_shape).unwrap();
+            let cube = env.is_same_object(&occluder, &block_cube).unwrap();
+            let mut mask = 0u8;
+            for (height_idx, height) in heights.iter().enumerate() {
+                let occluded = if empty {
+                    false
+                } else if cube {
+                    dir_idx != 1 || *height == 1.0
+                } else {
+                    let shape = env
+                        .call_static_method(
+                            jni_str!("net/minecraft/world/phys/shapes/Shapes"),
+                            jni_str!("box"),
+                            jni_sig!("(DDDDDD)Lnet/minecraft/world/phys/shapes/VoxelShape;"),
+                            &[
+                                JValue::Double(0.0),
+                                JValue::Double(0.0),
+                                JValue::Double(0.0),
+                                JValue::Double(1.0),
+                                JValue::Double(*height),
+                                JValue::Double(1.0),
+                            ],
+                        )
+                        .unwrap()
+                        .l()
+                        .unwrap();
+                    env.call_static_method(
+                        jni_str!("net/minecraft/world/phys/shapes/Shapes"),
+                        jni_str!("blockOccludes"),
+                        jni_sig!(
+                            "(Lnet/minecraft/world/phys/shapes/VoxelShape;Lnet/minecraft/world/phys/shapes/VoxelShape;Lnet/minecraft/core/Direction;)Z"
+                        ),
+                        &[
+                            JValue::Object(&shape),
+                            JValue::Object(&occluder),
+                            JValue::Object(dir),
+                        ],
+                    )
+                    .unwrap()
+                    .z()
+                    .unwrap()
+                };
+                if occluded {
+                    mask |= 1 << height_idx;
+                }
+            }
+            println!("[PROBE] fluid-occ {label} {dir_idx} {mask:02x}");
+        }
+    }
 }

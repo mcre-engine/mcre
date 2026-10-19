@@ -607,7 +607,7 @@ pub(crate) fn mesh_fluid<A: BlockAccess + ?Sized>(
 mod tests {
     use super::*;
     use mcre_resource_pack::colormap::Colormaps;
-    use mcre_world::Block;
+    use mcre_world::{Block, SlabType};
 
     struct Cells<F>(F);
 
@@ -733,6 +733,132 @@ mod tests {
         // Top (front + back) and four sides (front + back), no bottom.
         assert_eq!(mesh.vertices.len(), 5 * 4);
         assert_eq!(mesh.translucent_indices.len(), 10 * 6);
+    }
+
+    #[test]
+    fn full_block_side_neighbor_culls_side_face() {
+        let pos = [4, 40, 4];
+        let stone = Block::STONE.default_state();
+        let access = Cells(|x, y, z| match (x, y, z) {
+            (4, 40, 4) => water(0),
+            (5, 40, 4) => stone,
+            _ => air(),
+        });
+        let mesh = mesh_of(pos, water(0), &access, MeshOptions::default());
+
+        // Top, bottom, north, south, west; east culled by the full block.
+        assert_eq!(mesh.vertices.len(), 5 * 4);
+        assert_eq!(mesh.translucent_indices.len(), 9 * 6);
+    }
+
+    #[test]
+    fn glass_side_neighbor_keeps_side_face_with_overlay() {
+        let pos = [6, 41, 6];
+        let glass = Block::GLASS.default_state();
+        let access = Cells(|x, y, z| match (x, y, z) {
+            (6, 41, 6) => water(0),
+            (7, 41, 6) => glass,
+            _ => air(),
+        });
+        let mesh = mesh_of(pos, water(0), &access, MeshOptions::default());
+
+        // Glass does not occlude: all six faces render, the east one with the
+        // overlay material and no back face.
+        assert_eq!(mesh.vertices.len(), 6 * 4);
+        assert_eq!(mesh.translucent_indices.len(), 10 * 6);
+    }
+
+    fn slab(slab_type: SlabType) -> BlockState {
+        (u16::from(Block::OAK_SLAB.min_state())..=u16::from(Block::OAK_SLAB.max_state()))
+            .map(BlockState::from)
+            .find(|state| state.slab_type() == slab_type && !state.is_waterlogged())
+            .expect("slab state")
+    }
+
+    #[test]
+    fn slab_below_matches_vanilla_down_face_rules() {
+        let pos = [8, 42, 8];
+        let top = slab(SlabType::Top);
+        let access = Cells(|x, y, z| match (x, y, z) {
+            (8, 42, 8) => water(0),
+            (8, 41, 8) => top,
+            _ => air(),
+        });
+        let mesh = mesh_of(pos, water(0), &access, MeshOptions::default());
+        // A top slab reaches the cell ceiling and occludes the bottom face.
+        assert_eq!(mesh.vertices.len(), 5 * 4);
+        assert_eq!(mesh.translucent_indices.len(), 10 * 6);
+
+        let bottom = slab(SlabType::Bottom);
+        let access = Cells(|x, y, z| match (x, y, z) {
+            (8, 42, 8) => water(0),
+            (8, 41, 8) => bottom,
+            _ => air(),
+        });
+        let mesh = mesh_of(pos, water(0), &access, MeshOptions::default());
+        // A bottom slab stops halfway and leaves the bottom face visible.
+        assert_eq!(mesh.vertices.len(), 6 * 4);
+        assert_eq!(mesh.translucent_indices.len(), 11 * 6);
+    }
+
+    #[test]
+    fn fluid_occlusion_matches_vanilla_probe() {
+        // Baked from `occlusion_probe` (JVM): `FluidRenderer.isFaceOccludedByState`
+        // replicated via `getFaceOcclusionShape` + `Shapes.blockOccludes` on
+        // `box(0, 0, 0, 1, height, 1)`; bit per height {0.5, 0.8889, 1.0} and
+        // columns DOWN, UP, NORTH, SOUTH, WEST, EAST.
+        const PROBE_STATES: [u16; 13] = [
+            1,     // stone
+            661,   // glass
+            268,   // oak_leaves
+            5534,  // oak_stairs
+            8589,  // snow_1
+            8668,  // oak_fence
+            8801,  // oak_trapdoor
+            10067, // glass_pane
+            13082, // hopper
+            15180, // oak_slab_top
+            15182, // oak_slab_bottom
+            30537, // powder_snow
+            32896, // copper_grate
+        ];
+        const PROBE_HEIGHTS: [f32; 3] = [0.5, 0.8888889, 1.0];
+        const PROBE_OCCLUDED: [[u8; 6]; 13] = [
+            [0x07, 0x04, 0x07, 0x07, 0x07, 0x07],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            [0x00, 0x04, 0x01, 0x01, 0x07, 0x01],
+            [0x00, 0x04, 0x00, 0x00, 0x00, 0x00],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            [0x07, 0x00, 0x00, 0x00, 0x00, 0x00],
+            [0x00, 0x04, 0x01, 0x01, 0x01, 0x01],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            [0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ];
+        let directions = [
+            Direction::Down,
+            Direction::Up,
+            Direction::North,
+            Direction::South,
+            Direction::West,
+            Direction::East,
+        ];
+        for (index, id) in PROBE_STATES.iter().enumerate() {
+            let boxes = BlockState::from(*id).occlusion_boxes();
+            for (dir_idx, direction) in directions.iter().enumerate() {
+                for (height_idx, height) in PROBE_HEIGHTS.iter().enumerate() {
+                    let expected = PROBE_OCCLUDED[index][dir_idx] >> height_idx & 1 == 1;
+                    assert_eq!(
+                        fluid_face_occluded(*direction, *height, boxes),
+                        expected,
+                        "state {id} toward {direction:?} at height {height}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
