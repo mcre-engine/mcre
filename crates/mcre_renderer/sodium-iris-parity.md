@@ -175,12 +175,27 @@ gradient (`computeTangent`, fallback to triangle 2, then Iris default +Y).
 - Visual parity check in viewer (demo world + Anvil save): AO, water layers,
   cutout foliage, fog, day/night lightmap.
 
+### Phase 7 — Occlusion culling (`occlusion.rs`, viewer integration)
+
+- Vanilla `VisGraph` port: per-section 4096-cell opaque flood fill
+  (`isSolidRender` cells) → 36-bit face-connectivity matrix
+  (`Mesh.section_visibility`, computed in `mesh_chunk`; sections with fewer
+  than 256 occluders short-circuit to all-visible, solid sections to none).
+- Sodium `OcclusionCuller.findVisible` port: level-synchronized BFS from the
+  camera section with cylindrical search distance, ±9.125 section frustum
+  boxes, angle through-pair masks, outward-direction masking, accumulated
+  incoming directions, boundary-plane seeding when the camera is outside the
+  world, and the 3×3×3 nearby-section pass (±10.125) for large models.
+- Viewer: `Occlusion culling` toggle (Geometry panel), `Sections: vis/total`
+  stat; search distance tied to the stream horizon (infinite in the demo).
+  Occlusion-off falls back to distance + frustum culling only, matching
+  Sodium's `useOcclusionCulling=false`.
+
 ### Deferred (documented, not in scope)
 
 - Sodium translucent BSP/topological sorting (baseline quad sort only).
 - Mipped atlas / `MIPPED_CUTOUT` pass, `GlBufferArena`-style staging-buffer
-  zero-copy uploads, occlusion-cull graph (BFS visibility) — viewer keeps
-  frustum-only culling for now.
+  zero-copy uploads.
 - Shader-pack (OptiFine GLSL) compatibility layer — XHFP data is produced and
   decodable, but no pack loading.
 
@@ -197,7 +212,9 @@ gradient (`computeTangent`, fallback to triangle 2, then Iris default +Y).
 | `crates/mcre_renderer/src/renderer.rs` | arenas, shared index buffer, chunks SSBO, 3 passes, batched draws |
 | `crates/mcre_renderer/src/shader.wgsl` (+ new includes) | packed-vertex decode, XHFP varyings, lightmap uv sampling |
 | `crates/mcre_renderer/src/remesh.rs` | section-granular jobs/results |
-| `crates/mcre_renderer/examples/viewer.rs` | region/section bookkeeping, per-section culling, debug stats |
+| `crates/mcre_renderer/src/occlusion.rs` | **new** — `VisGraph`, section visibility, `find_visible_sections` BFS + tests |
+| `crates/mcre_renderer/src/frustum.rs` | `intersects_box` (Sodium-style center/half boxes), `all` |
+| `crates/mcre_renderer/examples/viewer.rs` | region/section bookkeeping, culling (frustum → occlusion graph), debug stats |
 | `crates/mcre_renderer/tests/*` | adapt to packed vertices |
 
 ## Key risks

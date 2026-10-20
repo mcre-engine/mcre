@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -7,9 +7,9 @@ use mcre_fs::native::NativeFs;
 use mcre_renderer::clouds::{CLOUD_HEIGHT, CloudStatus, CloudTexture};
 use mcre_renderer::lightmap::{DAY_LENGTH_TICKS, DEFAULT_BRIGHTNESS, sky_light_factor};
 use mcre_renderer::{
-    Atlas, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4, Mesh, MeshOptions,
-    MeshResult, MeshWorker, RenderChunk, Renderer, SectionMesh, StreamSource, build_atlas,
-    mesh_chunk, pack_chunk_sections, section_world_origin,
+    Atlas, CullParams, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4, Mesh,
+    MeshOptions, MeshResult, MeshWorker, RenderChunk, Renderer, SectionMesh, SectionVisibility,
+    StreamSource, build_atlas, find_visible_sections, mesh_chunk, pack_chunk_sections,
 };
 use mcre_resource_pack::{ResourcePackData, ResourcePackSet, download};
 use mcre_world::fluid::{FluidKind, fluid_state, is_face_sturdy};
@@ -41,6 +41,7 @@ const FOV_UNDERWATER: f32 = 60.0 * std::f32::consts::PI / 180.0;
 struct ChunkMesh {
     origin: [i32; 2],
     sections: [Option<SectionMesh>; SECTIONS_PER_CHUNK],
+    visibility: [SectionVisibility; SECTIONS_PER_CHUNK],
     version: u64,
 }
 
@@ -140,6 +141,8 @@ fn main() {
         fast_leaves: false,
         visible_chunks: total_chunks,
         total_chunks,
+        visible_sections: total_chunks * SECTIONS_PER_CHUNK,
+        occlusion_culling: true,
         wireframe: false,
         backface_cull: true,
         chunk_borders: false,
@@ -217,6 +220,7 @@ async fn prepare(
         meshes.push(ChunkMesh {
             origin,
             sections,
+            visibility: mesh.section_visibility,
             version: 0,
         });
     }
@@ -825,6 +829,8 @@ struct Viewer {
     fast_leaves: bool,
     visible_chunks: usize,
     total_chunks: usize,
+    visible_sections: usize,
+    occlusion_culling: bool,
     wireframe: bool,
     backface_cull: bool,
     chunk_borders: bool,
@@ -1195,6 +1201,7 @@ impl Viewer {
                         ui.checkbox(&mut self.wireframe, "Wireframe");
                         ui.checkbox(&mut self.backface_cull, "Backface cull");
                         ui.checkbox(&mut self.chunk_borders, "Chunk borders");
+                        ui.checkbox(&mut self.occlusion_culling, "Occlusion culling");
                     });
                     ui.collapsing("Mesh", |ui| {
                         ui.checkbox(&mut self.double_sided_liquids, "Double-sided liquids");
@@ -1315,6 +1322,11 @@ impl Viewer {
                         ui.label(format!(
                             "Chunks: {}/{}",
                             self.visible_chunks, self.total_chunks
+                        ));
+                        ui.label(format!(
+                            "Sections: {}/{}",
+                            self.visible_sections,
+                            self.total_chunks * SECTIONS_PER_CHUNK
                         ));
                         ui.label(format!(
                             "Quads: {} Verts: {}",
@@ -1621,28 +1633,40 @@ impl Viewer {
         egui: Option<EguiFrame<'_>>,
     ) {
         let frustum = Frustum::from_matrix(&Mat4(view_proj));
-        let mut visible = Vec::new();
+        let min_section_y = WORLD_MIN_Y.div_euclid(16);
+        let mut visibilities = HashMap::with_capacity(self.meshes.len() * SECTIONS_PER_CHUNK);
+        let mut positions = HashMap::with_capacity(self.meshes.len() * SECTIONS_PER_CHUNK);
         for (index, chunk) in self.meshes.iter().enumerate() {
-            let mut mask = 0u32;
-            for section in 0..SECTIONS_PER_CHUNK {
-                let origin = section_world_origin(chunk.origin, section);
-                let min = [origin[0] as f32, origin[1] as f32, origin[2] as f32];
-                let max = [min[0] + 16.0, min[1] + 16.0, min[2] + 16.0];
-                if frustum.intersects_aabb(min, max) {
-                    mask |= 1 << section;
-                }
-            }
-            if mask != 0 {
-                visible.push((index, mask));
+            let section_x = chunk.origin[0].div_euclid(16);
+            let section_z = chunk.origin[1].div_euclid(16);
+            for (local, &visibility) in chunk.visibility.iter().enumerate() {
+                let coord = [section_x, min_section_y + local as i32, section_z];
+                visibilities.insert(coord, visibility);
+                positions.insert(coord, (index, local));
             }
         }
-        self.visible_chunks = visible.len();
+        let params = CullParams {
+            search_distance: self.stream_horizon().unwrap_or(f32::INFINITY),
+            use_occlusion: self.occlusion_culling,
+        };
+        let mut masks = vec![0u32; self.meshes.len()];
+        let mut visited = 0usize;
+        find_visible_sections(camera_pos, &frustum, params, &visibilities, |coord| {
+            if let Some(&(index, local)) = positions.get(&coord) {
+                masks[index] |= 1 << local;
+                visited += 1;
+            }
+        });
+        self.visible_sections = visited;
+        self.visible_chunks = masks.iter().filter(|&&mask| mask != 0).count();
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };
-        let chunks: Vec<RenderChunk<'_>> = visible
+        let chunks: Vec<RenderChunk<'_>> = masks
             .iter()
-            .map(|&(index, mask)| {
+            .enumerate()
+            .filter(|&(_, &mask)| mask != 0)
+            .map(|(index, &mask)| {
                 let entry = &self.meshes[index];
                 RenderChunk {
                     origin: entry.origin,
@@ -1719,12 +1743,14 @@ impl Viewer {
             self.world.set_chunk_light(chunk.pos, chunk.light);
             match self.meshes.iter_mut().find(|entry| entry.origin == origin) {
                 Some(entry) => {
+                    entry.visibility = chunk.mesh.section_visibility;
                     entry.sections = chunk.sections;
                     entry.version += 1;
                 }
                 None => self.meshes.push(ChunkMesh {
                     origin,
                     sections: chunk.sections,
+                    visibility: chunk.mesh.section_visibility,
                     version: 0,
                 }),
             }
@@ -1781,12 +1807,14 @@ impl Viewer {
                     self.world.set_chunk_light(chunk.pos, chunk.light);
                     match self.meshes.iter_mut().find(|entry| entry.origin == origin) {
                         Some(entry) => {
+                            entry.visibility = chunk.mesh.section_visibility;
                             entry.sections = chunk.sections;
                             entry.version += 1;
                         }
                         None => self.meshes.push(ChunkMesh {
                             origin,
                             sections: chunk.sections,
+                            visibility: chunk.mesh.section_visibility,
                             version: 0,
                         }),
                     }
@@ -1798,6 +1826,7 @@ impl Viewer {
                         .iter_mut()
                         .find(|entry| entry.origin == chunk.origin)
                     {
+                        entry.visibility = chunk.mesh.section_visibility;
                         entry.sections = chunk.sections;
                         entry.version += 1;
                         remeshed += 1;

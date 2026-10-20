@@ -12,6 +12,7 @@ use mcre_world::{
 };
 
 use crate::atlas::{Atlas, AtlasRegion};
+use crate::occlusion::{FULL_VISIBILITY, SectionVisibility, compute_section_visibility};
 use crate::vertex::{
     FACING_COUNT, QuadEncodeInput, TerrainPass, TerrainVertex, encode_quad, facing_of_cullface,
     opposite_facing, pack_local_section_index,
@@ -58,7 +59,6 @@ impl Default for MeshOptions {
     }
 }
 
-#[derive(Default)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     /// Opaque quads (block models and lava fluids).
@@ -71,6 +71,22 @@ pub struct Mesh {
     /// One entry per 6-index group in `translucent_indices`, in the same
     /// order.
     pub translucent_meta: Vec<QuadMeta>,
+    /// Per-section face-connectivity matrices for the occlusion-cull graph
+    /// (Sodium `VisibilityEncoding`), one per 16³ section of the column.
+    pub section_visibility: [SectionVisibility; SECTIONS_PER_CHUNK],
+}
+
+impl Default for Mesh {
+    fn default() -> Self {
+        Self {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            translucent_indices: Vec::new(),
+            opaque_meta: Vec::new(),
+            translucent_meta: Vec::new(),
+            section_visibility: [FULL_VISIBILITY; SECTIONS_PER_CHUNK],
+        }
+    }
 }
 
 impl Mesh {
@@ -413,6 +429,7 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
         });
     }
 
+    mesh.section_visibility = compute_section_visibility(chunk);
     mesh
 }
 

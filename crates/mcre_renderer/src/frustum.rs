@@ -31,6 +31,14 @@ impl Frustum {
         frustum
     }
 
+    /// Frustum that contains every box (planes pass everything). Used for
+    /// exhaustive checks and tests.
+    pub fn all() -> Self {
+        Self {
+            planes: [[0.0, 0.0, 0.0, 1.0]; 6],
+        }
+    }
+
     pub fn intersects_aabb(&self, min: [f32; 3], max: [f32; 3]) -> bool {
         for plane in &self.planes {
             let px = if plane[0] >= 0.0 { max[0] } else { min[0] };
@@ -41,6 +49,22 @@ impl Frustum {
             }
         }
         true
+    }
+
+    /// Box centered at `center` with per-axis half-extents (Sodium
+    /// `Viewport.isBoxVisible`).
+    pub fn intersects_box(&self, center: [f32; 3], half: [f32; 3]) -> bool {
+        let min = [
+            center[0] - half[0],
+            center[1] - half[1],
+            center[2] - half[2],
+        ];
+        let max = [
+            center[0] + half[0],
+            center[1] + half[1],
+            center[2] + half[2],
+        ];
+        self.intersects_aabb(min, max)
     }
 }
 

@@ -6,6 +6,7 @@ pub mod frustum;
 pub mod lightmap;
 pub mod math;
 pub mod mesh;
+pub mod occlusion;
 pub mod region;
 pub mod remesh;
 pub mod renderer;
@@ -22,6 +23,10 @@ pub use math::Mat4;
 pub use mesh::{
     BlockAccess, LightMode, Mesh, MeshOptions, QuadMeta, QuadSortData, SectionMesh, SectionPass,
     Vertex, mesh_chunk, pack_chunk_sections,
+};
+pub use occlusion::{
+    CullParams, FULL_VISIBILITY, SectionVisibility, compute_section_visibility,
+    find_visible_sections,
 };
 pub use region::{
     RegionKey, RenderRegion, SectionAlloc, SectionPassAlloc, SharedQuadIndexBuffer,
