@@ -23,6 +23,7 @@ fn atlas() -> Atlas {
         height: 16,
         pixels: vec![],
         regions: vec![],
+        has_alpha: vec![],
         fallback: AtlasRegion {
             x: 0,
             y: 0,

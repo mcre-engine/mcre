@@ -13,7 +13,12 @@ use crate::clouds::{
     radius_cells,
 };
 use crate::lightmap::{LightmapParams, lightmap_rgba, sky_light_color, sky_light_factor};
-use crate::mesh::{Mesh, Vertex};
+use crate::mesh::SectionMesh;
+use crate::region::{
+    RegionKey, RenderRegion, SharedQuadIndexBuffer, chunk_section_slot, merge_visible_runs,
+    section_world_origin, visible_faces,
+};
+use crate::vertex::{FormatFlags, TerrainPass};
 
 const SKY: wgpu::Color = wgpu::Color {
     r: 0.53,
@@ -32,24 +37,26 @@ const BORDER_CHUNK_RADIUS: i32 = 4;
 const BORDER_CELL: f32 = 16.0;
 const BORDER_Y: f32 = 0.06;
 
-/// One chunk's mesh for a frame, with an identity the renderer uses to
-/// cache GPU buffers across frames. `version` must change every time the
-/// mesh data for `origin` is replaced; unchanged versions are never
-/// re-uploaded.
+/// Fixed section-table storage capacity (world origins, one per draw).
+/// Pre-allocated so the bind group never needs rebuilding mid-frame.
+const SECTION_TABLE_CAPACITY: usize = 1 << 16;
+
+const TERRAIN_SHADER: &str = concat!(
+    include_str!("terrain_vertex.wgsl"),
+    "\n",
+    include_str!("shader.wgsl"),
+);
+
+/// One chunk's packed sections for a frame, with an identity the renderer
+/// uses to cache region allocations across frames. `version` must change
+/// every time the section data for `origin` is replaced.
 pub struct RenderChunk<'a> {
     pub origin: [i32; 2],
     pub version: u64,
-    pub mesh: &'a Mesh,
-}
-
-struct GpuMesh {
-    version: u64,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    /// Total index count (opaque followed by translucent).
-    index_count: u32,
-    /// First index of the translucent range.
-    translucent_start: u32,
+    pub sections: &'a [Option<SectionMesh>; mcre_world::SECTIONS_PER_CHUNK],
+    /// 24-bit mask of chunk-local sections to draw this frame (frustum).
+    /// Uploads on version change still cover every section.
+    pub visible_sections: u32,
 }
 
 #[repr(C)]
@@ -85,8 +92,8 @@ struct Uniforms {
     camera_pos: [f32; 4],
     /// Fog color in `rgb`, fog start distance in `a`.
     fog_color_start: [f32; 4],
-    /// Fog end distance in `x`; cloud fog fade-out distance in `y` (the
-    /// sky-light factor is baked into the lightmap texture instead).
+    /// Fog end distance in `x`; cloud fog fade-out distance in `y`; the
+    /// texcoord shrink epsilon in `z`.
     fog_end_sky: [f32; 4],
     /// Debug bits in `x` (`unlit`, `heatmap`, `fog_off`), `yzw` padding.
     flags: [u32; 4],
@@ -141,6 +148,32 @@ impl wgpu::rwh::HasDisplayHandle for SharedWindow {
     }
 }
 
+struct TerrainDraw {
+    key: RegionKey,
+    base_vertex: u32,
+    vertex_count: u32,
+    table_index: u32,
+}
+
+struct TranslucentSectionDraw {
+    key: RegionKey,
+    slot: usize,
+    table_index: u32,
+    center: [f32; 3],
+    base_vertex: u32,
+    index_count: u32,
+}
+
+/// Last-frame terrain submission counters, for the viewer debug UI.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FrameStats {
+    pub opaque_draws: u32,
+    pub translucent_draws: u32,
+    pub sections: u32,
+    pub arena_used: u64,
+    pub arena_capacity: u64,
+}
+
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -159,13 +192,20 @@ pub struct Renderer {
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
     depth_view: wgpu::TextureView,
-    mesh_cache: HashMap<[i32; 2], GpuMesh>,
+    /// Chunk origin → mesh version; the region arenas own the GPU data.
+    mesh_cache: HashMap<[i32; 2], u64>,
+    regions: HashMap<RegionKey, RenderRegion>,
+    shared_indices: SharedQuadIndexBuffer,
+    section_table: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
     atlas_sampler: wgpu::Sampler,
+    lightmap_sampler: wgpu::Sampler,
     lightmap_texture: wgpu::Texture,
     lightmap_view: wgpu::TextureView,
     /// The lightmap parameters the texture was baked for.
     lightmap_key: LightmapParams,
+    /// Sodium `u_TexCoordShrink` (8-bit subtexel anti-bleed epsilon).
+    tex_coord_shrink: f32,
     fog_color: [f32; 3],
     fog_start: f32,
     fog_end: f32,
@@ -177,6 +217,7 @@ pub struct Renderer {
     cloud_height: f32,
     cloud_range_chunks: u32,
     cloud_time: (i64, f32),
+    stats: FrameStats,
 }
 
 impl Renderer {
@@ -222,7 +263,13 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        let set = create_pipeline(&device, &queue, atlas, config.format);
+        let section_table = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("section-table"),
+            size: SECTION_TABLE_CAPACITY as u64 * size_of::<[f32; 4]>() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let set = create_pipeline(&device, &queue, atlas, config.format, &section_table);
         let depth_view = create_depth_view(&device, config.width, config.height);
         let (border_vertices, border_vertex_count) = create_border_buffers(&device);
         let egui_renderer = egui_wgpu::Renderer::new(
@@ -230,6 +277,7 @@ impl Renderer {
             config.format,
             egui_wgpu::RendererOptions::default(),
         );
+        let shared_indices = SharedQuadIndexBuffer::new(&device);
 
         Ok(Self {
             surface,
@@ -249,12 +297,17 @@ impl Renderer {
             bind_group: set.bind_group,
             bind_group_layout: set.bind_group_layout,
             atlas_sampler: set.atlas_sampler,
+            lightmap_sampler: set.lightmap_sampler,
             lightmap_texture: set.lightmap_texture,
             lightmap_view: set.lightmap_view,
             lightmap_key: set.lightmap_key,
             uniform_buffer: set.uniform_buffer,
             depth_view,
             mesh_cache: HashMap::new(),
+            regions: HashMap::new(),
+            shared_indices,
+            section_table,
+            tex_coord_shrink: shrink_for_width(atlas.width),
             fog_color: [SKY.r as f32, SKY.g as f32, SKY.b as f32],
             fog_start: 64.0,
             fog_end: 160.0,
@@ -266,7 +319,13 @@ impl Renderer {
             cloud_height: CLOUD_HEIGHT,
             cloud_range_chunks: DEFAULT_CLOUD_RANGE,
             cloud_time: (0, 0.0),
+            stats: FrameStats::default(),
         })
+    }
+
+    /// Terrain submission counters from the most recent `render` call.
+    pub fn frame_stats(&self) -> FrameStats {
+        self.stats
     }
 
     /// Distance fog: color fades in between `start` and `end` world units
@@ -446,18 +505,52 @@ impl Renderer {
         self.chunk_borders = enabled;
     }
 
-    /// Drops cached GPU buffers for chunk origins not in `keep`. The viewer
+    /// Drops region allocations for chunk origins not in `keep`. The viewer
     /// calls this after pruning far-away chunk meshes so streaming over
     /// long distances cannot grow GPU memory without bound.
     pub fn prune_mesh_cache(&mut self, keep: &[[i32; 2]]) {
-        self.mesh_cache.retain(|origin, _| keep.contains(origin));
+        let removed: Vec<[i32; 2]> = self
+            .mesh_cache
+            .keys()
+            .filter(|origin| !keep.contains(origin))
+            .copied()
+            .collect();
+        for origin in removed {
+            self.free_chunk(origin);
+            self.mesh_cache.remove(&origin);
+        }
+        self.regions.retain(|_, region| !region.is_empty());
+    }
+
+    fn free_chunk(&mut self, origin: [i32; 2]) {
+        for section in 0..mcre_world::SECTIONS_PER_CHUNK {
+            let (key, slot) = chunk_section_slot(origin, section);
+            if let Some(region) = self.regions.get_mut(&key) {
+                region.clear_section(slot);
+            }
+        }
+    }
+
+    fn upload_chunk(&mut self, origin: [i32; 2], sections: &[Option<SectionMesh>]) {
+        for (index, section) in sections.iter().enumerate() {
+            let (key, slot) = chunk_section_slot(origin, index);
+            let region = self
+                .regions
+                .entry(key)
+                .or_insert_with(|| RenderRegion::new(&self.device, key));
+            match section {
+                Some(mesh) => region.update_section(&self.device, &self.queue, slot, mesh),
+                None => region.clear_section(slot),
+            }
+        }
     }
 
     /// Hot-swaps the texture atlas (pack reload): uploads new pixels and
-    /// rebuilds the bind group. Pipelines and mesh caches are untouched;
+    /// rebuilds the bind group. Pipelines and region caches are untouched;
     /// callers must remesh (UVs move) afterwards.
     pub fn set_atlas(&mut self, atlas: &Atlas) {
         let (_texture, view) = create_atlas_texture(&self.device, &self.queue, atlas);
+        self.tex_coord_shrink = shrink_for_width(atlas.width);
         self.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("mcre-bind-group"),
             layout: &self.bind_group_layout,
@@ -477,6 +570,14 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: wgpu::BindingResource::TextureView(&self.lightmap_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.section_table.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&self.lightmap_sampler),
                 },
             ],
         });
@@ -553,6 +654,102 @@ impl Renderer {
 
         self.prepare_clouds(camera_pos);
 
+        for region in self.regions.values_mut() {
+            region.begin_frame();
+        }
+        for chunk in chunks {
+            let stale = self
+                .mesh_cache
+                .get(&chunk.origin)
+                .is_none_or(|version| *version != chunk.version);
+            if stale {
+                self.upload_chunk(chunk.origin, chunk.sections);
+                self.mesh_cache.insert(chunk.origin, chunk.version);
+            }
+        }
+
+        let mut section_table: Vec<[f32; 4]> = Vec::new();
+        let mut opaque: Vec<TerrainDraw> = Vec::new();
+        let mut translucent: Vec<TranslucentSectionDraw> = Vec::new();
+        let mut sections_drawn = 0u32;
+        'chunks: for chunk in chunks {
+            for index in 0..mcre_world::SECTIONS_PER_CHUNK {
+                if chunk.visible_sections & (1 << index) == 0 {
+                    continue;
+                }
+                let (key, slot) = chunk_section_slot(chunk.origin, index);
+                let Some(region) = self.regions.get(&key) else {
+                    continue;
+                };
+                let Some(alloc) = region.section(slot) else {
+                    continue;
+                };
+                let origin = section_world_origin(chunk.origin, index);
+                let center = [
+                    origin[0] as f32 + 8.0,
+                    origin[1] as f32 + 8.0,
+                    origin[2] as f32 + 8.0,
+                ];
+                sections_drawn += 1;
+                for (pass_index, pass) in alloc.passes.iter().enumerate() {
+                    if pass.is_empty() {
+                        continue;
+                    }
+                    if section_table.len() >= SECTION_TABLE_CAPACITY {
+                        break 'chunks;
+                    }
+                    let table_index = section_table.len() as u32;
+                    section_table.push([origin[0] as f32, origin[1] as f32, origin[2] as f32, 0.0]);
+                    if pass_index == TerrainPass::Translucent.index() {
+                        translucent.push(TranslucentSectionDraw {
+                            key,
+                            slot,
+                            table_index,
+                            center,
+                            base_vertex: pass.base_vertex,
+                            index_count: 0,
+                        });
+                        continue;
+                    }
+                    let faces = visible_faces(camera_pos, origin);
+                    let runs = merge_visible_runs(&pass.counts, pass.base_vertex, faces);
+                    for (base_vertex, vertex_count) in runs {
+                        opaque.push(TerrainDraw {
+                            key,
+                            base_vertex,
+                            vertex_count,
+                            table_index,
+                        });
+                    }
+                }
+            }
+        }
+
+        for draw in &mut translucent {
+            let Some(region) = self.regions.get_mut(&draw.key) else {
+                continue;
+            };
+            if let Some((base_vertex, index_count)) =
+                region.sort_translucent(&self.device, &self.queue, draw.slot, camera_pos)
+            {
+                draw.base_vertex = base_vertex;
+                draw.index_count = index_count;
+            }
+        }
+        translucent.retain(|draw| draw.index_count > 0);
+        translucent.sort_by(|a, b| {
+            center_distance_sq(b.center, camera_pos)
+                .total_cmp(&center_distance_sq(a.center, camera_pos))
+        });
+
+        self.stats = FrameStats {
+            opaque_draws: opaque.len() as u32,
+            translucent_draws: translucent.len() as u32,
+            sections: sections_drawn,
+            arena_used: self.regions.values().map(|r| r.arena_usage().0).sum(),
+            arena_capacity: self.regions.values().map(|r| r.arena_usage().1).sum(),
+        };
+
         let uniforms = Uniforms {
             view_proj,
             camera_pos: [camera_pos[0], camera_pos[1], camera_pos[2], 0.0],
@@ -565,38 +762,28 @@ impl Renderer {
             fog_end_sky: [
                 self.fog_end,
                 cloud_fog_end(self.cloud_range_chunks),
-                0.0,
+                self.tex_coord_shrink,
                 0.0,
             ],
             flags: [debug_bits(&self.debug_flags), 0, 0, 0],
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        if !section_table.is_empty() {
+            self.queue
+                .write_buffer(&self.section_table, 0, bytemuck::cast_slice(&section_table));
+        }
+
+        let max_quads = opaque
+            .iter()
+            .map(|draw| draw.vertex_count / 4)
+            .max()
+            .unwrap_or(0);
+        self.shared_indices.ensure_quads(&self.device, max_quads);
 
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-
-        for chunk in chunks {
-            let stale = self
-                .mesh_cache
-                .get(&chunk.origin)
-                .is_none_or(|cached| cached.version != chunk.version);
-            if stale {
-                let (vertex_buffer, index_buffer, index_count, translucent_start) =
-                    create_mesh_buffers(&self.device, chunk.mesh);
-                self.mesh_cache.insert(
-                    chunk.origin,
-                    GpuMesh {
-                        version: chunk.version,
-                        vertex_buffer,
-                        index_buffer,
-                        index_count,
-                        translucent_start,
-                    },
-                );
-            }
-        }
 
         if chunks.is_empty() {
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -649,26 +836,22 @@ impl Renderer {
             });
             pass.set_pipeline(&self.pipelines[pipeline_index(self.wireframe, self.cull_back)]);
             pass.set_bind_group(0, &self.bind_group, &[]);
-            for chunk in chunks {
-                let cached = &self.mesh_cache[&chunk.origin];
-                pass.set_vertex_buffer(0, cached.vertex_buffer.slice(..));
-                pass.set_index_buffer(cached.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..cached.translucent_start, 0, 0..1);
+            pass.set_index_buffer(
+                self.shared_indices.buffer().slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
+            for draw in &opaque {
+                let region = &self.regions[&draw.key];
+                pass.set_vertex_buffer(0, region.vertex_buffer().slice(..));
+                pass.draw_indexed(
+                    0..draw.vertex_count / 4 * 6,
+                    draw.base_vertex as i32,
+                    draw.table_index..draw.table_index + 1,
+                );
             }
         }
 
-        let mut translucent: Vec<&RenderChunk<'_>> = chunks
-            .iter()
-            .filter(|chunk| {
-                let cached = &self.mesh_cache[&chunk.origin];
-                cached.index_count > cached.translucent_start
-            })
-            .collect();
         if !translucent.is_empty() {
-            translucent.sort_by(|a, b| {
-                chunk_distance_sq(b.origin, camera_pos)
-                    .total_cmp(&chunk_distance_sq(a.origin, camera_pos))
-            });
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("translucent-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -696,11 +879,18 @@ impl Renderer {
                 &self.translucent_pipelines[pipeline_index(self.wireframe, self.cull_back)],
             );
             pass.set_bind_group(0, &self.bind_group, &[]);
-            for chunk in translucent {
-                let cached = &self.mesh_cache[&chunk.origin];
-                pass.set_vertex_buffer(0, cached.vertex_buffer.slice(..));
-                pass.set_index_buffer(cached.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(cached.translucent_start..cached.index_count, 0, 0..1);
+            for draw in &translucent {
+                let region = &self.regions[&draw.key];
+                let Some(indices) = region.translucent_index_buffer(draw.slot) else {
+                    continue;
+                };
+                pass.set_vertex_buffer(0, region.vertex_buffer().slice(..));
+                pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(
+                    0..draw.index_count,
+                    draw.base_vertex as i32,
+                    draw.table_index..draw.table_index + 1,
+                );
             }
         }
 
@@ -865,6 +1055,7 @@ struct PipelineSet {
     bind_group: wgpu::BindGroup,
     bind_group_layout: wgpu::BindGroupLayout,
     atlas_sampler: wgpu::Sampler,
+    lightmap_sampler: wgpu::Sampler,
     lightmap_texture: wgpu::Texture,
     lightmap_view: wgpu::TextureView,
     lightmap_key: LightmapParams,
@@ -987,6 +1178,7 @@ fn create_pipeline(
     queue: &wgpu::Queue,
     atlas: &Atlas,
     surface_format: wgpu::TextureFormat,
+    section_table: &wgpu::Buffer,
 ) -> PipelineSet {
     let (_atlas_texture, atlas_view) = create_atlas_texture(device, queue, atlas);
 
@@ -997,6 +1189,17 @@ fn create_pipeline(
         address_mode_w: wgpu::AddressMode::ClampToEdge,
         mag_filter: wgpu::FilterMode::Nearest,
         min_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+
+    let lightmap_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("lightmap-sampler"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
         mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         ..Default::default()
     });
@@ -1039,12 +1242,28 @@ fn create_pipeline(
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 3,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
                 },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 5,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
         ],
@@ -1073,6 +1292,14 @@ fn create_pipeline(
                 binding: 3,
                 resource: wgpu::BindingResource::TextureView(&lightmap_view),
             },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: section_table.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: wgpu::BindingResource::Sampler(&lightmap_sampler),
+            },
         ],
     });
 
@@ -1084,7 +1311,7 @@ fn create_pipeline(
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("mcre-shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(TERRAIN_SHADER.into()),
     });
 
     let mains = [
@@ -1273,6 +1500,7 @@ fn create_pipeline(
         bind_group,
         bind_group_layout,
         atlas_sampler: sampler,
+        lightmap_sampler,
         lightmap_texture,
         lightmap_view,
         lightmap_key: LightmapParams::default(),
@@ -1346,6 +1574,52 @@ fn create_cloud_buffer(device: &wgpu::Device, vertices: &[CloudVertex]) -> Optio
     )
 }
 
+fn terrain_vertex_layout(offsets: FormatFlags) -> [wgpu::VertexAttribute; 8] {
+    let offsets = offsets.offsets();
+    [
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Uint32x2,
+            offset: 0,
+            shader_location: 0,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Unorm8x4,
+            offset: 8,
+            shader_location: 1,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Uint16x2,
+            offset: 12,
+            shader_location: 2,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Uint8x4,
+            offset: 16,
+            shader_location: 3,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Uint32,
+            offset: offsets.block_id as u64,
+            shader_location: 4,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Snorm8x4,
+            offset: offsets.normal as u64,
+            shader_location: 5,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Uint16x2,
+            offset: offsets.mid_uv as u64,
+            shader_location: 6,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Sint8x4,
+            offset: offsets.mid_block as u64,
+            shader_location: 7,
+        },
+    ]
+}
+
 fn build_main_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
@@ -1355,6 +1629,8 @@ fn build_main_pipeline(
     cull_mode: Option<wgpu::Face>,
     translucent: bool,
 ) -> wgpu::RenderPipeline {
+    let attributes = terrain_vertex_layout(FormatFlags::FULL);
+    let stride = FormatFlags::FULL.offsets().stride as u64;
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("mcre-pipeline"),
         layout: Some(pipeline_layout),
@@ -1363,14 +1639,9 @@ fn build_main_pipeline(
             entry_point: Some("vs_main"),
             compilation_options: Default::default(),
             buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: size_of::<Vertex>() as u64,
+                array_stride: stride,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![
-                    0 => Float32x3,
-                    1 => Float32x2,
-                    2 => Float32x3,
-                    3 => Float32x2
-                ],
+                attributes: &attributes,
             })],
         },
         primitive: wgpu::PrimitiveState {
@@ -1416,10 +1687,15 @@ fn build_main_pipeline(
     })
 }
 
-fn chunk_distance_sq(origin: [i32; 2], camera_pos: [f32; 3]) -> f32 {
-    let dx = (origin[0] as f32 + 0.5) * 16.0 - camera_pos[0];
-    let dz = (origin[1] as f32 + 0.5) * 16.0 - camera_pos[2];
-    dx * dx + dz * dz
+fn center_distance_sq(center: [f32; 3], camera_pos: [f32; 3]) -> f32 {
+    let dx = center[0] - camera_pos[0];
+    let dy = center[1] - camera_pos[1];
+    let dz = center[2] - camera_pos[2];
+    dx * dx + dy * dy + dz * dz
+}
+
+fn shrink_for_width(width: u32) -> f32 {
+    1.0 / 32768.0 - 1.0 / (width as f32 * 256.0)
 }
 
 fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
@@ -1438,46 +1714,6 @@ fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Te
         view_formats: &[],
     });
     texture.create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-fn create_mesh_buffers(
-    device: &wgpu::Device,
-    mesh: &Mesh,
-) -> (wgpu::Buffer, wgpu::Buffer, u32, u32) {
-    let vertex_contents: &[u8] = if mesh.vertices.is_empty() {
-        &[0u8; 4]
-    } else {
-        bytemuck::cast_slice(&mesh.vertices)
-    };
-    let indices = mesh
-        .indices
-        .iter()
-        .chain(mesh.translucent_indices.iter())
-        .copied()
-        .collect::<Vec<_>>();
-    let index_contents: &[u8] = if indices.is_empty() {
-        &[0u8; 4]
-    } else {
-        bytemuck::cast_slice(&indices)
-    };
-
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("mesh-vertices"),
-        contents: vertex_contents,
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("mesh-indices"),
-        contents: index_contents,
-        usage: wgpu::BufferUsages::INDEX,
-    });
-
-    (
-        vertex_buffer,
-        index_buffer,
-        indices.len() as u32,
-        mesh.indices.len() as u32,
-    )
 }
 
 fn create_border_buffers(device: &wgpu::Device) -> (wgpu::Buffer, u32) {
@@ -1602,5 +1838,28 @@ mod tests {
         assert!(vertices.contains(&BorderVertex {
             position: [-extent, BORDER_Y, extent],
         }));
+    }
+
+    #[test]
+    fn terrain_layout_matches_full_xhfp_offsets() {
+        let offsets = FormatFlags::FULL.offsets();
+        assert_eq!(offsets.stride, 36);
+        assert_eq!(offsets.block_id, 20);
+        assert_eq!(offsets.normal, 24);
+        assert_eq!(offsets.mid_uv, 28);
+        assert_eq!(offsets.mid_block, 32);
+        let attributes = terrain_vertex_layout(FormatFlags::FULL);
+        assert_eq!(attributes[4].offset, 20);
+        assert_eq!(attributes[5].offset, 24);
+        assert_eq!(attributes[6].offset, 28);
+        assert_eq!(attributes[7].offset, 32);
+    }
+
+    #[test]
+    fn texcoord_shrink_matches_sodium_formula() {
+        assert!(
+            (shrink_for_width(16384) - (1.0 / 32768.0 - 1.0 / (16384.0 * 256.0))).abs() < 1e-12
+        );
+        assert!(shrink_for_width(16384) > 0.0);
     }
 }

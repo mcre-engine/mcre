@@ -7,7 +7,7 @@ use mcre_resource_pack::ResourcePackData;
 use mcre_world::{CHUNK_WIDTH, Chunk, ChunkLight, ChunkPos, World};
 
 use crate::atlas::Atlas;
-use crate::mesh::{LightMode, Mesh, MeshOptions, mesh_chunk};
+use crate::mesh::{LightMode, Mesh, MeshOptions, SectionMesh, mesh_chunk, pack_chunk_sections};
 
 /// Save-backed chunk source for streaming jobs. `None` in the worker means
 /// streaming is disabled (demo mode).
@@ -33,6 +33,8 @@ pub struct MeshedChunk {
     pub origin: [i32; 2],
     pub light: ChunkLight,
     pub mesh: Mesh,
+    /// Packed per-section GPU-ready geometry (24 sections × 3 passes).
+    pub sections: [Option<SectionMesh>; mcre_world::SECTIONS_PER_CHUNK],
     /// Block data for streamed-in chunks, which the main world lacks.
     /// `None` for ordinary remeshes (main world already has the blocks).
     pub chunk: Option<Chunk>,
@@ -105,11 +107,13 @@ pub fn run_job(
             job.mode,
             job.options,
         );
+        let sections = pack_chunk_sections(&mesh, origin);
         chunks.push(MeshedChunk {
             pos: *pos,
             origin,
             light: chunk.light().clone(),
             mesh,
+            sections,
             chunk: if streamed.contains(&(pos.x, pos.z)) {
                 Some(chunk.clone())
             } else {
@@ -223,6 +227,7 @@ mod tests {
             height: 16,
             pixels: vec![0; 16 * 16 * 4],
             regions: vec![],
+            has_alpha: vec![],
             fallback: crate::AtlasRegion {
                 x: 0,
                 y: 0,

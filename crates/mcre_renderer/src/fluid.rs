@@ -9,7 +9,10 @@ use mcre_world::fluid::{FluidKind, FluidState, MAX_FLUID_HEIGHT, fluid_state, is
 use mcre_world::shape::fluid_face_occluded;
 
 use crate::atlas::{Atlas, AtlasRegion};
-use crate::mesh::{BlockAccess, Mesh, MeshOptions, Vertex, atlas_uv, sample_light, water_tint};
+use crate::mesh::{
+    BlockAccess, Mesh, MeshOptions, QuadMeta, Vertex, atlas_uv, sample_light, water_tint,
+};
+use crate::vertex::{FACING_NEG_Y, FACING_POS_Y, TerrainPass, facing_of, opposite_facing};
 
 /// Vanilla `FluidRenderer` face offset toward the rendered face.
 const FACE_OFFSET: f32 = 0.001;
@@ -250,17 +253,42 @@ fn scaled(tint: [f32; 3], factor: f32) -> [f32; 3] {
     [tint[0] * factor, tint[1] * factor, tint[2] * factor]
 }
 
-fn push_face(mesh: &mut Mesh, vertices: [Vertex; 4], translucent: bool, back_face: bool) {
+fn push_face(
+    mesh: &mut Mesh,
+    vertices: [Vertex; 4],
+    block_pos: [i32; 3],
+    state: BlockState,
+    facing: u8,
+    translucent: bool,
+    back_face: bool,
+) {
     let base = mesh.vertices.len() as u32;
     mesh.vertices.extend_from_slice(&vertices);
-    let indices = if translucent {
-        &mut mesh.translucent_indices
+    let pass = if translucent {
+        TerrainPass::Translucent
     } else {
-        &mut mesh.indices
+        TerrainPass::Cutout
+    };
+    let (indices, metas) = if translucent {
+        (&mut mesh.translucent_indices, &mut mesh.translucent_meta)
+    } else {
+        (&mut mesh.indices, &mut mesh.opaque_meta)
     };
     indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    metas.push(QuadMeta {
+        facing,
+        pass,
+        block_pos,
+        state,
+    });
     if back_face {
         indices.extend_from_slice(&[base + 2, base + 1, base, base + 3, base + 2, base]);
+        metas.push(QuadMeta {
+            facing: opposite_facing(facing),
+            pass,
+            block_pos,
+            state,
+        });
     }
 }
 
@@ -458,6 +486,9 @@ pub(crate) fn mesh_fluid<A: BlockAccess + ?Sized>(
                         light,
                     },
                 ],
+                pos,
+                state,
+                FACING_POS_Y,
                 translucent,
                 back_face,
             );
@@ -497,6 +528,9 @@ pub(crate) fn mesh_fluid<A: BlockAccess + ?Sized>(
                     light,
                 },
             ],
+            pos,
+            state,
+            FACING_NEG_Y,
             translucent,
             false,
         );
@@ -597,6 +631,9 @@ pub(crate) fn mesh_fluid<A: BlockAccess + ?Sized>(
                     light,
                 },
             ],
+            pos,
+            state,
+            facing_of(face_dir),
             translucent,
             options.double_sided_liquids && !is_overlay,
         );
@@ -648,6 +685,7 @@ mod tests {
             height: 16,
             pixels: vec![],
             regions: vec![],
+            has_alpha: vec![],
             fallback: AtlasRegion {
                 x: 0,
                 y: 0,
@@ -688,6 +726,41 @@ mod tests {
         // Top, bottom, and four side faces; back faces add indices only.
         assert_eq!(mesh.vertices.len(), 6 * 4);
         assert_eq!(mesh.translucent_indices.len(), 11 * 6);
+    }
+
+    #[test]
+    fn pack_puts_back_faces_in_opposite_facing_with_flipped_normal() {
+        let pos = [5, 60, 7];
+        let access = Cells(|x, y, z| if [x, y, z] == pos { water(0) } else { air() });
+        let mesh = mesh_of(pos, water(0), &access, MeshOptions::default());
+
+        let sections = crate::mesh::pack_chunk_sections(&mesh, [0, 0]);
+        let section_y = ((pos[1] - mcre_world::WORLD_MIN_Y) / 16) as usize;
+        let section = sections[section_y].as_ref().expect("fluid section");
+        let translucent = &section.passes[2];
+
+        let up = crate::vertex::FACING_POS_Y as usize;
+        let down = crate::vertex::FACING_NEG_Y as usize;
+        let pos_x = crate::vertex::FACING_POS_X as usize;
+        let neg_x = crate::vertex::FACING_NEG_X as usize;
+        let pos_z = crate::vertex::FACING_POS_Z as usize;
+        let neg_z = crate::vertex::FACING_NEG_Z as usize;
+        // Fronts and backs pair up on each axis except down (vanilla emits no
+        // bottom back face): top front (+Y), top back + down front (−Y), and
+        // each side with its reversed copy.
+        assert_eq!(translucent.counts[up], 4);
+        assert_eq!(translucent.counts[down], 8);
+        assert_eq!(translucent.counts[pos_x], 8);
+        assert_eq!(translucent.counts[neg_x], 8);
+        assert_eq!(translucent.counts[pos_z], 8);
+        assert_eq!(translucent.counts[neg_z], 8);
+        assert_eq!(translucent.vertices.len(), 11 * 4);
+
+        let normal_y = |vertex: &crate::vertex::TerrainVertex| (vertex.normal_tangent >> 8) & 0xFF;
+        let up_first = &translucent.vertices[translucent.facing_offset(up as u8) as usize];
+        let down_first = &translucent.vertices[translucent.facing_offset(down as u8) as usize];
+        assert_eq!(normal_y(up_first), 127, "up front face normal +Y");
+        assert_eq!(normal_y(down_first), 0, "top back face normal -Y");
     }
 
     #[test]

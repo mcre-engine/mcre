@@ -7,9 +7,15 @@ use mcre_resource_pack::{
     tint_sources,
 };
 use mcre_world::shape::{face_boxes, face_shape_is_cube, is_covered};
-use mcre_world::{Biome, Block, BlockState, Chunk, DoubleBlockHalf, World};
+use mcre_world::{
+    Biome, Block, BlockState, Chunk, DoubleBlockHalf, SECTIONS_PER_CHUNK, WORLD_MIN_Y, World,
+};
 
 use crate::atlas::{Atlas, AtlasRegion};
+use crate::vertex::{
+    FACING_COUNT, QuadEncodeInput, TerrainPass, TerrainVertex, encode_quad, facing_of_cullface,
+    opposite_facing, pack_local_section_index,
+};
 
 const TINT_BLEND_RADIUS: i32 = 2;
 
@@ -60,12 +66,190 @@ pub struct Mesh {
     /// Translucent quads (water fluids), drawn in a blended pass after
     /// `indices`.
     pub translucent_indices: Vec<u32>,
+    /// One entry per 6-index group in `indices`, in the same order.
+    pub opaque_meta: Vec<QuadMeta>,
+    /// One entry per 6-index group in `translucent_indices`, in the same
+    /// order.
+    pub translucent_meta: Vec<QuadMeta>,
 }
 
 impl Mesh {
     pub fn is_empty(&self) -> bool {
         self.indices.is_empty() && self.translucent_indices.is_empty()
     }
+}
+
+/// Per-quad classification captured at mesh time, consumed by
+/// [`pack_chunk_sections`].
+#[derive(Clone, Copy, Debug)]
+pub struct QuadMeta {
+    /// Sodium `ModelQuadFacing` ordinal (`vertex::FACING_*`).
+    pub facing: u8,
+    pub pass: TerrainPass,
+    pub block_pos: [i32; 3],
+    pub state: BlockState,
+}
+
+/// Per-quad sort key for translucent back-to-front ordering (Sodium
+/// `ModelQuadNormalRelativeComparator`): world-space center + face normal.
+#[derive(Clone, Copy, Debug)]
+pub struct QuadSortData {
+    pub center: [f32; 3],
+    pub normal: [f32; 3],
+}
+
+/// Packed GPU vertices for one 16³ section, split into per-pass facing runs.
+pub struct SectionPass {
+    /// Contiguous runs for facings `0..7`; run `f` starts at
+    /// `sum(counts[0..f])`.
+    pub vertices: Vec<TerrainVertex>,
+    pub counts: [u32; FACING_COUNT],
+    /// Per-quad sort keys parallel to `vertices` quads (4 vertices each).
+    /// Populated for the translucent pass only.
+    pub sort: Vec<QuadSortData>,
+}
+
+impl SectionPass {
+    fn is_empty(&self) -> bool {
+        self.counts.iter().all(|&c| c == 0)
+    }
+
+    pub fn facing_offset(&self, facing: u8) -> u32 {
+        self.counts[..facing as usize].iter().sum()
+    }
+}
+
+/// Packed output for one chunk column: 24 sections × 3 passes.
+pub struct SectionMesh {
+    pub passes: [SectionPass; 3],
+}
+
+impl SectionMesh {
+    fn is_empty(&self) -> bool {
+        self.passes.iter().all(SectionPass::is_empty)
+    }
+}
+
+/// Packs a stage-A [`Mesh`] into per-section facing runs of packed vertices.
+/// Quads are assigned to the section that owns their block; overhanging
+/// geometry stays in the owner (the 20-bit position range covers −8..+24
+/// blocks around the section origin).
+pub fn pack_chunk_sections(
+    mesh: &Mesh,
+    origin: [i32; 2],
+) -> [Option<SectionMesh>; SECTIONS_PER_CHUNK] {
+    let section_x = origin[0].div_euclid(16);
+    let section_z = origin[1].div_euclid(16);
+    let local_x = (section_x & 7) as u8;
+    let local_z = (section_z & 7) as u8;
+
+    let mut builders: Vec<[[Vec<TerrainVertex>; FACING_COUNT]; 3]> = (0..SECTIONS_PER_CHUNK)
+        .map(|_| core::array::from_fn(|_| core::array::from_fn(|_| Vec::new())))
+        .collect();
+    let mut sort_builders: Vec<[Vec<QuadSortData>; FACING_COUNT]> = (0..SECTIONS_PER_CHUNK)
+        .map(|_| core::array::from_fn(|_| Vec::new()))
+        .collect();
+
+    let mut pack_list = |indices: &[u32], metas: &[QuadMeta]| {
+        for (group, meta) in indices.as_chunks::<6>().0.iter().zip(metas.iter()) {
+            let quad = recover_quad(group);
+            let rel_y = meta.block_pos[1] - WORLD_MIN_Y;
+            let section_y = rel_y.div_euclid(16);
+            if !(0..SECTIONS_PER_CHUNK as i32).contains(&section_y) {
+                continue;
+            }
+            let section_origin = [
+                origin[0] as f32,
+                (WORLD_MIN_Y + section_y * 16) as f32,
+                origin[1] as f32,
+            ];
+            let mut positions = [[0.0; 3]; 4];
+            let mut uvs = [[0.0; 2]; 4];
+            let mut colors = [[0.0; 3]; 4];
+            let mut light = [[0u8; 2]; 4];
+            for (i, &vertex_index) in quad.iter().enumerate() {
+                let vertex = &mesh.vertices[vertex_index as usize];
+                positions[i] = [
+                    vertex.position[0] - section_origin[0],
+                    vertex.position[1] - section_origin[1],
+                    vertex.position[2] - section_origin[2],
+                ];
+                uvs[i] = vertex.uv;
+                colors[i] = vertex.color;
+                light[i] = [
+                    (vertex.light[0].clamp(0.0, 15.0)) as u8,
+                    (vertex.light[1].clamp(0.0, 15.0)) as u8,
+                ];
+            }
+            let packed = encode_quad(&QuadEncodeInput {
+                positions,
+                uvs,
+                colors,
+                light,
+                block_pos: meta.block_pos,
+                state_id: u16::from(meta.state),
+                translucent: meta.pass == TerrainPass::Translucent,
+                emission: meta.state.light_emission().min(15),
+                section_id: pack_local_section_index(local_x, (section_y as u8) & 0x3, local_z),
+            });
+            let facing = (meta.facing as usize).min(FACING_COUNT - 1);
+            builders[section_y as usize][meta.pass.index()][facing].extend_from_slice(&packed);
+            if meta.pass == TerrainPass::Translucent {
+                let mut center = [0.0; 3];
+                for position in &positions {
+                    for axis in 0..3 {
+                        center[axis] += position[axis];
+                    }
+                }
+                for component in &mut center {
+                    *component *= 0.25;
+                }
+                sort_builders[section_y as usize][facing].push(QuadSortData {
+                    center: [
+                        section_origin[0] + center[0],
+                        section_origin[1] + center[1],
+                        section_origin[2] + center[2],
+                    ],
+                    normal: crate::vertex::compute_face_normal(&positions),
+                });
+            }
+        }
+    };
+
+    pack_list(&mesh.indices, &mesh.opaque_meta);
+    pack_list(&mesh.translucent_indices, &mesh.translucent_meta);
+
+    core::array::from_fn(|section| {
+        let mut passes = core::array::from_fn(|_| SectionPass {
+            vertices: Vec::new(),
+            counts: [0; FACING_COUNT],
+            sort: Vec::new(),
+        });
+        for pass in 0..3 {
+            for (facing, run) in builders[section][pass].iter().enumerate() {
+                passes[pass].counts[facing] = run.len() as u32;
+                passes[pass].vertices.extend_from_slice(run);
+                if pass == TerrainPass::Translucent.index() {
+                    passes[pass]
+                        .sort
+                        .extend_from_slice(&sort_builders[section][facing]);
+                }
+            }
+        }
+        let mesh = SectionMesh { passes };
+        (!mesh.is_empty()).then_some(mesh)
+    })
+}
+
+/// Recovers the quad's vertex order `[v0, v1, v2, v3]` from one 6-index
+/// triangle pair (front `[0,1,2, 0,2,3]` or reversed fluid copies).
+fn recover_quad(group: &[u32]) -> [u32; 4] {
+    let (a, b, c) = (group[0], group[1], group[2]);
+    let fourth = [group[3], group[4], group[5]]
+        .into_iter()
+        .find(|&i| i != a && i != b && i != c)
+        .expect("quad group has a unique fourth vertex");
+    [a, b, c, fourth]
 }
 
 /// Neighbor block lookups by world coordinates, used for face culling across
@@ -189,6 +373,12 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                     });
                 }
 
+                let facing = facing_of_cullface(quad.cullface);
+                let pass = if atlas.region_has_alpha(quad.texture_id) {
+                    TerrainPass::Cutout
+                } else {
+                    TerrainPass::Solid
+                };
                 mesh.indices.extend_from_slice(&[
                     base,
                     base + 1,
@@ -197,6 +387,12 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                     base + 2,
                     base + 3,
                 ]);
+                mesh.opaque_meta.push(QuadMeta {
+                    facing,
+                    pass,
+                    block_pos,
+                    state,
+                });
                 if options.double_sided_liquids && state.block().liquid_fluid().is_some() {
                     mesh.indices.extend_from_slice(&[
                         base + 2,
@@ -206,6 +402,12 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                         base + 2,
                         base,
                     ]);
+                    mesh.opaque_meta.push(QuadMeta {
+                        facing: opposite_facing(facing),
+                        pass,
+                        block_pos,
+                        state,
+                    });
                 }
             }
         });
@@ -884,17 +1086,16 @@ fn connection_prop(state: BlockState, direction: Direction) -> bool {
 }
 
 /// Maps model-space UVs (0..16) to normalized atlas coordinates. Regions pack
-/// edge-to-edge with zero gutter, so the mapping is inset by a sub-texel
-/// epsilon: edge UVs land just inside the region instead of on texel centers
-/// of the first/last texel row.
+/// edge-to-edge with zero gutter; anti-bleed is handled by the packed format's
+/// centroid-biased texcoord encoding (Sodium `encodeTexture`), so no inset is
+/// applied here.
 pub(crate) fn atlas_uv(region: AtlasRegion, atlas: &Atlas, uv: &[f32; 2]) -> [f32; 2] {
     let u = (uv[0] / 16.0).clamp(0.0, 1.0);
     let v = (uv[1] / 16.0).clamp(0.0, 1.0);
-    let eps = 0.01;
-    let x0 = region.x as f32 + eps;
-    let x1 = (region.x + region.width) as f32 - eps;
-    let y0 = region.y as f32 + eps;
-    let y1 = (region.y + region.height) as f32 - eps;
+    let x0 = region.x as f32;
+    let x1 = (region.x + region.width) as f32;
+    let y0 = region.y as f32;
+    let y1 = (region.y + region.height) as f32;
     let px = x0 + u * (x1 - x0);
     let py = y0 + v * (y1 - y0);
     [px / atlas.width as f32, py / atlas.height as f32]
@@ -1213,6 +1414,7 @@ mod tests {
             height: 16,
             pixels: vec![],
             regions: vec![],
+            has_alpha: vec![],
             fallback: AtlasRegion {
                 x: 0,
                 y: 0,
@@ -2061,6 +2263,121 @@ mod tests {
         assert_eq!(mesh.indices.len() / 6, 1);
     }
 
+    fn mesh_two_quads(atlas: &Atlas) -> Mesh {
+        let data = stone_data(vec![quad(Some(Direction::Up)), quad(None)]);
+        let mut chunk = Chunk::new();
+        chunk.set_block(8, 0, 8, Block::STONE.default_state());
+        mesh_chunk(
+            &data,
+            atlas,
+            &chunk,
+            &World::new(0),
+            [0, 0],
+            LightMode::Smooth,
+            MeshOptions::default(),
+        )
+    }
+
+    #[test]
+    fn quad_meta_records_facing_and_pass() {
+        let mesh = mesh_two_quads(&test_atlas());
+        assert_eq!(mesh.opaque_meta.len(), 2);
+        assert_eq!(mesh.opaque_meta[0].facing, crate::vertex::FACING_POS_Y);
+        assert_eq!(mesh.opaque_meta[0].pass, TerrainPass::Solid);
+        assert_eq!(mesh.opaque_meta[0].block_pos, [8, 0, 8]);
+        assert_eq!(
+            u16::from(mesh.opaque_meta[0].state),
+            u16::from(Block::STONE.default_state())
+        );
+        assert_eq!(mesh.opaque_meta[1].facing, crate::vertex::FACING_UNASSIGNED);
+    }
+
+    #[test]
+    fn alpha_textures_classify_as_cutout() {
+        let mut atlas = test_atlas();
+        atlas.has_alpha = vec![true];
+        let mesh = mesh_two_quads(&atlas);
+        assert!(
+            mesh.opaque_meta
+                .iter()
+                .all(|m| m.pass == TerrainPass::Cutout)
+        );
+    }
+
+    #[test]
+    fn pack_chunk_sections_assigns_by_block_y() {
+        let data = stone_data(vec![quad(Some(Direction::Up))]);
+        let atlas = test_atlas();
+        let mut chunk = Chunk::new();
+        chunk.set_block(8, 0, 8, Block::STONE.default_state());
+        chunk.set_block(8, 17, 8, Block::STONE.default_state());
+        let mesh = mesh_chunk(
+            &data,
+            &atlas,
+            &chunk,
+            &World::new(0),
+            [0, 0],
+            LightMode::Smooth,
+            MeshOptions::default(),
+        );
+
+        let sections = pack_chunk_sections(&mesh, [0, 0]);
+        let low = sections[4].as_ref().expect("section for y=0");
+        assert_eq!(
+            low.passes[0].counts[crate::vertex::FACING_POS_Y as usize],
+            4
+        );
+        let decoded = crate::vertex::decode_position(low.passes[0].vertices[0].position);
+        assert!((decoded[1] - 1.0).abs() < 1e-4, "local y: {decoded:?}");
+
+        let high = sections[5].as_ref().expect("section for y=17");
+        assert_eq!(
+            high.passes[0].counts[crate::vertex::FACING_POS_Y as usize],
+            4
+        );
+        let decoded = crate::vertex::decode_position(high.passes[0].vertices[0].position);
+        assert!((decoded[1] - 2.0).abs() < 1e-4, "local y: {decoded:?}");
+
+        assert!(sections[3].is_none());
+        assert!(sections[6].is_none());
+    }
+
+    #[test]
+    fn pack_layout_groups_facing_runs_contiguously() {
+        let data = stone_data(vec![
+            quad(Some(Direction::Up)),
+            quad(Some(Direction::East)),
+            quad(None),
+        ]);
+        let atlas = test_atlas();
+        let mut chunk = Chunk::new();
+        chunk.set_block(8, 0, 8, Block::STONE.default_state());
+        let mesh = mesh_chunk(
+            &data,
+            &atlas,
+            &chunk,
+            &World::new(0),
+            [0, 0],
+            LightMode::Smooth,
+            MeshOptions::default(),
+        );
+
+        let sections = pack_chunk_sections(&mesh, [0, 0]);
+        let section = sections[4].as_ref().expect("section");
+        let solid = &section.passes[0];
+        let up = crate::vertex::FACING_POS_Y as usize;
+        let east = crate::vertex::FACING_POS_X as usize;
+        let unassigned = crate::vertex::FACING_UNASSIGNED as usize;
+        assert_eq!(solid.counts[up], 4);
+        assert_eq!(solid.counts[east], 4);
+        assert_eq!(solid.counts[unassigned], 4);
+        assert_eq!(solid.vertices.len(), 12);
+        // Runs are laid out in facing-ordinal order: unassigned, +X, +Y.
+        assert_eq!(solid.facing_offset(unassigned as u8), 0);
+        assert_eq!(solid.facing_offset(east as u8), 4);
+        assert_eq!(solid.facing_offset(up as u8), 8);
+    }
+
     fn entry(tintindex: Option<u8>, shade: f32) -> mcre_resource_pack::lookup::BakedQuadEntry {
         mcre_resource_pack::lookup::BakedQuadEntry {
             vertices: [Vec3f::new(0.0, 0.0, 0.0); 4],
@@ -2265,6 +2582,7 @@ mod tests {
             height: 256,
             pixels: vec![],
             regions: vec![],
+            has_alpha: vec![],
             fallback: AtlasRegion {
                 x: 0,
                 y: 0,
@@ -2278,27 +2596,17 @@ mod tests {
             width: 16,
             height: 16,
         };
-        // Edge UVs land a sub-texel epsilon inside the region instead of on
-        // the centers of the first/last texel row.
+        // Edge UVs land exactly on the region bounds (anti-bleed comes from
+        // the centroid-bias encoding, not an inset).
         let uv = atlas_uv(region, &atlas, &[0.0, 0.0]);
-        assert_eq!(uv, [(16.0 + 0.01) / 256.0, (32.0 + 0.01) / 256.0]);
+        assert_eq!(uv, [16.0 / 256.0, 32.0 / 256.0]);
 
         let uv = atlas_uv(region, &atlas, &[16.0, 16.0]);
-        let x0 = 16.0 + 0.01;
-        let x1 = (16.0 + 16.0) - 0.01;
-        let y0 = 32.0 + 0.01;
-        let y1 = (32.0 + 16.0) - 0.01;
-        assert_eq!(
-            uv,
-            [
-                (x0 + 1.0 * (x1 - x0)) / 256.0,
-                (y0 + 1.0 * (y1 - y0)) / 256.0
-            ]
-        );
+        assert_eq!(uv, [32.0 / 256.0, 48.0 / 256.0]);
 
         let mid = atlas_uv(region, &atlas, &[8.0, 8.0]);
-        assert!(mid[0] > (16.0 + 0.01) / 256.0 && mid[0] < (32.0 - 0.01) / 256.0);
-        assert!(mid[1] > (32.0 + 0.01) / 256.0 && mid[1] < (48.0 - 0.01) / 256.0);
+        assert!(mid[0] > 16.0 / 256.0 && mid[0] < 32.0 / 256.0);
+        assert!(mid[1] > 32.0 / 256.0 && mid[1] < 48.0 / 256.0);
     }
 
     /// Open sky (15, 15) with a solid wall plane at `x <= 7`, so the west

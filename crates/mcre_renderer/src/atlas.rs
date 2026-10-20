@@ -24,6 +24,9 @@ pub struct Atlas {
     /// Indexed by `texture_id`; always present for every entry (missing files
     /// become magenta).
     pub regions: Vec<AtlasRegion>,
+    /// Parallel to `regions`: whether the region contains any texel with alpha
+    /// below 255 (classifies quads into the cutout pass).
+    pub has_alpha: Vec<bool>,
     /// Region used when a `texture_id` is out of range.
     pub fallback: AtlasRegion,
 }
@@ -34,6 +37,13 @@ impl Atlas {
             .get(texture_id as usize)
             .copied()
             .unwrap_or(self.fallback)
+    }
+
+    pub fn region_has_alpha(&self, texture_id: u32) -> bool {
+        self.has_alpha
+            .get(texture_id as usize)
+            .copied()
+            .unwrap_or(false)
     }
 }
 
@@ -95,6 +105,11 @@ pub async fn build_atlas<F: Fs>(
         })
         .collect();
 
+    let has_alpha: Vec<bool> = images[..fallback_index]
+        .iter()
+        .map(|image| image.rgba.as_chunks::<4>().0.iter().any(|px| px[3] != 255))
+        .collect();
+
     let fallback = AtlasRegion {
         x: positions[fallback_index].0,
         y: positions[fallback_index].1,
@@ -107,6 +122,7 @@ pub async fn build_atlas<F: Fs>(
         height,
         pixels,
         regions,
+        has_alpha,
         fallback,
     })
 }
@@ -352,6 +368,24 @@ mod tests {
         encoded
     }
 
+    fn translucent_png() -> Vec<u8> {
+        let mut pixels = Vec::with_capacity(16 * 16 * 4);
+        for i in 0..16 * 16 {
+            let a = if i == 0 { 128 } else { 255 };
+            pixels.extend_from_slice(&[10, 20, 30, a]);
+        }
+        let mut encoded = Vec::new();
+        let mut encoder = png::Encoder::new(&mut encoded, 16, 16);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&pixels)
+            .unwrap();
+        encoded
+    }
+
     fn atlas_center(atlas: &Atlas, texture_id: u32) -> [u8; 3] {
         let region = atlas.region(texture_id);
         let x = region.x as usize + region.width as usize / 2;
@@ -392,6 +426,34 @@ mod tests {
         let missing: Vec<Box<str>> = vec!["minecraft:block/dirt".into()];
         let atlas = build_atlas(&fs, &[base], &missing).await.unwrap();
         assert_eq!(atlas_center(&atlas, 0), [255, 0, 255]);
+        assert!(!atlas.region_has_alpha(0));
+        assert!(!atlas.region_has_alpha(99));
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn region_has_alpha_scans_texels() {
+        use mcre_fs::native::NativeFs;
+
+        let root =
+            std::env::temp_dir().join(format!("mcre-atlas-alpha-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let fs = NativeFs::new_custom_path(root.clone()).await.unwrap();
+
+        let dir = root.join("base").join("assets/minecraft/textures/block");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("opaque.png"), solid_png([1, 2, 3])).unwrap();
+        std::fs::write(dir.join("glass.png"), translucent_png()).unwrap();
+
+        let table: Vec<Box<str>> = vec![
+            "minecraft:block/opaque".into(),
+            "minecraft:block/glass".into(),
+        ];
+        let base = FsPath::from("base");
+        let atlas = build_atlas(&fs, &[base], &table).await.unwrap();
+        assert!(!atlas.region_has_alpha(0));
+        assert!(atlas.region_has_alpha(1));
 
         std::fs::remove_dir_all(&root).unwrap();
     }
