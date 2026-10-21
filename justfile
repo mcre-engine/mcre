@@ -78,6 +78,12 @@ install-hook:
 data-gen:
   cargo run -r -p data_gen
 
+# ==================== WORLD GENERATION ====================
+
+# Generate a vanilla world into target/gen_world/world (seed=0, radius=512 chunks)
+gen-world seed="0" radius="512" *args:
+  cargo run -r -p gen_world -- --seed {{seed}} --radius {{radius}} {{args}}
+
 # Decompile Minecraft client jar to Java source code (output in target/mc-src/)
 [unix]
 src version=`cat mc-version`:
