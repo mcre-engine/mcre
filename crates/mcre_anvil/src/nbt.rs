@@ -144,6 +144,68 @@ impl<'a> Reader<'a> {
         String::from_utf8(bytes.to_vec()).map_err(|_| Error::InvalidUtf8)
     }
 
+    fn skip_payload(&mut self, kind: u8) -> Result<(), Error> {
+        match kind {
+            BYTE => {
+                self.take(1)?;
+            }
+            SHORT => {
+                self.take(2)?;
+            }
+            INT | FLOAT => {
+                self.take(4)?;
+            }
+            LONG | DOUBLE => {
+                self.take(8)?;
+            }
+            BYTE_ARRAY => {
+                let len = self.i32()?;
+                if len < 0 {
+                    return Err(Error::NegativeLength);
+                }
+                self.take(len as usize)?;
+            }
+            STRING => {
+                let len = self.u16()? as usize;
+                self.take(len)?;
+            }
+            LIST => {
+                let element_kind = self.u8()?;
+                let len = self.i32()?;
+                if len < 0 {
+                    return Err(Error::NegativeLength);
+                }
+                for _ in 0..len {
+                    self.skip_payload(element_kind)?;
+                }
+            }
+            COMPOUND => loop {
+                let kind = self.u8()?;
+                if kind == 0 {
+                    return Ok(());
+                }
+                self.name()?;
+                self.skip_payload(kind)?;
+            },
+            INT_ARRAY => {
+                let len = self.i32()?;
+                if len < 0 {
+                    return Err(Error::NegativeLength);
+                }
+                self.take(len as usize * 4)?;
+            }
+            LONG_ARRAY => {
+                let len = self.i32()?;
+                if len < 0 {
+                    return Err(Error::NegativeLength);
+                }
+                self.take(len as usize * 8)?;
+            }
+            other => return Err(Error::UnknownTag(other)),
+        }
+        Ok(())
+    }
+
     fn payload(&mut self, kind: u8) -> Result<Tag, Error> {
         match kind {
             BYTE => Ok(Tag::Byte(self.take(1)?[0] as i8)),
@@ -225,6 +287,33 @@ pub fn read_named(bytes: &[u8]) -> Result<(String, Tag), Error> {
     Ok((name, root))
 }
 
+/// Extract a top-level string entry without building the full tag tree.
+///
+/// Unknown payloads are skipped byte-wise, so this stays cheap even when the
+/// target key sits in front of large compounds such as `sections`.
+pub fn find_root_string(bytes: &[u8], key: &str) -> Result<Option<String>, Error> {
+    let mut reader = Reader::new(bytes);
+    let kind = reader.u8()?;
+    if kind != COMPOUND {
+        return Err(Error::ExpectedRootCompound(kind));
+    }
+    reader.name()?;
+    loop {
+        let kind = reader.u8()?;
+        if kind == 0 {
+            return Ok(None);
+        }
+        let name = reader.name()?;
+        if name == key && kind == STRING {
+            let len = reader.u16()? as usize;
+            let value = reader.take(len)?;
+            let value = String::from_utf8(value.to_vec()).map_err(|_| Error::InvalidUtf8)?;
+            return Ok(Some(value));
+        }
+        reader.skip_payload(kind)?;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +377,83 @@ mod tests {
         assert_eq!(
             read_named(&[3, 0, 0]).unwrap_err(),
             Error::ExpectedRootCompound(3)
+        );
+    }
+
+    fn string_entry(out: &mut Vec<u8>, key: &str, value: &str) {
+        out.push(STRING);
+        out.extend_from_slice(&(key.len() as u16).to_be_bytes());
+        out.extend_from_slice(key.as_bytes());
+        out.extend_from_slice(&(value.len() as u16).to_be_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    fn compound_entry(out: &mut Vec<u8>, key: &str, inner: &[u8]) {
+        out.push(COMPOUND);
+        out.extend_from_slice(&(key.len() as u16).to_be_bytes());
+        out.extend_from_slice(key.as_bytes());
+        out.extend_from_slice(inner);
+        out.push(0);
+    }
+
+    fn list_entry(out: &mut Vec<u8>, key: &str, elements: &[i32]) {
+        out.push(LIST);
+        out.extend_from_slice(&(key.len() as u16).to_be_bytes());
+        out.extend_from_slice(key.as_bytes());
+        out.push(INT);
+        out.extend_from_slice(&(elements.len() as i32).to_be_bytes());
+        for element in elements {
+            out.extend_from_slice(&element.to_be_bytes());
+        }
+    }
+
+    fn array_entries() -> Vec<u8> {
+        let mut out = vec![COMPOUND, 0, 0];
+        out.push(BYTE_ARRAY);
+        out.extend_from_slice(&[0, 2]);
+        out.extend_from_slice(b"xy");
+        out.extend_from_slice(&2i32.to_be_bytes());
+        out.extend_from_slice(&[9, 10]);
+        out.extend_from_slice(&[3, 0, 1, b'i']);
+        out.extend_from_slice(&7i32.to_be_bytes());
+        out.extend_from_slice(&[4, 0, 1, b'l']);
+        out.extend_from_slice(&(-9i64).to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn finds_strings_after_skipped_entries() {
+        let mut blob = array_entries();
+        list_entry(&mut blob, "ticks", &[1, 2, 3]);
+        compound_entry(&mut blob, "sections", &{
+            let mut inner = Vec::new();
+            string_entry(&mut inner, "block", "stone");
+            inner
+        });
+        string_entry(&mut blob, "status", "minecraft:full");
+        blob.push(0);
+
+        assert_eq!(
+            find_root_string(&blob, "status").unwrap(),
+            Some("minecraft:full".to_string())
+        );
+        assert_eq!(find_root_string(&blob, "missing").unwrap(), None);
+        assert_eq!(
+            find_root_string(&blob, "block").unwrap(),
+            None,
+            "nested keys must not match"
+        );
+    }
+
+    #[test]
+    fn finds_strings_before_skipped_entries() {
+        let mut blob = vec![COMPOUND, 0, 0];
+        string_entry(&mut blob, "status", "minecraft:features");
+        compound_entry(&mut blob, "sections", &[]);
+        blob.push(0);
+        assert_eq!(
+            find_root_string(&blob, "status").unwrap(),
+            Some("minecraft:features".to_string())
         );
     }
 }

@@ -1,5 +1,5 @@
-use std::io::Read;
-use std::path::Path;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 
 use crate::Error;
 use crate::nbt;
@@ -9,6 +9,29 @@ pub const HEADER_SECTORS: usize = 2;
 pub const COMPRESSION_GZIP: u8 = 1;
 pub const COMPRESSION_ZLIB: u8 = 2;
 pub const COMPRESSION_NONE: u8 = 3;
+
+fn decompress_payload(compression: u8, payload: &[u8]) -> Result<Vec<u8>, Error> {
+    match compression {
+        COMPRESSION_GZIP => {
+            let mut decoder = flate2::read::GzDecoder::new(payload);
+            let mut out = Vec::new();
+            decoder
+                .read_to_end(&mut out)
+                .map_err(|err| Error::Decompress(err.to_string()))?;
+            Ok(out)
+        }
+        COMPRESSION_ZLIB => {
+            let mut decoder = flate2::read::ZlibDecoder::new(payload);
+            let mut out = Vec::new();
+            decoder
+                .read_to_end(&mut out)
+                .map_err(|err| Error::Decompress(err.to_string()))?;
+            Ok(out)
+        }
+        COMPRESSION_NONE => Ok(payload.to_vec()),
+        other => Err(Error::UnknownCompression(other)),
+    }
+}
 
 pub struct RegionFile {
     bytes: Vec<u8>,
@@ -61,26 +84,7 @@ impl RegionFile {
         }
         let compression = self.bytes[start + 4];
         let payload = &self.bytes[start + 5..start + 5 + length - 1];
-        match compression {
-            COMPRESSION_GZIP => {
-                let mut decoder = flate2::read::GzDecoder::new(payload);
-                let mut out = Vec::new();
-                decoder
-                    .read_to_end(&mut out)
-                    .map_err(|err| Error::Decompress(err.to_string()))?;
-                Ok(Some(out))
-            }
-            COMPRESSION_ZLIB => {
-                let mut decoder = flate2::read::ZlibDecoder::new(payload);
-                let mut out = Vec::new();
-                decoder
-                    .read_to_end(&mut out)
-                    .map_err(|err| Error::Decompress(err.to_string()))?;
-                Ok(Some(out))
-            }
-            COMPRESSION_NONE => Ok(Some(payload.to_vec())),
-            other => Err(Error::UnknownCompression(other)),
-        }
+        decompress_payload(compression, payload).map(Some)
     }
 
     pub fn chunk_count(&self) -> usize {
@@ -111,6 +115,105 @@ pub fn chunk_nbt(region_dir: &Path, chunk_x: i32, chunk_z: i32) -> Result<Option
     };
     let (_, root) = nbt::read_named(&payload)?;
     Ok(Some(root))
+}
+
+pub fn region_file_path(region_dir: &Path, chunk_x: i32, chunk_z: i32) -> PathBuf {
+    let region_x = chunk_x.div_euclid(32);
+    let region_z = chunk_z.div_euclid(32);
+    region_dir.join(format!("r.{region_x}.{region_z}.mca"))
+}
+
+fn read_header_entry(
+    file: &mut std::fs::File,
+    local_x: u32,
+    local_z: u32,
+) -> Result<(u32, u32), Error> {
+    let mut header = [0u8; HEADER_SECTORS * SECTOR_BYTES];
+    file.read_exact(&mut header)
+        .map_err(|err| match err.kind() {
+            std::io::ErrorKind::UnexpectedEof => Error::Truncated,
+            _ => Error::Io(err.to_string()),
+        })?;
+    let index = ((local_x & 31) + (local_z & 31) * 32) as usize * 4;
+    let entry = u32::from_be_bytes([
+        header[index],
+        header[index + 1],
+        header[index + 2],
+        header[index + 3],
+    ]);
+    Ok((entry >> 8, entry & 255))
+}
+
+fn read_payload_from_file(
+    path: &Path,
+    local_x: u32,
+    local_z: u32,
+) -> Result<Option<Vec<u8>>, Error> {
+    let mut file = std::fs::File::open(path).map_err(|err| Error::Io(err.to_string()))?;
+    let (sectors_offset, sector_count) = read_header_entry(&mut file, local_x, local_z)?;
+    if sectors_offset == 0 || sector_count == 0 {
+        return Ok(None);
+    }
+    let start = sectors_offset as u64 * SECTOR_BYTES as u64;
+    let end = start + sector_count as u64 * SECTOR_BYTES as u64;
+    let file_len = file
+        .metadata()
+        .map_err(|err| Error::Io(err.to_string()))?
+        .len();
+    if end > file_len {
+        return Err(Error::Truncated);
+    }
+    file.seek(SeekFrom::Start(start))
+        .map_err(|err| Error::Io(err.to_string()))?;
+    let mut length_buf = [0u8; 4];
+    file.read_exact(&mut length_buf)
+        .map_err(|err| Error::Io(err.to_string()))?;
+    let length = u32::from_be_bytes(length_buf) as u64;
+    if length == 0 || start + 5 + length - 1 > end {
+        return Err(Error::Truncated);
+    }
+    let mut compression = [0u8; 1];
+    file.read_exact(&mut compression)
+        .map_err(|err| Error::Io(err.to_string()))?;
+    let mut payload = vec![0u8; (length - 1) as usize];
+    file.read_exact(&mut payload)
+        .map_err(|err| Error::Io(err.to_string()))?;
+    decompress_payload(compression[0], &payload).map(Some)
+}
+
+/// Read the chunk's worldgen status (e.g. `minecraft:full`) without parsing
+/// the full NBT tree. Returns `Ok(None)` when the chunk is not on disk yet.
+pub fn chunk_status(
+    region_dir: &Path,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> Result<Option<String>, Error> {
+    let path = region_file_path(region_dir, chunk_x, chunk_z);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let local_x = chunk_x.rem_euclid(32) as u32;
+    let local_z = chunk_z.rem_euclid(32) as u32;
+    let Some(payload) = read_payload_from_file(&path, local_x, local_z)? else {
+        return Ok(None);
+    };
+    if let Some(status) = nbt::find_root_string(&payload, "status")? {
+        return Ok(Some(status));
+    }
+    nbt::find_root_string(&payload, "Status")
+}
+
+/// Cheap presence check: reads only the 8 KiB region header.
+pub fn chunk_present(region_dir: &Path, chunk_x: i32, chunk_z: i32) -> Result<bool, Error> {
+    let path = region_file_path(region_dir, chunk_x, chunk_z);
+    if !path.exists() {
+        return Ok(false);
+    }
+    let local_x = chunk_x.rem_euclid(32) as u32;
+    let local_z = chunk_z.rem_euclid(32) as u32;
+    let mut file = std::fs::File::open(&path).map_err(|err| Error::Io(err.to_string()))?;
+    let (sectors_offset, sector_count) = read_header_entry(&mut file, local_x, local_z)?;
+    Ok(sectors_offset != 0 && sector_count != 0)
 }
 
 #[cfg(test)]
@@ -169,5 +272,41 @@ mod tests {
             Err(Error::RegionTooSmall(_))
         ));
         std::fs::remove_file(&path).ok();
+    }
+
+    fn status_payload(status: &str) -> Vec<u8> {
+        let mut out = vec![10, 0, 0];
+        out.push(3);
+        out.extend_from_slice(&[0, 4]);
+        out.extend_from_slice(b"xPos");
+        out.extend_from_slice(&0i32.to_be_bytes());
+        out.push(8);
+        out.extend_from_slice(&[0, 6]);
+        out.extend_from_slice(b"status");
+        out.extend_from_slice(&(status.len() as u16).to_be_bytes());
+        out.extend_from_slice(status.as_bytes());
+        out.push(0);
+        out
+    }
+
+    #[test]
+    fn reads_status_and_presence_from_file() {
+        let dir = std::env::temp_dir().join(format!("mcre_anvil_status_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("r.0.0.mca");
+        let region = test_region(&status_payload("minecraft:full"));
+        std::fs::write(&path, &region.bytes).unwrap();
+
+        assert!(chunk_present(&dir, 0, 0).unwrap());
+        assert!(!chunk_present(&dir, 1, 0).unwrap());
+        assert!(!chunk_present(&dir, 32, 0).unwrap());
+        assert_eq!(
+            chunk_status(&dir, 0, 0).unwrap(),
+            Some("minecraft:full".to_string())
+        );
+        assert_eq!(chunk_status(&dir, 1, 0).unwrap(), None);
+        assert_eq!(chunk_status(&dir, 32, 0).unwrap(), None);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
