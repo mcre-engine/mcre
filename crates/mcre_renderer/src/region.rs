@@ -237,6 +237,18 @@ impl FreeList {
         }
         self.capacity = capacity;
     }
+
+    fn grow_capacity(&self, needed: u64) -> Option<u64> {
+        let largest = self.free.iter().map(|b| b.size).max().unwrap_or(0);
+        if largest >= needed {
+            return None;
+        }
+        let capacity = self
+            .capacity
+            .saturating_mul(2)
+            .max(self.capacity.saturating_add(needed));
+        (capacity > self.capacity).then_some(capacity)
+    }
 }
 
 /// Vertex-buffer arena for one region: free-list bookkeeping plus the GPU
@@ -269,9 +281,12 @@ impl GpuArena {
             return None;
         }
         let size = vertices.len() as u64 * VERTEX_STRIDE;
-        let Some(offset) = self.list.alloc(size) else {
-            self.grow(device, queue, size);
-            return self.alloc(device, queue, vertices);
+        let offset = match self.list.alloc(size) {
+            Some(offset) => offset,
+            None => {
+                self.grow(device, queue, size);
+                self.list.alloc(size)?
+            }
         };
         queue.write_buffer(&self.buffer, offset, bytemuck::cast_slice(vertices));
         Some(ArenaAllocation {
@@ -281,10 +296,9 @@ impl GpuArena {
     }
 
     fn grow(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, needed: u64) {
-        let mut capacity = self.list.capacity;
-        while capacity - self.list.used < needed {
-            capacity = capacity.saturating_mul(2).max(capacity + needed);
-        }
+        let Some(capacity) = self.list.grow_capacity(needed) else {
+            return;
+        };
         let new_buffer = create_arena_buffer(device, capacity);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("arena-grow"),
@@ -680,6 +694,46 @@ mod tests {
         list.begin_frame();
         list.begin_frame();
         assert_eq!(list.alloc(256), Some(0));
+    }
+
+    #[test]
+    fn lagged_free_does_not_satisfy_growth_by_aggregate() {
+        let mut list = FreeList::new(256);
+        let _a = list.alloc(100).unwrap();
+        let b = list.alloc(100).unwrap();
+        let _c = list.alloc(56).unwrap();
+        list.free(b, 100);
+        assert!(list.alloc(100).is_none());
+        assert!(
+            list.capacity - list.used >= 100,
+            "aggregate free bytes overstate what best-fit can serve"
+        );
+        let capacity = list
+            .grow_capacity(100)
+            .expect("lagged free must still trigger growth");
+        list.grow(capacity);
+        assert!(list.alloc(100).is_some());
+    }
+
+    #[test]
+    fn fragmented_free_list_grows_for_contiguous_need() {
+        let mut list = FreeList::new(256);
+        let a = list.alloc(64).unwrap();
+        let _b = list.alloc(64).unwrap();
+        let c = list.alloc(64).unwrap();
+        let _d = list.alloc(64).unwrap();
+        list.free(a, 64);
+        list.free(c, 64);
+        for _ in 0..3 {
+            list.begin_frame();
+        }
+        assert!(list.alloc(128).is_none());
+        assert!(list.capacity - list.used >= 128);
+        let capacity = list
+            .grow_capacity(128)
+            .expect("fragmentation must still trigger growth");
+        list.grow(capacity);
+        assert!(list.alloc(128).is_some());
     }
 
     #[test]

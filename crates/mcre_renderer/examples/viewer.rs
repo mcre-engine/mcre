@@ -1645,9 +1645,18 @@ impl Viewer {
                 positions.insert(coord, (index, local));
             }
         }
+        let camera_block = (
+            camera_pos[0].floor() as i32,
+            camera_pos[1].floor() as i32,
+            camera_pos[2].floor() as i32,
+        );
+        let in_solid = self
+            .world
+            .get_block(camera_block)
+            .is_some_and(|state| state.solid_render());
         let params = CullParams {
             search_distance: self.stream_horizon().unwrap_or(f32::INFINITY),
-            use_occlusion: self.occlusion_culling,
+            use_occlusion: self.occlusion_culling && !in_solid,
         };
         let mut masks = vec![0u32; self.meshes.len()];
         let mut visited = 0usize;
