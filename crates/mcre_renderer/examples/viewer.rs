@@ -12,6 +12,7 @@ use mcre_renderer::{
     StreamSource, build_atlas, find_visible_sections, mesh_chunk, pack_chunk_sections,
 };
 use mcre_resource_pack::{ResourcePackData, ResourcePackSet, download};
+use mcre_shot::ShotSpec;
 use mcre_world::fluid::{FluidKind, fluid_state, is_face_sturdy};
 use mcre_world::{
     Block, CHUNK_WIDTH, Chunk, ChunkPos, PropVal, SECTIONS_PER_CHUNK, WORLD_HEIGHT, WORLD_MIN_Y,
@@ -37,6 +38,18 @@ const FOV_SURFACE: f32 = 70.0 * std::f32::consts::PI / 180.0;
 /// Vanilla `Camera.modifyFovBasedOnDeathOrFluid` at the default
 /// `fovEffectScale` of 1.0 (`70 * 0.85714287 = 60`).
 const FOV_UNDERWATER: f32 = 60.0 * std::f32::consts::PI / 180.0;
+
+/// Consecutive idle frames before an offscreen shot is captured; gives late
+/// uploads and light updates a margin.
+const SHOT_QUIET_FRAMES: u32 = 16;
+
+/// Parity-shot state: render until idle, then capture at the spec resolution
+/// and exit.
+struct ShotMode {
+    spec: ShotSpec,
+    out: std::path::PathBuf,
+    quiet_frames: u32,
+}
 
 struct ChunkMesh {
     origin: [i32; 2],
@@ -87,10 +100,44 @@ fn cloud_color_for(sky: f32) -> [f32; 4] {
     ]
 }
 
+fn write_png(path: &std::path::Path, pixels: &[u8], width: u32, height: u32) -> Result<(), String> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|err| format!("create {}: {err}", parent.display()))?;
+    }
+    let file =
+        std::fs::File::create(path).map_err(|err| format!("create {}: {err}", path.display()))?;
+    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut stream = encoder
+        .write_header()
+        .map_err(|err| format!("write {}: {err}", path.display()))?;
+    stream
+        .write_image_data(pixels)
+        .map_err(|err| format!("write {}: {err}", path.display()))
+}
+
 fn main() {
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let args = ViewerArgs::parse();
     let reload_test = args.reload_test;
+    let emit_spec = args.emit_spec.clone();
+    let shot = args.shot.as_deref().map(|path| {
+        ShotSpec::load(std::path::Path::new(path)).unwrap_or_else(|err| {
+            eprintln!("viewer: {err}");
+            std::process::exit(2);
+        })
+    });
+    let mut args = args;
+    let world_path = args.world.clone().unwrap_or_default();
+    let shot_out = args.shot_out.clone().map(std::path::PathBuf::from);
+    if let Some(spec) = &shot {
+        args.world = Some(spec.world.to_string_lossy().to_string());
+        args.radius = spec.render_distance.clamp(1, 16);
+    }
     let (data, atlas, cloud_texture, world, meshes, camera_pos, streamer, packs) =
         runtime.block_on(prepare(args));
     let total_chunks = meshes.len();
@@ -146,12 +193,42 @@ fn main() {
         wireframe: false,
         backface_cull: true,
         chunk_borders: false,
+        shot: None,
+        emit_spec: emit_spec.map(Into::into),
+        world_path,
     };
     if let Some(horizon) = viewer.stream_horizon() {
         // Fog follows the loaded ring (like vanilla render-distance fog), so
         // the stream frontier stays hidden instead of showing a hard cut.
         viewer.fog_start = horizon * 0.75;
         viewer.fog_end = horizon;
+    }
+    if let Some(spec) = shot {
+        viewer.camera.position = [spec.eye[0] as f32, spec.eye[1] as f32, spec.eye[2] as f32];
+        viewer.camera.yaw = spec.mcre_yaw();
+        viewer.camera.pitch = spec.mcre_pitch();
+        viewer.camera.fov = (spec.fov as f32).to_radians();
+        viewer.time_ticks = spec.time_ticks as f32;
+        viewer.brightness = spec.brightness as f32;
+        viewer.cloud_status = match spec.clouds {
+            mcre_shot::Clouds::Off => CloudStatus::Off,
+            mcre_shot::Clouds::Fast => CloudStatus::Fast,
+            mcre_shot::Clouds::Fancy => CloudStatus::Fancy,
+        };
+        viewer.cloud_ticks = 0.0;
+        viewer.menu_visible = false;
+        let out = shot_out.unwrap_or_else(|| spec.out_path("mcre"));
+        eprintln!(
+            "viewer: shot mode {}x{} -> {}",
+            spec.width,
+            spec.height,
+            out.display()
+        );
+        viewer.shot = Some(ShotMode {
+            spec,
+            out,
+            quiet_frames: 0,
+        });
     }
 
     let event_loop = EventLoop::new().expect("event loop");
@@ -244,6 +321,9 @@ struct ViewerArgs {
     radius: u32,
     packs: Vec<String>,
     reload_test: bool,
+    shot: Option<String>,
+    shot_out: Option<String>,
+    emit_spec: Option<String>,
 }
 
 impl ViewerArgs {
@@ -252,6 +332,9 @@ impl ViewerArgs {
         let mut radius = 8;
         let mut packs = Vec::new();
         let mut reload_test = false;
+        let mut shot = None;
+        let mut shot_out = None;
+        let mut emit_spec = None;
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
             if arg == "--world" {
@@ -262,6 +345,12 @@ impl ViewerArgs {
                 }
             } else if arg == "--reload-test" {
                 reload_test = true;
+            } else if arg == "--shot" {
+                shot = args.next();
+            } else if arg == "--shot-out" {
+                shot_out = args.next();
+            } else if arg == "--emit-spec" {
+                emit_spec = args.next();
             } else if arg == "--radius" {
                 radius = args
                     .next()
@@ -272,12 +361,19 @@ impl ViewerArgs {
                 eprintln!(
                     "usage: viewer [--pack <dir-or-zip> ...] [--world <save-dir>] [--radius N]"
                 );
+                eprintln!(
+                    "           [--shot <spec.json>] [--shot-out <png>] [--emit-spec <spec.json>]"
+                );
                 eprintln!("  Packs stack bottom-to-top above the default pack, last wins.");
                 eprintln!("  --pack adds session packs (also manageable in the Packs panel).");
                 eprintln!("  --world loads the save around its spawn instead of the demo.");
                 eprintln!("  --radius sets the loaded ring radius in chunks (default 8).");
                 eprintln!("  User packs live in <app-dir>/resourcepacks (folders or .zip).");
                 eprintln!("  --reload-test triggers one pack hot-reload on startup (testing).");
+                eprintln!(
+                    "  --shot renders the spec's camera offscreen and writes the PNG, then exits."
+                );
+                eprintln!("  --emit-spec writes the current camera as a spec (also bound to F12).");
                 std::process::exit(0);
             }
         }
@@ -286,6 +382,9 @@ impl ViewerArgs {
             radius,
             packs,
             reload_test,
+            shot,
+            shot_out,
+            emit_spec,
         }
     }
 }
@@ -834,6 +933,9 @@ struct Viewer {
     wireframe: bool,
     backface_cull: bool,
     chunk_borders: bool,
+    shot: Option<ShotMode>,
+    emit_spec: Option<std::path::PathBuf>,
+    world_path: String,
 }
 
 impl ApplicationHandler for Viewer {
@@ -933,6 +1035,10 @@ impl ApplicationHandler for Viewer {
                             if self.menu_visible {
                                 self.release_pointer();
                             }
+                            return;
+                        }
+                        if code == KeyCode::F12 && !key_event.repeat && self.emit_spec.is_some() {
+                            self.emit_current_spec();
                             return;
                         }
                         if consumed || self.egui_wants_keyboard() {
@@ -1096,7 +1202,9 @@ impl Viewer {
         }
         self.sky_factor = sky_light_factor(self.time_ticks);
         // Cloud drift follows real time, like vanilla world time.
-        self.cloud_ticks += f64::from(dt) * 20.0;
+        if self.shot.is_none() {
+            self.cloud_ticks += f64::from(dt) * 20.0;
+        }
 
         let mut forward = 0.0;
         if self.keys.contains(&KeyCode::KeyW) {
@@ -1133,7 +1241,11 @@ impl Viewer {
         }
         self.camera.position[1] += vertical * speed;
 
-        let aspect = size.width as f32 / size.height as f32;
+        let (width, height) = match &self.shot {
+            Some(shot) => (shot.spec.width, shot.spec.height),
+            None => (size.width, size.height),
+        };
+        let aspect = width as f32 / height as f32;
         let old_submerged = self.submerged;
         self.submerged = self.fog_fluid();
         if self.submerged != old_submerged {
@@ -1145,6 +1257,12 @@ impl Viewer {
         }
         let view_proj = self.camera.view_projection(aspect);
         let camera_pos = self.camera.position;
+
+        if self.shot.is_some() {
+            self.push_shot_settings();
+            self.shot_frame(view_proj.0, camera_pos, (width, height));
+            return;
+        }
 
         if self.egui_ctx.is_none() || self.egui_state.is_none() {
             self.render_visible(view_proj.0, camera_pos, None);
@@ -1557,6 +1675,126 @@ impl Viewer {
         );
     }
 
+    /// Push the environment settings a parity shot needs (fog, time,
+    /// brightness, clouds) without the interactive change detection.
+    fn push_shot_settings(&mut self) {
+        let water_fog_end = self.stream_horizon().map_or(96.0, |h| (h - 8.0).min(96.0));
+        let (color, start, end) = match self.submerged {
+            Some(FluidKind::Water) => (WATER_FOG_COLOR, -8.0, water_fog_end),
+            Some(FluidKind::Lava) => (LAVA_FOG_COLOR, 0.25, 1.0),
+            None => {
+                let scale = fog_density_scale(self.sky_factor);
+                (
+                    fog_color_for(self.sky_factor),
+                    self.fog_start * scale,
+                    self.fog_end.max(self.fog_start) * scale,
+                )
+            }
+        };
+        let (time_ticks, brightness) = (self.time_ticks, self.brightness);
+        let (cloud_status, cloud_range) = (self.cloud_status, self.cloud_range);
+        let cloud_ticks = (
+            self.cloud_ticks.floor() as i64,
+            self.cloud_ticks.fract() as f32,
+        );
+        let cloud_color = cloud_color_for(self.sky_factor);
+        let Some(renderer) = self.renderer.as_mut() else {
+            return;
+        };
+        renderer.set_fog(color, start, end);
+        renderer.set_time(time_ticks);
+        renderer.set_brightness(brightness);
+        renderer.set_cloud_status(cloud_status);
+        renderer.set_cloud_range(cloud_range);
+        renderer.set_cloud_time(cloud_ticks.0, cloud_ticks.1);
+        renderer.set_cloud_color(cloud_color);
+    }
+
+    /// Deterministic capture path: render normal frames until the stream and
+    /// mesh queue have been idle for [`SHOT_QUIET_FRAMES`] frames, then
+    /// capture offscreen and exit.
+    fn shot_frame(&mut self, view_proj: [f32; 16], camera_pos: [f32; 3], size: (u32, u32)) {
+        let masks = self.visible_masks(view_proj, camera_pos);
+        let Some(shot) = self.shot.as_mut() else {
+            return;
+        };
+        let quiet = self.inflight == 0
+            && self.pending_stream_dirty.is_empty()
+            && self
+                .streamer
+                .as_ref()
+                .is_none_or(|streamer| streamer.pending.is_empty());
+        shot.quiet_frames = if quiet { shot.quiet_frames + 1 } else { 0 };
+        let Some(renderer) = self.renderer.as_mut() else {
+            return;
+        };
+        let chunks: Vec<RenderChunk<'_>> = masks
+            .iter()
+            .enumerate()
+            .filter(|&(_, &mask)| mask != 0)
+            .map(|(index, &mask)| {
+                let entry = &self.meshes[index];
+                RenderChunk {
+                    origin: entry.origin,
+                    version: entry.version,
+                    sections: &entry.sections,
+                    visible_sections: mask,
+                }
+            })
+            .collect();
+
+        if shot.quiet_frames < SHOT_QUIET_FRAMES {
+            renderer.render(view_proj, camera_pos, &chunks, None);
+            return;
+        }
+
+        let out = shot.out.clone();
+        match renderer.capture(size.0, size.1, view_proj, camera_pos, &chunks) {
+            Ok(pixels) => {
+                if let Err(err) = write_png(&out, &pixels, size.0, size.1) {
+                    eprintln!("viewer: {err}");
+                    std::process::exit(1);
+                }
+                eprintln!("viewer: wrote {}", out.display());
+                std::process::exit(0);
+            }
+            Err(err) => {
+                eprintln!("viewer: capture failed: {err}");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    /// Write the current camera/environment as a shot spec (`--emit-spec`
+    /// path or the F12 key).
+    fn emit_current_spec(&mut self) {
+        let Some(path) = self.emit_spec.clone() else {
+            return;
+        };
+        let name = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+            .unwrap_or_else(|| "shot".to_string());
+        let spec = ShotSpec::from_mcre(
+            name,
+            std::path::PathBuf::from(&self.world_path),
+            [
+                f64::from(self.camera.position[0]),
+                f64::from(self.camera.position[1]),
+                f64::from(self.camera.position[2]),
+            ],
+            f64::from(self.camera.yaw),
+            f64::from(self.camera.pitch),
+            f64::from(self.camera.fov.to_degrees()),
+            f64::from(self.brightness),
+            self.time_ticks as i64,
+        );
+        match spec.save(&path) {
+            Ok(()) => eprintln!("viewer: wrote spec {}", path.display()),
+            Err(err) => eprintln!("viewer: {err}"),
+        }
+    }
+
     fn edit_block(&mut self, place: bool) {
         let origin = self.camera.position;
         let dir = self.camera.forward();
@@ -1626,12 +1864,9 @@ impl Viewer {
         (y < top).then_some(fluid.kind)
     }
 
-    fn render_visible(
-        &mut self,
-        view_proj: [f32; 16],
-        camera_pos: [f32; 3],
-        egui: Option<EguiFrame<'_>>,
-    ) {
+    /// Frustum/occlusion culling per chunk; updates the visible counters and
+    /// returns one 24-bit section mask per mesh.
+    fn visible_masks(&mut self, view_proj: [f32; 16], camera_pos: [f32; 3]) -> Vec<u32> {
         let frustum = Frustum::from_matrix(&Mat4(view_proj));
         let min_section_y = WORLD_MIN_Y.div_euclid(16);
         let mut visibilities = HashMap::with_capacity(self.meshes.len() * SECTIONS_PER_CHUNK);
@@ -1668,6 +1903,16 @@ impl Viewer {
         });
         self.visible_sections = visited;
         self.visible_chunks = masks.iter().filter(|&&mask| mask != 0).count();
+        masks
+    }
+
+    fn render_visible(
+        &mut self,
+        view_proj: [f32; 16],
+        camera_pos: [f32; 3],
+        egui: Option<EguiFrame<'_>>,
+    ) {
+        let masks = self.visible_masks(view_proj, camera_pos);
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };

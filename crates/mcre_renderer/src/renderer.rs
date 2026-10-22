@@ -130,6 +130,27 @@ pub enum RendererError {
     Device(#[from] wgpu::RequestDeviceError),
     #[error("failed to create surface: {0}")]
     Surface(#[from] wgpu::CreateSurfaceError),
+    #[error("capture buffer map failed: {0}")]
+    CaptureMap(#[from] wgpu::BufferAsyncError),
+    #[error("capture device poll failed: {0}")]
+    CapturePoll(#[from] wgpu::PollError),
+    #[error("capture readback timed out")]
+    CaptureTimeout,
+    #[error("capture map range failed: {0}")]
+    CaptureRange(String),
+    #[error("capture map channel closed")]
+    CaptureChannel,
+}
+
+/// Offscreen render target + readback buffer for [`Renderer::capture`].
+/// Reused across captures; only recreated when the size changes.
+struct CaptureTarget {
+    color: wgpu::Texture,
+    color_view: wgpu::TextureView,
+    depth_view: wgpu::TextureView,
+    buffer: wgpu::Buffer,
+    width: u32,
+    height: u32,
 }
 
 /// Owned window handle wrapper: lets a `Surface<'static>` share the window
@@ -218,6 +239,7 @@ pub struct Renderer {
     cloud_range_chunks: u32,
     cloud_time: (i64, f32),
     stats: FrameStats,
+    capture: Option<CaptureTarget>,
 }
 
 impl Renderer {
@@ -320,6 +342,7 @@ impl Renderer {
             cloud_range_chunks: DEFAULT_CLOUD_RANGE,
             cloud_time: (0, 0.0),
             stats: FrameStats::default(),
+            capture: None,
         })
     }
 
@@ -652,6 +675,50 @@ impl Renderer {
             }
         };
 
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let depth_view = self.depth_view.clone();
+
+        command_buffers.extend(self.record(
+            &mut encoder,
+            &view,
+            &depth_view,
+            egui_draw,
+            view_proj,
+            camera_pos,
+            chunks,
+        ));
+        if let Some(egui) = egui_frame.as_mut() {
+            for id in egui.textures_delta.free.drain() {
+                self.egui_renderer.free_texture(&id);
+            }
+        }
+
+        command_buffers.push(encoder.finish());
+        self.queue.submit(command_buffers);
+        self.queue.present(frame);
+    }
+
+    /// Encode the terrain/sky/clouds passes (plus optional egui) into an
+    /// existing encoder targeting `view`. Returns extra command buffers from
+    /// egui buffer updates; empty without egui.
+    #[allow(clippy::too_many_arguments)]
+    fn record<'egui>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+        egui_draw: Option<(
+            &'egui [egui::ClippedPrimitive],
+            &'egui egui_wgpu::ScreenDescriptor,
+        )>,
+        view_proj: [f32; 16],
+        camera_pos: [f32; 3],
+        chunks: &[RenderChunk<'_>],
+    ) -> Vec<wgpu::CommandBuffer> {
+        let command_buffers: Vec<wgpu::CommandBuffer> = Vec::new();
+
         self.prepare_clouds(camera_pos);
 
         for region in self.regions.values_mut() {
@@ -781,15 +848,11 @@ impl Renderer {
             .unwrap_or(0);
         self.shared_indices.ensure_quads(&self.device, max_quads);
 
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
         if chunks.is_empty() {
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -798,7 +861,7 @@ impl Renderer {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -814,7 +877,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -823,7 +886,7 @@ impl Renderer {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -855,7 +918,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("translucent-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -864,7 +927,7 @@ impl Renderer {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -909,7 +972,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clouds-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -918,7 +981,7 @@ impl Renderer {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -944,7 +1007,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("borders-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -953,7 +1016,7 @@ impl Renderer {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
+                    view: depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -972,39 +1035,152 @@ impl Renderer {
         }
 
         if let Some((paint_jobs, screen_descriptor)) = egui_draw {
-            {
-                let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("egui-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                self.egui_renderer.render(
-                    &mut pass.forget_lifetime(),
-                    paint_jobs,
-                    screen_descriptor,
-                );
-            }
-            if let Some(egui) = egui_frame.as_mut() {
-                for id in egui.textures_delta.free.drain() {
-                    self.egui_renderer.free_texture(&id);
-                }
-            }
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            self.egui_renderer
+                .render(&mut pass.forget_lifetime(), paint_jobs, screen_descriptor);
         }
 
-        command_buffers.push(encoder.finish());
-        self.queue.submit(command_buffers);
-        self.queue.present(frame);
+        command_buffers
+    }
+
+    /// Render one frame offscreen at `width`x`height` and read it back as
+    /// RGBA8 pixels (top-left origin). The window surface is not touched.
+    pub fn capture(
+        &mut self,
+        width: u32,
+        height: u32,
+        view_proj: [f32; 16],
+        camera_pos: [f32; 3],
+        chunks: &[RenderChunk<'_>],
+    ) -> Result<Vec<u8>, RendererError> {
+        const ALIGN: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        const POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+        let bytes_per_row = width * 4;
+        let aligned_bytes_per_row = bytes_per_row.div_ceil(ALIGN) * ALIGN;
+
+        let stale = self
+            .capture
+            .as_ref()
+            .is_none_or(|target| target.width != width || target.height != height);
+        if stale {
+            let color = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("capture-color"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
+            let depth_view = create_depth_view(&self.device, width, height);
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("capture-buffer"),
+                size: u64::from(aligned_bytes_per_row) * u64::from(height),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            self.capture = Some(CaptureTarget {
+                color,
+                color_view,
+                depth_view,
+                buffer,
+                width,
+                height,
+            });
+        }
+        let target = self.capture.as_ref().expect("capture target");
+        let color = target.color.clone();
+        let color_view = target.color_view.clone();
+        let depth_view = target.depth_view.clone();
+        let buffer = target.buffer.clone();
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("capture-encoder"),
+            });
+        self.record(
+            &mut encoder,
+            &color_view,
+            &depth_view,
+            None,
+            view_proj,
+            camera_pos,
+            chunks,
+        );
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &color,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(aligned_bytes_per_row),
+                    rows_per_image: None,
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let index = self.queue.submit([encoder.finish()]);
+        self.device.poll(wgpu::PollType::Wait {
+            submission_index: Some(index),
+            timeout: Some(POLL_TIMEOUT),
+        })?;
+
+        let slice = buffer.slice(..);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            sender.send(result).expect("capture map channel");
+        });
+        self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(POLL_TIMEOUT),
+        })?;
+        receiver
+            .recv()
+            .map_err(|_| RendererError::CaptureChannel)??;
+
+        let mapped = slice
+            .get_mapped_range()
+            .map_err(|err| RendererError::CaptureRange(err.to_string()))?;
+        let mut pixels = Vec::with_capacity((bytes_per_row * height) as usize);
+        for row in 0..height as usize {
+            let start = row * aligned_bytes_per_row as usize;
+            pixels.extend_from_slice(&mapped[start..start + bytes_per_row as usize]);
+        }
+        drop(mapped);
+        buffer.unmap();
+        Ok(pixels)
     }
 }
 

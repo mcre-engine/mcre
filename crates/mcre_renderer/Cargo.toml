@@ -31,3 +31,4 @@ egui-wgpu   = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true }
 serde_json = { workspace = true }
+mcre_shot = { workspace = true }
