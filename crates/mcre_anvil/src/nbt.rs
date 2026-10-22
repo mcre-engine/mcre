@@ -78,6 +78,105 @@ impl Tag {
             _ => None,
         }
     }
+
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut Tag> {
+        match self {
+            Tag::Compound(entries) => entries
+                .iter_mut()
+                .find(|(name, _)| name == key)
+                .map(|(_, tag)| tag),
+            _ => None,
+        }
+    }
+
+    /// Insert or replace a compound entry, keeping existing order.
+    pub fn set(&mut self, key: &str, value: Tag) {
+        if let Tag::Compound(entries) = self {
+            if let Some(entry) = entries.iter_mut().find(|(name, _)| name == key) {
+                entry.1 = value;
+            } else {
+                entries.push((key.to_string(), value));
+            }
+        }
+    }
+}
+
+fn tag_id(tag: &Tag) -> u8 {
+    match tag {
+        Tag::Byte(_) => BYTE,
+        Tag::Short(_) => SHORT,
+        Tag::Int(_) => INT,
+        Tag::Long(_) => LONG,
+        Tag::Float(_) => FLOAT,
+        Tag::Double(_) => DOUBLE,
+        Tag::ByteArray(_) => BYTE_ARRAY,
+        Tag::String(_) => STRING,
+        Tag::List(_) => LIST,
+        Tag::Compound(_) => COMPOUND,
+        Tag::IntArray(_) => INT_ARRAY,
+        Tag::LongArray(_) => LONG_ARRAY,
+    }
+}
+
+fn write_string(out: &mut Vec<u8>, value: &str) {
+    let bytes = value.as_bytes();
+    out.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+    out.extend_from_slice(bytes);
+}
+
+fn write_payload(out: &mut Vec<u8>, tag: &Tag) {
+    match tag {
+        Tag::Byte(value) => out.push(*value as u8),
+        Tag::Short(value) => out.extend_from_slice(&value.to_be_bytes()),
+        Tag::Int(value) => out.extend_from_slice(&value.to_be_bytes()),
+        Tag::Long(value) => out.extend_from_slice(&value.to_be_bytes()),
+        Tag::Float(value) => out.extend_from_slice(&value.to_be_bytes()),
+        Tag::Double(value) => out.extend_from_slice(&value.to_be_bytes()),
+        Tag::ByteArray(values) => {
+            out.extend_from_slice(&(values.len() as i32).to_be_bytes());
+            out.extend(values.iter().map(|value| *value as u8));
+        }
+        Tag::String(value) => write_string(out, value),
+        Tag::List(items) => {
+            out.push(items.first().map_or(0, tag_id));
+            out.extend_from_slice(&(items.len() as i32).to_be_bytes());
+            for item in items {
+                write_payload(out, item);
+            }
+        }
+        Tag::Compound(entries) => {
+            for (name, value) in entries {
+                out.push(tag_id(value));
+                write_string(out, name);
+                write_payload(out, value);
+            }
+            out.push(0);
+        }
+        Tag::IntArray(values) => {
+            out.extend_from_slice(&(values.len() as i32).to_be_bytes());
+            for value in values {
+                out.extend_from_slice(&value.to_be_bytes());
+            }
+        }
+        Tag::LongArray(values) => {
+            out.extend_from_slice(&(values.len() as i32).to_be_bytes());
+            for value in values {
+                out.extend_from_slice(&value.to_be_bytes());
+            }
+        }
+    }
+}
+
+/// Serialize a named root compound, the exact inverse of [`read_named`].
+///
+/// Strings are written as plain UTF-8 (matching the reader); the tags written
+/// by the shot tooling are ASCII, which coincides with Java's modified UTF-8.
+pub fn write_named(name: &str, tag: &Tag) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.push(COMPOUND);
+    write_string(&mut out, name);
+    write_payload(&mut out, tag);
+    out
 }
 
 struct Reader<'a> {
@@ -362,6 +461,43 @@ mod tests {
         );
         let inner = root.get("inner").unwrap();
         assert_eq!(inner.get("b"), Some(&Tag::Byte(-5)));
+    }
+
+    #[test]
+    fn write_round_trips_common_tags() {
+        let (_, root) = read_named(&blob()).unwrap();
+        let bytes = write_named("", &root);
+        let (name, reparsed) = read_named(&bytes).unwrap();
+        assert_eq!(name, "");
+        assert_eq!(root, reparsed);
+
+        let named = write_named("Data", &root);
+        let (name, reparsed) = read_named(&named).unwrap();
+        assert_eq!(name, "Data");
+        assert_eq!(root, reparsed);
+    }
+
+    #[test]
+    fn set_replaces_and_appends() {
+        let mut root = Tag::Compound(vec![
+            ("a".to_string(), Tag::Int(1)),
+            ("b".to_string(), Tag::Int(2)),
+        ]);
+        root.set("a", Tag::Byte(9));
+        root.set("c", Tag::Long(3));
+        assert_eq!(root.get("a"), Some(&Tag::Byte(9)));
+        assert_eq!(root.get("b"), Some(&Tag::Int(2)));
+        assert_eq!(root.get("c"), Some(&Tag::Long(3)));
+        let Tag::Compound(entries) = &root else {
+            panic!("compound");
+        };
+        assert_eq!(
+            entries
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b", "c"]
+        );
     }
 
     #[test]

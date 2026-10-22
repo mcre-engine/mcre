@@ -101,6 +101,45 @@ fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     }
 }
 
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(bytes).expect("gzip write");
+    encoder.finish().expect("gzip finish")
+}
+
+/// Read a gzip-compressed NBT file (e.g. `level.dat`, `world/data/minecraft/world_clocks.dat`)
+/// as its root compound. Plain NBT without a gzip header is accepted too.
+pub fn read_gzip_nbt(path: &Path) -> Result<nbt::Tag, Error> {
+    let bytes = std::fs::read(path).map_err(|err| Error::Io(err.to_string()))?;
+    let raw = gunzip(&bytes)?;
+    let (_, root) = nbt::read_named(&raw)?;
+    Ok(root)
+}
+
+/// Write a root compound as a gzip-compressed NBT file, creating parent
+/// directories as needed.
+pub fn write_gzip_nbt(path: &Path, root: &nbt::Tag) -> Result<(), Error> {
+    let raw = nbt::write_named("", root);
+    let bytes = gzip(&raw);
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|err| Error::Io(err.to_string()))?;
+    }
+    std::fs::write(path, bytes).map_err(|err| Error::Io(err.to_string()))
+}
+
+/// Read `level.dat` as the root compound (usually `{Data: {...}}`).
+pub fn read_level_dat(save_dir: &Path) -> Result<nbt::Tag, Error> {
+    load_level_data(save_dir)
+}
+
+/// Write `level.dat` from a root compound; the inverse of [`read_level_dat`].
+pub fn write_level_dat(save_dir: &Path, root: &nbt::Tag) -> Result<(), Error> {
+    write_gzip_nbt(&save_dir.join("level.dat"), root)
+}
+
 fn load_level_data(save_dir: &Path) -> Result<nbt::Tag, Error> {
     let bytes =
         std::fs::read(save_dir.join("level.dat")).map_err(|err| Error::Io(err.to_string()))?;
