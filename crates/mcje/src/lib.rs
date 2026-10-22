@@ -12,11 +12,25 @@ use jni::{
 
 pub use mcje_macros::*;
 
+pub mod client;
+
+/// Minecraft version the embedded jar was downloaded for.
+pub const VERSION: &str = env!("MCJE_VERSION");
+/// Assets directory (`<download>/assets`, containing `indexes/` and `objects/`).
+pub const ASSETS_DIR: &str = env!("MCJE_ASSETS_DIR");
+/// Asset index id matching [`ASSETS_DIR`].
+pub const ASSET_INDEX: &str = env!("MCJE_ASSET_INDEX");
+/// Extracted LWJGL/SDL native libraries.
+pub const NATIVES_DIR: &str = env!("MCJE_NATIVES_DIR");
+
 pub async fn init() -> JavaVM {
     let classpath = env!("MCJE_JVM_CLASSPATH");
+    let natives_dir = env!("MCJE_NATIVES_DIR");
 
     let jvm_args = InitArgsBuilder::new()
         .option(format!("-Djava.class.path={classpath}"))
+        .option(format!("-Djava.library.path={natives_dir}"))
+        .option(format!("-Dorg.lwjgl.librarypath={natives_dir}"))
         .build()
         .unwrap();
 
