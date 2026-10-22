@@ -1810,6 +1810,7 @@ dependencies = [
  "mcje_downloader",
  "mcje_macros",
  "tokio",
+ "zip",
 ]
 
 [[package]]
@@ -1821,6 +1822,7 @@ dependencies = [
  "futures-core",
  "reqwest",
  "serde",
+ "serde_json",
  "url",
 ]
 
@@ -1901,6 +1903,7 @@ dependencies = [
  "mcre_core",
  "mcre_fs",
  "mcre_resource_pack",
+ "mcre_shot",
  "mcre_world",
  "png",
  "pollster",
@@ -1931,6 +1934,15 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "zip",
+]
+
+[[package]]
+name = "mcre_shot"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3284,6 +3296,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "shotcmp"
+version = "0.1.0"
+dependencies = [
+ "png",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3877,6 +3896,17 @@ name = "uuid"
 version = "1.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cc1186384beb7dd8eedea376413fd654937285ea6c9cfbb928dc3043ea4b606"
+
+[[package]]
+name = "vanilla_shot"
+version = "0.1.0"
+dependencies = [
+ "mcje",
+ "mcje_downloader",
+ "mcre_anvil",
+ "mcre_shot",
+ "tokio",
+]
 
 [[package]]
 name = "vello_common"
