@@ -12,20 +12,24 @@ MCRE is an experimental Minecraft Java Edition client in Rust. Targets the versi
 ## Workspace
 
 ```
-crates/           # library crates (11)
+crates/           # library crates (12)
   mcre_core/      # primitives (no_std)
   mcre_data/      # block/state JSON + typed accessors (uses std)
   mcre_world/     # world model (no_std)
   mcre_assets/    # asset extraction (no_std except test)
-  mcje/           # JVM bridge (JNI)
+  mcje/           # JVM bridge (JNI), server + client spawn, java hooks
   mcje_macros/    # proc macros: #[mcje::main], #[mcje::test]
   mcje_downloader/# MC jar/lib downloader
   mcre_static_data_gen/ # generates Rust source from JSON (build-dep of mcre_world)
   mcre_fs/      # platform-agnostic filesystem (embedded-io-async traits, native + web backends)
   mcre_resource_pack/ # blockstate/model resolution + baked lookup table (ResourcePackData)
   mcre_renderer/   # WGPU renderer: texture atlas, chunk meshing, `examples/viewer.rs`
-tasks/            # binary tasks (1)
+  mcre_shot/     # shared parity-shot spec (vanilla + mcre screenshot pipelines)
+tasks/            # binary tasks (4)
   data_gen/       # extracts block/state JSON from MC jar via JNI
+  gen_world/      # generates a vanilla-anvil world via the embedded server JVM
+  vanilla_shot/   # captures a vanilla screenshot from a shot spec (embedded client JVM)
+  shotcmp/        # diffs two PNG screenshots (parity stats + amplified diff image)
 ```
 
 ## Commands
@@ -90,6 +94,7 @@ Manual steps (if auto fails or you need a specific version):
 - **`no_std` crates**: `mcre_core`, `mcre_world` (and `mcre_assets` except under `cfg(test)`). Filesystem access uses `mcre_fs` (embedded-io-async traits with native tokio + web OPFS backends).
 - **JNI bridge**: `mcje` crate embeds a JVM via JNI. `#[mcje::main]` wraps `async fn main(env: &mut JNIEnv)` with JVM init + bootstrap.
 - **Event-driven world model** documented in `docs/world-model.md`.
+- **Parity screenshots** documented in `docs/screenshot-parity.md`: one JSON spec (`mcre_shot`) drives both the embedded vanilla client (`tasks/vanilla_shot`) and the mcre viewer (`--shot`), diffed by `tasks/shotcmp` (`just shot <spec>`).
 
 ## Notable Config Files
 

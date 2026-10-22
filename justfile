@@ -152,3 +152,27 @@ bump-version:
   else
     echo "Already at latest version ($LATEST)"
   fi
+
+# ==================== PARITY SHOTS ====================
+
+# Capture a vanilla screenshot for a shot spec (writes target/shots/<name>.vanilla.png)
+shot-vanilla spec:
+  cargo run -r -p vanilla_shot -- --spec {{spec}}
+
+# Capture an mcre screenshot for a shot spec (writes target/shots/<name>.mcre.png)
+shot-mcre spec:
+  cargo run -r -p mcre_renderer --example viewer -- --shot {{spec}}
+
+# Compare two PNGs and write an amplified grayscale diff image
+shotcmp a b out *args:
+  cargo run -r -p shotcmp -- {{a}} {{b}} {{out}} {{args}}
+
+# Capture both engines for a spec and write the diff image
+[unix]
+shot spec:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  cargo run -r -p vanilla_shot -- --spec "{{spec}}"
+  cargo run -r -p mcre_renderer --example viewer -- --shot "{{spec}}"
+  NAME=$(jq -r .name "{{spec}}")
+  cargo run -r -p shotcmp -- "target/shots/$NAME.vanilla.png" "target/shots/$NAME.mcre.png" "target/shots/$NAME.diff.png"

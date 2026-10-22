@@ -1,0 +1,182 @@
+# Parity shots
+
+A parity shot captures the **same frame** in vanilla Minecraft and in mcre —
+same resolution, FOV, brightness, camera angle, world time, weather and render
+distance — so the two PNGs can be diffed pixel-by-pixel while building the
+1:1 vanilla renderer.
+
+Both pipelines are driven by one JSON **shot spec** (`crates/mcre_shot`).
+
+## Requirements
+
+- `JAVA_HOME` pointing at a JDK (the embedded client JVM and the `mcje` build
+  need it).
+- A generated world, e.g. `just gen-world` (writes `target/gen_world/world`).
+- A display — the vanilla client opens a real window (it can stay in the
+  background; it must not be covered by a full-screen app on macOS or the
+  captured frame may be swapped out).
+
+## Quickstart
+
+```sh
+just gen-world                                    # once: build the shared world
+just shot docs/shots/noon.json                    # both engines + diff
+# -> target/shots/noon.vanilla.png
+# -> target/shots/noon.mcre.png
+# -> target/shots/noon.diff.png
+```
+
+The `just shot` recipe chains `shot-vanilla`, `shot-mcre`, and `shotcmp`. The
+spec's `name` field (`"noon"` here) picks the output filenames.
+
+## Spec format
+
+`docs/shots/noon.json`:
+
+```json
+{
+  "name": "noon",
+  "world": "target/gen_world/world",
+  "eye": [8.5, 80.0, 8.5],
+  "yaw": 45.0,
+  "pitch": 25.0,
+  "fov": 70.0,
+  "brightness": 0.5,
+  "time_ticks": 6000,
+  "width": 1280,
+  "height": 720,
+  "render_distance": 8,
+  "clouds": "off",
+  "settle_ms": 4000
+}
+```
+
+| Field            | Meaning |
+|------------------|---------|
+| `name`           | Output filename prefix (`<name>.vanilla.png`, `<name>.mcre.png`). |
+| `world`          | Path to the Anvil save dir used by both pipelines. |
+| `eye`            | Camera position `[x, y, z]` in world blocks. |
+| `yaw`, `pitch`   | Camera rotation, degrees. mcre's viewer applies a 180° yaw offset internally so the **vanilla** angle is the one you set here. |
+| `fov`            | Field of view in degrees (40–110). |
+| `brightness`     | Minecraft `gamma` (0.0 – 1.0). |
+| `time_ticks`     | Frozen world time (0 – 24000, 6000 = noon). |
+| `width`,`height` | Output resolution. |
+| `render_distance`| Chunk render radius (also patches `simulationDistance`). |
+| `clouds`         | `"off"`, `"fast"`, or `"fancy"` (vanilla cloud setting). |
+| `settle_ms`      | How long to wait after the world loads before verifying. |
+
+## How the vanilla capture works
+
+`cargo run -r -p vanilla_shot -- --spec <spec>` runs `tasks/vanilla_shot`
+which:
+
+1. **Prepares the world** (`tasks/vanilla_shot/src/prep.rs`):
+   - symlinks the world into `target/shot/client` and writes a
+     playerdata file for a fixed UUID (`00000000-0000-4000-8000-000000000001`,
+     username `McreShot`) with the player in creative + flying at the spec's
+     eye position;
+   - patches `level.dat` to set `GameType: 1` (Creative) and
+     `DataVersion`;
+   - patches `data/minecraft/world_clocks.dat` to freeze the overworld
+     clock (`paused: 1`, `total_ticks: <spec.time_ticks>`, `rate: 1.0`,
+     `partial_tick: 0.0`) — the file shape is
+     `{data: {<dim>: {…}}, DataVersion}` matching the SavedData codec;
+   - patches `data/minecraft/weather.dat` to permanently clear weather;
+   - writes `options.txt` with `onboardAccessibility: false` (skips the
+     narrator welcome screen so `--quickPlaySingleplayer` runs without
+     manual input), `fov`, `gamma`, `renderDistance`, `music: 0`, no
+     bobbing, no fullscreen, etc.
+
+2. **Boots the client** via JNI in `mcje` with
+   `--quickPlaySingleplayer <worldName>`, which fires once the title-screen
+   resources finish loading.
+
+3. **Drives the client** through `crates/mcje/java/mcre/ShotDriver.java`
+   executed on the render thread:
+
+   | step   | effect |
+   |--------|--------|
+   | `wait_for_world` | polls until the client's `player` is non-null and the render thread is alive. |
+   | `verify_camera`  | reads the player's eye and rotation; if not at spec (with 0.01 m and 0.1° epsilons), teleports via `ServerGamePacketListenerImpl#teleport`. The feet are placed so `feet + getEyeHeight()` lands exactly on `spec.eye` (vanilla's eye height is 1.62; `mcre_shot::EYE_HEIGHT` is 1.53). |
+   | `verify_framebuffer` | reads the window size; if it doesn't match `spec.width × height`, calls `Window#setWindowed(logical_w, logical_h)` and retries (handles macOS Retina 2×). |
+   | `verify_clock`   | reads `ClientLevel.getOverworldClockTime()` (inherited from `Level`); must equal `spec.time_ticks`. |
+   | `hide`           | `Minecraft.gui.hud.toggle()` if not already hidden. |
+   | `grab`           | `Screenshot.grab(gameDirectory, name, mainRenderTarget, 1, cb)`. The callback is empty; the actual write happens on `Util.ioPool()` once the GPU readback fence drains. |
+   | `stop`           | `Minecraft.stop()` to clean up. |
+
+4. **Waits for `screenshots/<name>.png`** to appear and have a stable size
+   for ≥ 400 ms (the GPU readback is async; the file is written on the IO
+   pool after the readback fence fires).
+
+5. **Copies** the PNG to `target/shots/<name>.vanilla.png` and validates the
+   dimensions match the spec.
+
+## How the mcre capture works
+
+`cargo run -r -p mcre_renderer --example viewer -- --shot <spec>` runs the
+WGPU viewer in offscreen mode (`crates/mcre_renderer/examples/viewer.rs`):
+
+1. Loads the spec, applies fog/time/clouds/render-distance.
+2. Imports chunks around the camera (radius 8) from the Anvil save.
+3. Streams further chunks in the background while the camera frames settle.
+4. Once the mesh has been quiet for `SHOT_QUIET_FRAMES` consecutive frames,
+   captures the current render target to `target/shots/<name>.mcre.png` via
+   `write_png`.
+
+## How the diff works
+
+`cargo run -r -p shotcmp -- <a.png> <b.png> <diff.png> [--amplify N] [--max-mae X]`
+prints mean absolute error and the share of pixels whose worst channel
+differs by more than 4 / 16, and writes an amplified grayscale PNG to
+`diff.png`. With `--max-mae X`, the exit code is 1 when the MAE exceeds X
+(for scripted regression checks).
+
+## Adding a new shot
+
+1. Copy `docs/shots/noon.json` and tweak the fields (keep `world` and
+   `time_ticks` matching a chunk that actually exists in the world, or the
+   camera will render the void / unloaded terrain).
+2. `just shot docs/shots/<name>.json`.
+
+## Common issues
+
+- **"Welcome to Minecraft!" screen blocks quickplay**: the prep writes
+  `onboardAccessibility: false` so this should never appear. If it does,
+  delete `target/shot/client/options.txt` and re-run.
+- **Camera mismatch every attempt**: the `verify_camera` loop has 3
+  attempts with `FIX_SETTLE` (1.5 s). If the server-side teleport never
+  converges, the most common cause is the world being empty at that
+  position (player is unloaded).
+- **`world_clocks.dat` not parsed**: the file must use the
+  `{data: {…}, DataVersion}` shape, not the bare per-dimension map — the
+  vanilla SavedData codec for `SavedDataType(world_clocks)` wraps the map
+  under `data`.
+- **Framebuffer never reaches the target size**: the loop in
+  `verify_framebuffer` re-calls `Window#setWindowed` with the logical size
+  (`spec_w / scale_x`, `spec_h / scale_y`) where the scale is detected
+  from the first reading. On unusual DPI setups this may not converge; the
+  loop gives up after 5 attempts.
+- **Screenshot never written**: the async GPU readback (`queueFencedTask`)
+  fires every frame in `Minecraft.run`; the file appears within ~1 s under
+  normal conditions. If `wait_for_screenshot` times out, check that the
+  client window isn't occluded on macOS and that the IO pool isn't
+  blocked.
+- **Music plays during capture**: `options.txt` writes `music: 0` to mute
+  it. If you hear music, the options file is being regenerated by a
+  previous run that loaded it with the default — re-run from a clean
+  `target/shot/client`.
+
+## Layout
+
+```
+crates/mcre_shot/                 # shared spec types (ShotSpec, Clouds, etc.)
+crates/mcje/                      # embedded JVM + JNI client control
+  java/mcre/ShotDriver.java       # render-thread step implementation
+  src/client.rs                   # JNI handles (player state, window, etc.)
+tasks/vanilla_shot/               # vanilla pipeline orchestration
+  src/main.rs                     # drive() — wait/verify/hide/grab/copy
+  src/prep.rs                     # world + options + world_clocks/weather patches
+  src/assets.rs                   # runtime asset-object download
+tasks/shotcmp/                    # PNG diff tool
+crates/mcre_renderer/examples/viewer.rs   # mcre offscreen shot mode
+```
