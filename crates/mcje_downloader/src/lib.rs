@@ -3,9 +3,11 @@ use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use url::Url;
 
 const MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+const ASSET_OBJECTS_BASE: &str = "https://resources.download.minecraft.net";
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct LatestReleases {
@@ -47,6 +49,20 @@ pub struct VersionManifest {
     pub downloads: VersionDownloads,
     pub id: String,
     pub libraries: Vec<Library>,
+    #[serde(rename = "assetIndex", default)]
+    pub asset_index: Option<AssetIndex>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct AssetIndex {
+    pub id: String,
+    #[serde(default)]
+    pub sha1: String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(rename = "totalSize", default)]
+    pub total_size: u64,
+    pub url: Url,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -285,6 +301,110 @@ impl LibraryExtractInstructions {
     pub fn is_empty(&self) -> bool {
         self.exclude.is_empty()
     }
+}
+
+impl AssetIndex {
+    pub async fn download(&self) -> reqwest::Result<Bytes> {
+        reqwest::get(self.url.clone())
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await
+    }
+}
+
+/// Parsed contents of an asset index (`assets/indexes/<id>.json`): virtual
+/// asset paths mapped to their content-addressed object files.
+#[derive(Debug, Deserialize)]
+pub struct AssetIndexFile {
+    pub objects: HashMap<String, AssetObject>,
+}
+
+/// One object of an asset index: the SHA-1 hash naming its file under
+/// `assets/objects/` and its byte size.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AssetObject {
+    pub hash: String,
+    #[serde(default)]
+    pub size: u64,
+}
+
+impl AssetIndexFile {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_json::from_slice(bytes)
+    }
+
+    /// Objects not stored under `objects_root` or stored with the wrong
+    /// size, deduplicated by hash (several logical paths share content).
+    pub fn missing(&self, objects_root: &Path) -> Vec<(PathBuf, AssetObject)> {
+        let mut missing: HashMap<&str, (PathBuf, AssetObject)> = HashMap::new();
+        for object in self.objects.values() {
+            let dest = object.path_in(objects_root);
+            let stored = std::fs::metadata(&dest).is_ok_and(|meta| meta.len() == object.size);
+            if !stored {
+                missing
+                    .entry(&object.hash)
+                    .or_insert_with(|| (dest, object.clone()));
+            }
+        }
+        missing.into_values().collect()
+    }
+}
+
+impl AssetObject {
+    /// Content-addressed location of this object under an `objects` root.
+    pub fn path_in(&self, objects_root: &Path) -> PathBuf {
+        let prefix = self.hash.get(..2).unwrap_or(&self.hash);
+        objects_root.join(prefix).join(&self.hash)
+    }
+
+    /// Download this object to `dest`, retrying transient failures and
+    /// verifying the transferred size against the index.
+    pub async fn download_to(&self, client: &reqwest::Client, dest: &Path) -> Result<(), String> {
+        let prefix = self.hash.get(..2).unwrap_or(&self.hash);
+        let url = format!("{ASSET_OBJECTS_BASE}/{prefix}/{}", self.hash);
+        let mut last = String::new();
+        for attempt in 1..=3u64 {
+            match fetch(client, &url).await {
+                Ok(bytes) if bytes.len() as u64 == self.size => {
+                    if let Some(parent) = dest.parent() {
+                        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+                    }
+                    return std::fs::write(dest, bytes).map_err(|err| err.to_string());
+                }
+                Ok(bytes) => {
+                    last = format!(
+                        "{}: got {} bytes, want {}",
+                        self.hash,
+                        bytes.len(),
+                        self.size
+                    );
+                }
+                Err(err) => last = err,
+            }
+            eprintln!("asset {} attempt {attempt}/3 failed: {last}", self.hash);
+            if attempt < 3 {
+                std::thread::sleep(std::time::Duration::from_millis(250 * attempt));
+            }
+        }
+        Err(last)
+    }
+}
+
+/// Shared HTTP client for bulk asset downloads (one connection pool).
+pub fn asset_client() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder().build()
+}
+
+async fn fetch(client: &reqwest::Client, url: &str) -> Result<Bytes, String> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?
+        .error_for_status()
+        .map_err(|err| err.to_string())?;
+    response.bytes().await.map_err(|err| err.to_string())
 }
 
 /// Remove array brackets and count them
