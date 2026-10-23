@@ -1179,6 +1179,14 @@ impl Renderer {
             pixels.extend_from_slice(&mapped[start..start + bytes_per_row as usize]);
         }
         drop(mapped);
+        if matches!(
+            self.config.format,
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+        ) {
+            for texel in pixels.as_chunks_mut::<4>().0 {
+                texel.swap(0, 2);
+            }
+        }
         buffer.unmap();
         Ok(pixels)
     }
