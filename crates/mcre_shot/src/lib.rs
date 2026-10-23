@@ -93,6 +93,10 @@ pub struct ShotSpec {
     /// milliseconds, before the HUD is hidden and the shot is taken.
     #[serde(default = "default_settle_ms")]
     pub settle_ms: u64,
+    /// Vanilla `ao` option: smooth lighting plus ambient occlusion. Disabling
+    /// it switches both pipelines to flat lighting (default true).
+    #[serde(default = "default_ao")]
+    pub ao: bool,
 }
 
 fn default_fov() -> f64 {
@@ -115,6 +119,9 @@ fn default_render_distance() -> u32 {
 }
 fn default_settle_ms() -> u64 {
     DEFAULT_SETTLE_MS
+}
+fn default_ao() -> bool {
+    true
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -232,6 +239,7 @@ impl ShotSpec {
             render_distance: DEFAULT_RENDER_DISTANCE,
             clouds: Clouds::default(),
             settle_ms: DEFAULT_SETTLE_MS,
+            ao: true,
         }
     }
 
@@ -260,6 +268,7 @@ mod tests {
             render_distance: 8,
             clouds: Clouds::Off,
             settle_ms: 4000,
+            ao: true,
         }
     }
 

@@ -221,6 +221,7 @@ fn main() {
     if let Some(spec) = &shot {
         args.world = Some(spec.world.to_string_lossy().to_string());
         args.radius = spec.render_distance.clamp(1, 16);
+        args.ao = spec.ao;
     }
     let render_distance = args.radius;
     let (data, atlas, cloud_texture, world, meshes, camera_pos, streamer, packs) =
@@ -240,7 +241,11 @@ fn main() {
         inflight: 0,
         generation: 0,
         pending_stream_dirty: Vec::new(),
-        light_mode: LightMode::Smooth,
+        light_mode: if shot.as_ref().is_some_and(|spec| !spec.ao) {
+            LightMode::Flat
+        } else {
+            LightMode::Smooth
+        },
         window: None,
         renderer: None,
         keys: HashSet::new(),
@@ -358,19 +363,16 @@ async fn prepare(
     }
     world.adopt_stored_light();
     world.compute_light();
+    let light_mode = if args.ao {
+        LightMode::Smooth
+    } else {
+        LightMode::Flat
+    };
     let options = MeshOptions::default();
     let mut meshes = Vec::new();
     for chunk in world.iter_chunks() {
         let origin = [chunk.pos().x * CHUNK_WIDTH, chunk.pos().z * CHUNK_WIDTH];
-        let mesh = mesh_one(
-            &data,
-            &atlas,
-            &world,
-            chunk,
-            origin,
-            LightMode::Smooth,
-            options,
-        );
+        let mesh = mesh_one(&data, &atlas, &world, chunk, origin, light_mode, options);
         log_mesh(
             &format!("initial mesh ({},{})", chunk.pos().x, chunk.pos().z),
             &mesh,
@@ -401,6 +403,7 @@ async fn prepare(
 struct ViewerArgs {
     world: Option<String>,
     radius: u32,
+    ao: bool,
     packs: Vec<String>,
     reload_test: bool,
     shot: Option<String>,
@@ -412,6 +415,7 @@ impl ViewerArgs {
     fn parse() -> Self {
         let mut world = None;
         let mut radius = 8;
+        let ao = true;
         let mut packs = Vec::new();
         let mut reload_test = false;
         let mut shot = None;
@@ -462,6 +466,7 @@ impl ViewerArgs {
         Self {
             world,
             radius,
+            ao,
             packs,
             reload_test,
             shot,

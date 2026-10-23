@@ -92,6 +92,7 @@ fn link_save(game_dir: &Path, world: &Path, save_name: &str) -> Result<(), Strin
 
 fn write_options(game_dir: &Path, spec: &ShotSpec, data_version: i32) -> Result<(), String> {
     let fov = (spec.fov - 70.0) / 40.0;
+    let ao = spec.ao;
     let clouds = match spec.clouds {
         Clouds::Off => "\"false\"",
         Clouds::Fast => "\"fast\"",
@@ -103,7 +104,7 @@ fn write_options(game_dir: &Path, spec: &ShotSpec, data_version: i32) -> Result<
     let content = format!(
         "version:{data_version}\n\
          graphicsPreset:\"custom\"\n\
-         ao:true\n\
+         ao:{ao}\n\
          biomeBlendRadius:2\n\
          cutoutLeaves:true\n\
          mipmapLevels:4\n\
