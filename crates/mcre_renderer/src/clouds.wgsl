@@ -10,6 +10,7 @@ struct Params {
     /// Fog end distance in `x`, cloud fade-out distance in `y`.
     fog_end_sky: vec4<f32>,
     flags: vec4<u32>,
+    fog_misc: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -87,7 +88,7 @@ fn vs_clouds(in: CloudInput) -> CloudOutput {
 @fragment
 fn fs_clouds(in: CloudOutput) -> @location(0) vec4<f32> {
     var color = in.color;
-    let fog = clamp(in.distance / params.fog_end_sky.y, 0.0, 1.0);
+    let fog = clamp(in.distance / params.fog_end_sky.w, 0.0, 1.0);
     color.a *= 1.0 - fog;
     return color;
 }

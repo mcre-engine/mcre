@@ -7,7 +7,7 @@ use mcre_fs::native::NativeFs;
 use mcre_renderer::clouds::{CLOUD_HEIGHT, CloudStatus, CloudTexture};
 use mcre_renderer::lightmap::{DAY_LENGTH_TICKS, DEFAULT_BRIGHTNESS, sky_light_factor};
 use mcre_renderer::{
-    Atlas, CullParams, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4, Mesh,
+    Atlas, CullParams, DebugFlags, EguiFrame, FlyCamera, Fog, Frustum, LightMode, Mat4, Mesh,
     MeshOptions, MeshResult, MeshWorker, RenderChunk, Renderer, SectionMesh, SectionVisibility,
     StreamSource, build_atlas, find_visible_sections, mesh_chunk, pack_chunk_sections,
 };
@@ -25,8 +25,12 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
-const FOG_COLOR: [f32; 3] = [0.53, 0.81, 0.92];
-const NIGHT_FOG_COLOR: [f32; 3] = [0.03, 0.05, 0.12];
+/// Vanilla `EnvironmentAttributes.FOG_COLOR` for the overworld (`#c0d8ff`).
+const OVERWORLD_FOG_COLOR: [f32; 3] = [192.0 / 255.0, 216.0 / 255.0, 1.0];
+/// Vanilla `EnvironmentAttributes.SKY_COLOR` for the overworld (`#78a7ff`).
+const OVERWORLD_SKY_COLOR: [f32; 3] = [120.0 / 255.0, 167.0 / 255.0, 1.0];
+/// Vanilla `EnvironmentAttributes.SKY_FOG_END_DISTANCE`.
+const SKY_FOG_END_DISTANCE: f32 = 512.0;
 /// Vanilla `Timelines.NIGHT_CLOUD_COLOR_MULTIPLIER`.
 const NIGHT_CLOUD_COLOR: [f32; 3] = [0.1, 0.1, 0.15];
 const DAY_LENGTH_SECS: f32 = 600.0;
@@ -74,17 +78,91 @@ impl ChunkMesh {
     }
 }
 
-fn fog_color_for(sky: f32) -> [f32; 3] {
-    let t = sky.clamp(0.0, 1.0);
-    [
-        NIGHT_FOG_COLOR[0] + (FOG_COLOR[0] - NIGHT_FOG_COLOR[0]) * t,
-        NIGHT_FOG_COLOR[1] + (FOG_COLOR[1] - NIGHT_FOG_COLOR[1]) * t,
-        NIGHT_FOG_COLOR[2] + (FOG_COLOR[2] - NIGHT_FOG_COLOR[2]) * t,
-    ]
+/// Vanilla `Timelines.OVERWORLD_DAY` `visual/fog_color` multiplier track
+/// (`multiply`), white by day and `#0f0f16` at night.
+const FOG_COLOR_MULTIPLIER: [(f32, [f32; 3]); 4] = [
+    (133.0, [1.0, 1.0, 1.0]),
+    (11867.0, [1.0, 1.0, 1.0]),
+    (13670.0, [15.0 / 255.0, 15.0 / 255.0, 22.0 / 255.0]),
+    (22330.0, [15.0 / 255.0, 15.0 / 255.0, 22.0 / 255.0]),
+];
+
+/// Vanilla `Timelines.OVERWORLD_DAY` `visual/sky_color` multiplier track.
+const SKY_COLOR_MULTIPLIER: [(f32, [f32; 3]); 4] = [
+    (133.0, [1.0, 1.0, 1.0]),
+    (11867.0, [1.0, 1.0, 1.0]),
+    (13670.0, [0.0, 0.0, 0.0]),
+    (22330.0, [0.0, 0.0, 0.0]),
+];
+
+/// Linear keyframe track with the day wrapping from the last keyframe back
+/// to the first, mirroring `Timeline`'s default interpolation.
+fn time_multiplier(time_ticks: f32, keys: &[(f32, [f32; 3])]) -> [f32; 3] {
+    let time = time_ticks.rem_euclid(DAY_LENGTH_TICKS);
+    let count = keys.len();
+    for index in 0..count {
+        let (start, from) = keys[index];
+        let (mut end, to) = keys[(index + 1) % count];
+        if index + 1 == count {
+            end += DAY_LENGTH_TICKS;
+        }
+        let sample = if index + 1 == count && time < keys[0].0 {
+            time + DAY_LENGTH_TICKS
+        } else {
+            time
+        };
+        if sample >= start && sample < end {
+            let t = (sample - start) / (end - start);
+            return [
+                from[0] + (to[0] - from[0]) * t,
+                from[1] + (to[1] - from[1]) * t,
+                from[2] + (to[2] - from[2]) * t,
+            ];
+        }
+    }
+    keys[0].1
 }
 
-fn fog_density_scale(sky: f32) -> f32 {
-    0.5 + 0.5 * sky.clamp(0.0, 1.0)
+/// Vanilla `AtmosphericFogEnvironment.getBaseColor`: the dimension's fog
+/// color pulled toward its sky color as the sky fog end nears.
+fn atmospheric_fog_color(render_distance: u32, time_ticks: f32) -> [f32; 3] {
+    let sky_end = (SKY_FOG_END_DISTANCE / 16.0).min(render_distance as f32);
+    let lerp = (sky_end / 32.0).clamp(0.0, 1.0) * (1.0 - 0.25) + 0.25;
+    let mix = 1.0 - lerp.powf(0.25);
+    let fog = time_multiplier(time_ticks, &FOG_COLOR_MULTIPLIER);
+    let sky = time_multiplier(time_ticks, &SKY_COLOR_MULTIPLIER);
+    let mut color = [0.0; 3];
+    for i in 0..3 {
+        let fog = OVERWORLD_FOG_COLOR[i] * fog[i];
+        let sky = OVERWORLD_SKY_COLOR[i] * sky[i];
+        color[i] = fog + (sky - fog) * mix;
+    }
+    color
+}
+
+/// Vanilla `FogRenderer.setupFog`: the environmental fog follows the
+/// dimension attributes (the overworld's default span is far past the loaded
+/// radius), while the render-distance fog hides the loaded edge.
+fn vanilla_fog(
+    render_distance: u32,
+    time_ticks: f32,
+    submerged: Option<FluidKind>,
+) -> Fog {
+    let render_distance_blocks = render_distance as f32 * 16.0;
+    let span = (render_distance_blocks / 10.0).clamp(4.0, 64.0);
+    let (color, environmental_start, environmental_end) = match submerged {
+        Some(FluidKind::Water) => (WATER_FOG_COLOR, -8.0, 96.0),
+        Some(FluidKind::Lava) => (LAVA_FOG_COLOR, 0.25, 1.0),
+        None => (atmospheric_fog_color(render_distance, time_ticks), 0.0, 1024.0),
+    };
+    Fog {
+        color,
+        density: 1.0,
+        environmental_start,
+        environmental_end,
+        render_distance_start: render_distance_blocks - span,
+        render_distance_end: render_distance_blocks,
+    }
 }
 
 /// Approximation of the vanilla `CLOUD_COLOR` timeline keyed on the same
@@ -138,6 +216,7 @@ fn main() {
         args.world = Some(spec.world.to_string_lossy().to_string());
         args.radius = spec.render_distance.clamp(1, 16);
     }
+    let render_distance = args.radius;
     let (data, atlas, cloud_texture, world, meshes, camera_pos, streamer, packs) =
         runtime.block_on(prepare(args));
     let total_chunks = meshes.len();
@@ -170,8 +249,7 @@ fn main() {
         unlit: false,
         heatmap: false,
         fog_enabled: true,
-        fog_start: 64.0,
-        fog_end: 160.0,
+        render_distance,
         submerged: None,
         sky_factor: 1.0,
         time_ticks: 6000.0,
@@ -197,11 +275,8 @@ fn main() {
         emit_spec: emit_spec.map(Into::into),
         world_path,
     };
-    if let Some(horizon) = viewer.stream_horizon() {
-        // Fog follows the loaded ring (like vanilla render-distance fog), so
-        // the stream frontier stays hidden instead of showing a hard cut.
-        viewer.fog_start = horizon * 0.75;
-        viewer.fog_end = horizon;
+    if let Some(radius) = viewer.streamer.as_ref().map(|stream| stream.radius) {
+        viewer.render_distance = u32::try_from(radius).unwrap_or(render_distance);
     }
     if let Some(spec) = shot {
         viewer.camera.position = [spec.eye[0] as f32, spec.eye[1] as f32, spec.eye[2] as f32];
@@ -910,8 +985,7 @@ struct Viewer {
     unlit: bool,
     heatmap: bool,
     fog_enabled: bool,
-    fog_start: f32,
-    fog_end: f32,
+    render_distance: u32,
     submerged: Option<FluidKind>,
     sky_factor: f32,
     time_ticks: f32,
@@ -963,7 +1037,11 @@ impl ApplicationHandler for Viewer {
         renderer.set_wireframe(self.wireframe);
         renderer.set_backface_culling(self.backface_cull);
         renderer.set_chunk_borders(self.chunk_borders);
-        renderer.set_fog(FOG_COLOR, self.fog_start, self.fog_end);
+        renderer.set_fog(vanilla_fog(
+            self.render_distance,
+            self.time_ticks,
+            self.submerged,
+        ));
         renderer.set_time(self.time_ticks);
         renderer.set_brightness(self.brightness);
         renderer.set_cloud_texture(self.cloud_texture.clone());
@@ -1247,6 +1325,7 @@ impl Viewer {
         };
         let aspect = width as f32 / height as f32;
         let old_submerged = self.submerged;
+        let old_sky_factor = self.sky_factor;
         self.submerged = self.fog_fluid();
         if self.submerged != old_submerged {
             self.camera.fov = if self.submerged.is_some() {
@@ -1271,7 +1350,6 @@ impl Viewer {
 
         let old_debug = (self.unlit, self.heatmap, self.fog_enabled);
         let old_geometry = (self.wireframe, self.backface_cull, self.chunk_borders);
-        let old_fog = (self.fog_start, self.fog_end, self.sky_factor);
         let old_time = self.time_ticks;
         let old_brightness = self.brightness;
         let old_clouds = (self.cloud_status, self.cloud_range);
@@ -1297,9 +1375,9 @@ impl Viewer {
                         ui.checkbox(&mut self.heatmap, "Heatmap");
                         ui.checkbox(&mut self.fog_enabled, "Fog");
                         ui.add(
-                            egui::Slider::new(&mut self.fog_start, 0.0..=400.0).text("Fog start"),
+                            egui::Slider::new(&mut self.render_distance, 2..=32)
+                                .text("Render distance"),
                         );
-                        ui.add(egui::Slider::new(&mut self.fog_end, 0.0..=400.0).text("Fog end"));
                         let scrub = ui.add(
                             egui::Slider::new(&mut self.time_ticks, 0.0..=DAY_LENGTH_TICKS)
                                 .text("Time (ticks)"),
@@ -1616,7 +1694,6 @@ impl Viewer {
             self.reload_packs();
         }
 
-        let water_fog_end = self.stream_horizon().map_or(96.0, |h| (h - 8.0).min(96.0));
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };
@@ -1632,22 +1709,12 @@ impl Viewer {
             renderer.set_backface_culling(self.backface_cull);
             renderer.set_chunk_borders(self.chunk_borders);
         }
-        if self.submerged != old_submerged
-            || (self.fog_start, self.fog_end, self.sky_factor) != old_fog
-        {
-            let (color, start, end) = match self.submerged {
-                Some(FluidKind::Water) => (WATER_FOG_COLOR, -8.0, water_fog_end),
-                Some(FluidKind::Lava) => (LAVA_FOG_COLOR, 0.25, 1.0),
-                None => {
-                    let scale = fog_density_scale(self.sky_factor);
-                    (
-                        fog_color_for(self.sky_factor),
-                        self.fog_start * scale,
-                        self.fog_end.max(self.fog_start) * scale,
-                    )
-                }
-            };
-            renderer.set_fog(color, start, end);
+        if self.submerged != old_submerged || self.sky_factor != old_sky_factor {
+            renderer.set_fog(vanilla_fog(
+                self.render_distance,
+                self.time_ticks,
+                self.submerged,
+            ));
         }
         if self.time_ticks != old_time {
             renderer.set_time(self.time_ticks);
@@ -1678,19 +1745,7 @@ impl Viewer {
     /// Push the environment settings a parity shot needs (fog, time,
     /// brightness, clouds) without the interactive change detection.
     fn push_shot_settings(&mut self) {
-        let water_fog_end = self.stream_horizon().map_or(96.0, |h| (h - 8.0).min(96.0));
-        let (color, start, end) = match self.submerged {
-            Some(FluidKind::Water) => (WATER_FOG_COLOR, -8.0, water_fog_end),
-            Some(FluidKind::Lava) => (LAVA_FOG_COLOR, 0.25, 1.0),
-            None => {
-                let scale = fog_density_scale(self.sky_factor);
-                (
-                    fog_color_for(self.sky_factor),
-                    self.fog_start * scale,
-                    self.fog_end.max(self.fog_start) * scale,
-                )
-            }
-        };
+        let fog = vanilla_fog(self.render_distance, self.time_ticks, self.submerged);
         let (time_ticks, brightness) = (self.time_ticks, self.brightness);
         let (cloud_status, cloud_range) = (self.cloud_status, self.cloud_range);
         let cloud_ticks = (
@@ -1701,7 +1756,7 @@ impl Viewer {
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };
-        renderer.set_fog(color, start, end);
+        renderer.set_fog(fog);
         renderer.set_time(time_ticks);
         renderer.set_brightness(brightness);
         renderer.set_cloud_status(cloud_status);

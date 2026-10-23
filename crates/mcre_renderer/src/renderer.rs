@@ -88,18 +88,56 @@ struct CloudGpu {
     mesh: Option<CloudMeshGpu>,
 }
 
+/// Vanilla `Fog` uniform block: two independent linear fogs (environmental
+/// and render-distance) plus the color and its density multiplier.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fog {
+    pub color: [f32; 3],
+    /// `FogColor.a`, scaling how strongly the fog color is mixed in.
+    pub density: f32,
+    /// Spherical-distance fog from `FogEnvironment` (overworld default
+    /// `0..1024`, so it only matters beyond the loaded radius).
+    pub environmental_start: f32,
+    pub environmental_end: f32,
+    /// Cylindrical-distance fog that hides the render-distance edge.
+    pub render_distance_start: f32,
+    pub render_distance_end: f32,
+}
+
+impl Fog {
+    /// Vanilla's starting point before `FogRenderer` recomputes the ranges.
+    pub const fn none() -> Self {
+        Self {
+            color: [0.0; 3],
+            density: 1.0,
+            environmental_start: 0.0,
+            environmental_end: f32::INFINITY,
+            render_distance_start: f32::INFINITY,
+            render_distance_end: f32::INFINITY,
+        }
+    }
+}
+
+impl Default for Fog {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     view_proj: [f32; 16],
     camera_pos: [f32; 4],
-    /// Fog color in `rgb`, fog start distance in `a`.
+    /// Fog color in `rgb`; `FogEnvironmentalStart` in `a`.
     fog_color_start: [f32; 4],
-    /// Fog end distance in `x`; cloud fog fade-out distance in `y`; the
-    /// texcoord shrink epsilon in `z`.
+    /// `x` environmental end, `y` render-distance start, `z` render-distance
+    /// end, `w` cloud fog fade-out distance.
     fog_end_sky: [f32; 4],
     /// Debug bits in `x` (`unlit`, `heatmap`, `fog_off`), `yzw` padding.
     flags: [u32; 4],
+    /// `x` texcoord shrink epsilon, `y` fog density, `zw` padding.
+    fog_misc: [f32; 4],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -230,9 +268,7 @@ pub struct Renderer {
     lightmap_key: LightmapParams,
     /// Sodium `u_TexCoordShrink` (8-bit subtexel anti-bleed epsilon).
     tex_coord_shrink: f32,
-    fog_color: [f32; 3],
-    fog_start: f32,
-    fog_end: f32,
+    fog: Fog,
     lightmap_params: LightmapParams,
     cloud_texture: Option<CloudTexture>,
     cloud_gpu: Option<CloudGpu>,
@@ -337,9 +373,14 @@ impl Renderer {
             shared_indices,
             section_table,
             tex_coord_shrink: shrink_for_width(atlas.width),
-            fog_color: [SKY.r as f32, SKY.g as f32, SKY.b as f32],
-            fog_start: 64.0,
-            fog_end: 160.0,
+            fog: Fog {
+                color: [SKY.r as f32, SKY.g as f32, SKY.b as f32],
+                density: 1.0,
+                environmental_start: 0.0,
+                environmental_end: f32::INFINITY,
+                render_distance_start: 64.0,
+                render_distance_end: 160.0,
+            },
             lightmap_params: LightmapParams::default(),
             cloud_texture: None,
             cloud_gpu: set.clouds,
@@ -358,12 +399,11 @@ impl Renderer {
         self.stats
     }
 
-    /// Distance fog: color fades in between `start` and `end` world units
-    /// from the camera.
-    pub fn set_fog(&mut self, color: [f32; 3], start: f32, end: f32) {
-        self.fog_color = color;
-        self.fog_start = start;
-        self.fog_end = end;
+    /// Distance fog, matching vanilla `Fog` uniforms: the spherical
+    /// environmental fog plus the cylindrical render-distance fog, both
+    /// linear, blended toward `color` scaled by `density`.
+    pub fn set_fog(&mut self, fog: Fog) {
+        self.fog = fog;
     }
 
     /// Vanilla `Timelines.OVERWORLD_DAY` environment: sets the sky light
@@ -828,18 +868,24 @@ impl Renderer {
             view_proj,
             camera_pos: [camera_pos[0], camera_pos[1], camera_pos[2], 0.0],
             fog_color_start: [
-                self.fog_color[0],
-                self.fog_color[1],
-                self.fog_color[2],
-                self.fog_start,
+                self.fog.color[0],
+                self.fog.color[1],
+                self.fog.color[2],
+                self.fog.environmental_start,
             ],
             fog_end_sky: [
-                self.fog_end,
+                self.fog.environmental_end,
+                self.fog.render_distance_start,
+                self.fog.render_distance_end,
                 cloud_fog_end(self.cloud_range_chunks),
-                self.tex_coord_shrink,
-                0.0,
             ],
             flags: [debug_bits(&self.debug_flags), 0, 0, 0],
+            fog_misc: [
+                self.tex_coord_shrink,
+                self.fog.density,
+                0.0,
+                0.0,
+            ],
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
