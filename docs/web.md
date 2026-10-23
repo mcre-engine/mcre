@@ -65,7 +65,9 @@ just web-reference
 ```
 
 The reference is a native render of the same demo scene. It needs the default
-pack cache (the native viewer downloads it on first use).
+pack cache (the native viewer downloads it on first use). Regenerate it
+whenever the renderer, demo scene, or Minecraft assets change (including
+`mc-version` bumps).
 
 ## OPFS conformance
 
