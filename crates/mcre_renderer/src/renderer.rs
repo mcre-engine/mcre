@@ -314,7 +314,11 @@ impl Renderer {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("mcre-device"),
-                required_features: wgpu::Features::POLYGON_MODE_LINE,
+                required_features: if cfg!(target_arch = "wasm32") {
+                    wgpu::Features::empty()
+                } else {
+                    wgpu::Features::POLYGON_MODE_LINE
+                },
                 ..Default::default()
             })
             .await?;
@@ -1428,6 +1432,14 @@ fn create_pipeline(
     surface_format: wgpu::TextureFormat,
     section_table: &wgpu::Buffer,
 ) -> PipelineSet {
+    let wireframe_mode = if device
+        .features()
+        .contains(wgpu::Features::POLYGON_MODE_LINE)
+    {
+        wgpu::PolygonMode::Line
+    } else {
+        wgpu::PolygonMode::Fill
+    };
     let (_atlas_texture, atlas_view) = create_atlas_texture(device, queue, atlas);
 
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -1586,7 +1598,7 @@ fn create_pipeline(
             &pipeline_layout,
             &shader,
             surface_format,
-            wgpu::PolygonMode::Line,
+            wireframe_mode,
             Some(wgpu::Face::Back),
             false,
         ),
@@ -1595,7 +1607,7 @@ fn create_pipeline(
             &pipeline_layout,
             &shader,
             surface_format,
-            wgpu::PolygonMode::Line,
+            wireframe_mode,
             None,
             false,
         ),
@@ -1625,7 +1637,7 @@ fn create_pipeline(
             &pipeline_layout,
             &shader,
             surface_format,
-            wgpu::PolygonMode::Line,
+            wireframe_mode,
             Some(wgpu::Face::Back),
             true,
         ),
@@ -1634,7 +1646,7 @@ fn create_pipeline(
             &pipeline_layout,
             &shader,
             surface_format,
-            wgpu::PolygonMode::Line,
+            wireframe_mode,
             None,
             true,
         ),

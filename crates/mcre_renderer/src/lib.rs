@@ -1,6 +1,8 @@
 pub mod atlas;
+pub mod atmosphere;
 pub mod camera;
 pub mod clouds;
+pub mod demo;
 pub mod fluid;
 pub mod frustum;
 pub mod lightmap;
@@ -13,7 +15,12 @@ pub mod remesh;
 pub mod renderer;
 pub mod vertex;
 
-pub use atlas::{Atlas, AtlasError, AtlasRegion, build_atlas};
+pub use atlas::{Atlas, AtlasError, AtlasRegion, build_atlas, build_atlas_square};
+pub use atmosphere::{
+    FOG_COLOR_MULTIPLIER, LAVA_FOG_COLOR, NIGHT_CLOUD_COLOR, OVERWORLD_FOG_COLOR,
+    OVERWORLD_SKY_COLOR, SKY_COLOR_MULTIPLIER, SKY_FOG_END_DISTANCE, WATER_FOG_COLOR,
+    atmospheric_fog_color, cloud_color_for, time_multiplier, vanilla_fog,
+};
 pub use camera::FlyCamera;
 pub use clouds::{
     CLOUD_HEIGHT, CloudCell, CloudOrigin, CloudStatus, CloudTexture, CloudVertex,

@@ -75,6 +75,30 @@ pub async fn build_atlas<F: Fs>(
     pack_roots: &[FsPath],
     texture_table: &[Box<str>],
 ) -> Result<Atlas, AtlasError> {
+    build_atlas_impl(fs, pack_roots, texture_table, false).await
+}
+
+/// Like [`build_atlas`], but pads the packed layout to a square.
+///
+/// Vanilla's atlas can be non-square, but the RGSS shader's mip selection
+/// assumes square texels. Small packs (or packs with very few textures)
+/// otherwise pack into a wide, short atlas and sample several mip levels too
+/// high. The browser viewer (and the native demo reference it is compared
+/// against) uses this for user-provided packs.
+pub async fn build_atlas_square<F: Fs>(
+    fs: &F,
+    pack_roots: &[FsPath],
+    texture_table: &[Box<str>],
+) -> Result<Atlas, AtlasError> {
+    build_atlas_impl(fs, pack_roots, texture_table, true).await
+}
+
+async fn build_atlas_impl<F: Fs>(
+    fs: &F,
+    pack_roots: &[FsPath],
+    texture_table: &[Box<str>],
+    square: bool,
+) -> Result<Atlas, AtlasError> {
     let mut images = Vec::with_capacity(texture_table.len());
     for texture in texture_table {
         let mut image = None;
@@ -94,7 +118,7 @@ pub async fn build_atlas<F: Fs>(
     let fallback_index = images.len();
     images.push(fallback_image());
 
-    let (width, height, positions) = pack(&images, MAX_ATLAS_SIZE)?;
+    let (width, height, positions) = pack(&images, MAX_ATLAS_SIZE, square)?;
 
     // Vanilla classifies each sprite as `MEAN` or `CUTOUT` and, for cutout
     // sprites, bleeds opaque colors under the transparent texels before the
@@ -299,7 +323,7 @@ fn crop_first_frame(image: Image) -> Image {
 /// Returns `(width, height, positions)`.
 type PackedLayout = (u32, u32, Vec<(u32, u32)>);
 
-fn pack(images: &[Image], max_size: u32) -> Result<PackedLayout, AtlasError> {
+fn pack(images: &[Image], max_size: u32, square: bool) -> Result<PackedLayout, AtlasError> {
     let area: u64 = images
         .iter()
         .map(|i| u64::from(i.width) * u64::from(i.height))
@@ -308,7 +332,7 @@ fn pack(images: &[Image], max_size: u32) -> Result<PackedLayout, AtlasError> {
     side = side.next_power_of_two().clamp(256, max_size);
 
     loop {
-        if let Some((width, height, positions)) = shelf_pack(images, side) {
+        if let Some((width, height, positions)) = shelf_pack(images, side, square) {
             return Ok((width, height, positions));
         }
         if side >= max_size {
@@ -318,7 +342,7 @@ fn pack(images: &[Image], max_size: u32) -> Result<PackedLayout, AtlasError> {
     }
 }
 
-fn shelf_pack(images: &[Image], max_width: u32) -> Option<PackedLayout> {
+fn shelf_pack(images: &[Image], max_width: u32, square: bool) -> Option<PackedLayout> {
     let mut order: Vec<usize> = (0..images.len()).collect();
     order.sort_by_key(|&i| std::cmp::Reverse(images[i].height));
 
@@ -340,10 +364,15 @@ fn shelf_pack(images: &[Image], max_width: u32) -> Option<PackedLayout> {
     }
 
     let width = max_width;
-    let height = y.checked_add(row_height)?.next_power_of_two().max(1);
-    if height > max_width {
+    let used_height = y.checked_add(row_height)?;
+    if used_height > max_width {
         return None;
     }
+    let height = if square {
+        max_width
+    } else {
+        used_height.next_power_of_two().max(1)
+    };
     Some((width, height, positions))
 }
 
@@ -377,7 +406,7 @@ mod tests {
             image(8, 8),
             image(16, 4),
         ];
-        let (width, height, positions) = pack(&images, MAX_ATLAS_SIZE).expect("pack");
+        let (width, height, positions) = pack(&images, MAX_ATLAS_SIZE, false).expect("pack");
         assert!(width <= MAX_ATLAS_SIZE && height <= MAX_ATLAS_SIZE);
         assert_eq!(positions.len(), images.len());
 
@@ -396,6 +425,18 @@ mod tests {
                     || oy + other.height <= y;
                 assert!(separate, "images {i} and {j} overlap");
             }
+        }
+    }
+
+    #[test]
+    fn square_pack_is_square() {
+        let images: Vec<Image> = vec![image(16, 16), image(16, 16), image(16, 16)];
+        let (width, height, positions) = pack(&images, MAX_ATLAS_SIZE, true).expect("pack");
+        assert_eq!(width, height);
+        assert_eq!(positions.len(), images.len());
+        for (img, (x, y)) in images.iter().zip(positions) {
+            assert!(x + img.width <= width);
+            assert!(y + img.height <= height);
         }
     }
 
