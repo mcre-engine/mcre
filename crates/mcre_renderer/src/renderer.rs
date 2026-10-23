@@ -138,6 +138,8 @@ struct Uniforms {
     flags: [u32; 4],
     /// `x` texcoord shrink epsilon, `y` fog density, `zw` padding.
     fog_misc: [f32; 4],
+    /// `x`,`y` inverse atlas size (`1.0 / TextureSize`), `zw` padding.
+    tex_size: [f32; 4],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -268,6 +270,8 @@ pub struct Renderer {
     lightmap_key: LightmapParams,
     /// Sodium `u_TexCoordShrink` (8-bit subtexel anti-bleed epsilon).
     tex_coord_shrink: f32,
+    /// Inverse atlas size: vanilla's `TextureSize` uniform.
+    atlas_texel_size: [f32; 2],
     fog: Fog,
     lightmap_params: LightmapParams,
     cloud_texture: Option<CloudTexture>,
@@ -373,6 +377,7 @@ impl Renderer {
             shared_indices,
             section_table,
             tex_coord_shrink: shrink_for_width(atlas.width),
+            atlas_texel_size: [1.0 / atlas.width as f32, 1.0 / atlas.height as f32],
             fog: Fog {
                 color: [SKY.r as f32, SKY.g as f32, SKY.b as f32],
                 density: 1.0,
@@ -621,6 +626,7 @@ impl Renderer {
     pub fn set_atlas(&mut self, atlas: &Atlas) {
         let (_texture, view) = create_atlas_texture(&self.device, &self.queue, atlas);
         self.tex_coord_shrink = shrink_for_width(atlas.width);
+        self.atlas_texel_size = [1.0 / atlas.width as f32, 1.0 / atlas.height as f32];
         self.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("mcre-bind-group"),
             layout: &self.bind_group_layout,
@@ -881,6 +887,7 @@ impl Renderer {
             ],
             flags: [debug_bits(&self.debug_flags), 0, 0, 0],
             fog_misc: [self.tex_coord_shrink, self.fog.density, 0.0, 0.0],
+            tex_size: [self.atlas_texel_size[0], self.atlas_texel_size[1], 0.0, 0.0],
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
@@ -1361,7 +1368,7 @@ fn create_atlas_texture(
             height: atlas.height,
             depth_or_array_layers: 1,
         },
-        mip_level_count: 1,
+        mip_level_count: atlas.mips.len() as u32 + 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: ATLAS_FORMAT,
@@ -1369,23 +1376,32 @@ fn create_atlas_texture(
         view_formats: &[],
     });
 
-    if !atlas.pixels.is_empty() {
+    let levels = std::iter::once((atlas.width, atlas.height, atlas.pixels.as_slice())).chain(
+        atlas.mips.iter().enumerate().map(|(index, mip)| {
+            let level = index as u32 + 1;
+            (atlas.width >> level, atlas.height >> level, mip.as_slice())
+        }),
+    );
+    for (level, (width, height, pixels)) in levels.enumerate() {
+        if pixels.is_empty() || width == 0 || height == 0 {
+            continue;
+        }
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &atlas_texture,
-                mip_level: 0,
+                mip_level: level as u32,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &atlas.pixels,
+            pixels,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(atlas.width * 4),
+                bytes_per_row: Some(width * 4),
                 rows_per_image: None,
             },
             wgpu::Extent3d {
-                width: atlas.width,
-                height: atlas.height,
+                width,
+                height,
                 depth_or_array_layers: 1,
             },
         );
@@ -2046,7 +2062,7 @@ mod tests {
 
     #[test]
     fn uniforms_stay_16_byte_aligned() {
-        assert_eq!(size_of::<Uniforms>(), 144);
+        assert_eq!(size_of::<Uniforms>(), 160);
         assert_eq!(size_of::<Uniforms>() % 16, 0);
         assert_eq!(std::mem::offset_of!(Uniforms, flags), 112);
     }

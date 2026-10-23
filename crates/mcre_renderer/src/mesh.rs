@@ -1422,6 +1422,7 @@ mod tests {
             width: 16,
             height: 16,
             pixels: vec![],
+            mips: Vec::new(),
             regions: vec![],
             has_alpha: vec![],
             fallback: AtlasRegion {
@@ -2590,6 +2591,7 @@ mod tests {
             width: 256,
             height: 256,
             pixels: vec![],
+            mips: Vec::new(),
             regions: vec![],
             has_alpha: vec![],
             fallback: AtlasRegion {

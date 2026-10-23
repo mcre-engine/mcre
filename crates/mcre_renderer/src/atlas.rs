@@ -3,6 +3,8 @@ use std::io::Cursor;
 use mcre_fs::{Fs, FsPath};
 use thiserror::Error;
 
+use crate::mipmap;
+
 const FALLBACK_SIZE: u32 = 16;
 const MAX_ATLAS_SIZE: u32 = 4096;
 
@@ -21,6 +23,10 @@ pub struct Atlas {
     pub height: u32,
     /// Tightly packed RGBA8 rows, `width * 4` bytes each.
     pub pixels: Vec<u8>,
+    /// Mip levels `1..=mipmap::MIP_LEVELS` in order; level `n` is
+    /// `(width >> n) * (height >> n) * 4` bytes, each sprite downscaled the
+    /// way vanilla's `MipmapGenerator` does it.
+    pub mips: Vec<Vec<u8>>,
     /// Indexed by `texture_id`; always present for every entry (missing files
     /// become magenta).
     pub regions: Vec<AtlasRegion>,
@@ -89,9 +95,69 @@ pub async fn build_atlas<F: Fs>(
     images.push(fallback_image());
 
     let (width, height, positions) = pack(&images, MAX_ATLAS_SIZE)?;
+
+    // Vanilla classifies each sprite as `MEAN` or `CUTOUT` and, for cutout
+    // sprites, bleeds opaque colors under the transparent texels before the
+    // mip chain is generated (`MipmapGenerator` + `TextureUtil.solidify`).
+    let mut cutout = vec![false; images.len()];
+    let mut coverage = vec![0.0_f32; images.len()];
+    for (index, image) in images.iter_mut().enumerate() {
+        cutout[index] = mipmap::has_transparent(&image.rgba);
+        if cutout[index] {
+            mipmap::solidify(image.width, image.height, &mut image.rgba);
+            coverage[index] = mipmap::alpha_test_coverage(
+                image.width,
+                image.height,
+                &image.rgba,
+                mipmap::ALPHA_CUTOFF,
+                1.0,
+            );
+        }
+    }
+
     let mut pixels = vec![0u8; (width * height * 4) as usize];
     for (image, &(x, y)) in images.iter().zip(&positions) {
-        blit(&mut pixels, width, image, x, y);
+        blit(
+            &mut pixels,
+            width,
+            image.width,
+            image.height,
+            &image.rgba,
+            x,
+            y,
+        );
+    }
+
+    let mut mips = Vec::with_capacity(mipmap::MIP_LEVELS as usize);
+    let mut levels: Vec<(u32, u32, Vec<u8>)> = images
+        .iter()
+        .map(|image| (image.width, image.height, image.rgba.clone()))
+        .collect();
+    for level in 1..=mipmap::MIP_LEVELS {
+        let (level_width, level_height) = ((width >> level).max(1), (height >> level).max(1));
+        let mut level_pixels = vec![0u8; (level_width * level_height * 4) as usize];
+        for (sprite, image) in levels.iter_mut().enumerate() {
+            let (next_width, next_height, next) = mipmap::next_level(
+                image.0,
+                image.1,
+                &image.2,
+                cutout[sprite],
+                coverage[sprite],
+                0.0,
+            );
+            let (x, y) = positions[sprite];
+            blit(
+                &mut level_pixels,
+                level_width,
+                next_width,
+                next_height,
+                &next,
+                x >> level,
+                y >> level,
+            );
+            *image = (next_width, next_height, next);
+        }
+        mips.push(level_pixels);
     }
 
     let regions: Vec<AtlasRegion> = positions[..fallback_index]
@@ -121,6 +187,7 @@ pub async fn build_atlas<F: Fs>(
         width,
         height,
         pixels,
+        mips,
         regions,
         has_alpha,
         fallback,
@@ -280,10 +347,10 @@ fn shelf_pack(images: &[Image], max_width: u32) -> Option<PackedLayout> {
     Some((width, height, positions))
 }
 
-fn blit(atlas: &mut [u8], atlas_width: u32, image: &Image, x: u32, y: u32) {
-    let row_bytes = (image.width * 4) as usize;
-    for row in 0..image.height as usize {
-        let src = &image.rgba[row * row_bytes..(row + 1) * row_bytes];
+fn blit(atlas: &mut [u8], atlas_width: u32, width: u32, height: u32, rgba: &[u8], x: u32, y: u32) {
+    let row_bytes = (width * 4) as usize;
+    for row in 0..height as usize {
+        let src = &rgba[row * row_bytes..(row + 1) * row_bytes];
         let dst_start = (((y as usize + row) * atlas_width as usize) + x as usize) * 4;
         atlas[dst_start..dst_start + row_bytes].copy_from_slice(src);
     }

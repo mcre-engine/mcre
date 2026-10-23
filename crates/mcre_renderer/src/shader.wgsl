@@ -33,6 +33,8 @@ struct Params {
     flags: vec4<u32>,
     /// `x` texcoord shrink epsilon, `y` fog density.
     fog_misc: vec4<f32>,
+    /// `x`,`y` inverse atlas size (`1.0 / TextureSize`).
+    tex_size: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -80,6 +82,71 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instance: u32) -> VertexOut
     return out;
 }
 
+/// Vanilla `sampleNearest` (`texture_sampling.glsl`): pull the sample point
+/// back toward texel centres by how large a texel is on screen, then sample
+/// with the mip level derived from the true screen footprint.
+fn sample_nearest(
+    uv: vec2<f32>,
+    pixel_size: vec2<f32>,
+    du: vec2<f32>,
+    dv: vec2<f32>,
+    texel_screen_size: vec2<f32>,
+) -> vec4<f32> {
+    let uv_texel = uv / pixel_size;
+    let texel_center = round(uv_texel) - vec2<f32>(0.5);
+    let texel_offset = uv_texel - texel_center;
+    let offset = clamp(
+        (texel_offset - vec2<f32>(0.5)) * pixel_size / texel_screen_size + vec2<f32>(0.5),
+        vec2<f32>(0.0),
+        vec2<f32>(1.0),
+    );
+    return textureSampleGrad(
+        atlas_texture,
+        atlas_sampler,
+        (texel_center + offset) * pixel_size,
+        du,
+        dv,
+    );
+}
+
+/// Vanilla `sampleRGSS` (`texture_sampling.glsl`): rotated-grid supersampling
+/// at two adjacent mip levels, blended in only once a texel covers a pixel.
+fn sample_rgss(uv: vec2<f32>, pixel_size: vec2<f32>) -> vec4<f32> {
+    let du = dpdx(uv);
+    let dv = dpdy(uv);
+    let texel_screen_size = sqrt(du * du + dv * dv);
+    let max_texel_size = max(texel_screen_size.x, texel_screen_size.y);
+    let min_pixel_size = min(pixel_size.x, pixel_size.y);
+    let blend_factor = smoothstep(min_pixel_size, min_pixel_size * 2.0, max_texel_size);
+
+    let min_derivative = min(length(du), length(dv));
+    let max_derivative = max(length(du), length(dv));
+    let effective_derivative = sqrt(min_derivative * max_derivative);
+    let mip_level_exact = max(0.0, log2(effective_derivative / min_pixel_size));
+    let mip_level_low = floor(mip_level_exact);
+    let mip_level_high = mip_level_low + 1.0;
+    let mip_blend = fract(mip_level_exact);
+
+    var offsets = array<vec2<f32>, 4>(
+        vec2<f32>(0.125, 0.375),
+        vec2<f32>(-0.125, -0.375),
+        vec2<f32>(0.375, -0.125),
+        vec2<f32>(-0.375, 0.125),
+    );
+
+    var rgss_low = vec4<f32>(0.0);
+    var rgss_high = vec4<f32>(0.0);
+    for (var i = 0; i < 4; i++) {
+        let sample_uv = uv + offsets[i] * pixel_size;
+        rgss_low += textureSampleLevel(atlas_texture, atlas_sampler, sample_uv, mip_level_low);
+        rgss_high += textureSampleLevel(atlas_texture, atlas_sampler, sample_uv, mip_level_high);
+    }
+    let rgss = mix(rgss_low * 0.25, rgss_high * 0.25, mip_blend);
+
+    let nearest = sample_nearest(uv, pixel_size, du, dv, texel_screen_size);
+    return mix(nearest, rgss, blend_factor);
+}
+
 fn terrain_color(in: VertexOutput, cutout: bool) -> vec4<f32> {
     var rgb: vec3<f32>;
     var alpha = 1.0;
@@ -88,7 +155,7 @@ fn terrain_color(in: VertexOutput, cutout: bool) -> vec4<f32> {
         let cool = mix(vec3<f32>(0.0, 0.0, 0.55), vec3<f32>(0.0, 0.85, 0.05), smoothstep(0.0, 0.5, t));
         rgb = mix(cool, vec3<f32>(1.0, 0.05, 0.0), smoothstep(0.5, 1.0, t));
     } else {
-        let texel = textureSample(atlas_texture, atlas_sampler, in.uv);
+        let texel = sample_rgss(in.uv, params.tex_size.xy);
         if (cutout && texel.a < 0.5) {
             discard;
         }

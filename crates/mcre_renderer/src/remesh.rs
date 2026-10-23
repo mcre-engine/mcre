@@ -226,6 +226,7 @@ mod tests {
             width: 16,
             height: 16,
             pixels: vec![0; 16 * 16 * 4],
+            mips: Vec::new(),
             regions: vec![],
             has_alpha: vec![],
             fallback: crate::AtlasRegion {

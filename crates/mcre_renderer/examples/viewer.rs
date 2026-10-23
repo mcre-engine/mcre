@@ -193,8 +193,14 @@ fn write_png(path: &std::path::Path, pixels: &[u8], width: u32, height: u32) -> 
     let mut stream = encoder
         .write_header()
         .map_err(|err| format!("write {}: {err}", path.display()))?;
+    // Vanilla's screenshot is always opaque; alpha only matters for in-engine
+    // blending, not for the parity artifact.
+    let mut opaque = pixels.to_vec();
+    for pixel in opaque.as_chunks_mut::<4>().0 {
+        pixel[3] = 255;
+    }
     stream
-        .write_image_data(pixels)
+        .write_image_data(&opaque)
         .map_err(|err| format!("write {}: {err}", path.display()))
 }
 

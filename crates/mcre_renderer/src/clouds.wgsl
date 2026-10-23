@@ -11,6 +11,7 @@ struct Params {
     fog_end_sky: vec4<f32>,
     flags: vec4<u32>,
     fog_misc: vec4<f32>,
+    tex_size: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;

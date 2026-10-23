@@ -6,6 +6,7 @@ pub mod frustum;
 pub mod lightmap;
 pub mod math;
 pub mod mesh;
+pub mod mipmap;
 pub mod occlusion;
 pub mod region;
 pub mod remesh;
