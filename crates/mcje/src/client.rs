@@ -25,6 +25,9 @@ pub struct PlayerState {
     pub pitch: f32,
     /// Actual standing eye height reported by the entity.
     pub eye_height: f32,
+    /// Effective vertical field of view in degrees, after every modifier the
+    /// client applies (flying, speed, effects).
+    pub fov: f32,
 }
 
 /// Run `net.minecraft.client.main.Main` on the current thread.
@@ -113,11 +116,25 @@ impl ClientControl {
             let z = call_d(env, &player, jni_str!("getZ"), jni_sig!("()D"))?;
             let yaw = call_f(env, &player, jni_str!("getYRot"), jni_sig!("()F"))?;
             let pitch = call_f(env, &player, jni_str!("getXRot"), jni_sig!("()F"))?;
+            let renderer = field_object(
+                env,
+                &mc,
+                jni_str!("gameRenderer"),
+                jni_sig!("Lnet/minecraft/client/renderer/GameRenderer;"),
+            )?;
+            let camera = field_object(
+                env,
+                &renderer,
+                jni_str!("mainCamera"),
+                jni_sig!("Lnet/minecraft/client/Camera;"),
+            )?;
+            let fov = call_f(env, &camera, jni_str!("getFov"), jni_sig!("()F"))?;
             Ok(PlayerState {
                 eye: [x, y + f64::from(eye_height), z],
                 yaw,
                 pitch,
                 eye_height,
+                fov,
             })
         })
     }

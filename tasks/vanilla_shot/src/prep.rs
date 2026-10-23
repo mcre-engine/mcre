@@ -11,7 +11,8 @@
 //!   `time_ticks`.
 //! - `data/minecraft/weather.dat` — permanently clear weather.
 //! - `playerdata/<uuid>.dat` — frozen creative-flying player at the spec's
-//!   eye position/rotation.
+//!   eye position/rotation. Flight holds the camera still; `fovEffectScale` is
+//!   zeroed in `options.txt` so flight does not widen the field of view.
 
 use std::fs;
 use std::path::Path;
@@ -118,7 +119,7 @@ fn write_options(game_dir: &Path, spec: &ShotSpec, data_version: i32) -> Result<
          menuBackgroundBlurriness:5\n\
          onboardAccessibility:false\n\
          fov:{fov}\n\
-         fovEffectScale:1.0\n\
+         fovEffectScale:0.0\n\
          fovEffectHalfStrength:1.0\n\
          gamma:{gamma}\n\
          guiScale:1\n\

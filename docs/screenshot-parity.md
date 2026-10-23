@@ -57,7 +57,7 @@ spec's `name` field (`"noon"` here) picks the output filenames.
 | `world`          | Path to the Anvil save dir used by both pipelines. |
 | `eye`            | Camera position `[x, y, z]` in world blocks. |
 | `yaw`, `pitch`   | Camera rotation, degrees. mcre's viewer applies a 180° yaw offset internally so the **vanilla** angle is the one you set here. |
-| `fov`            | Field of view in degrees (40–110). |
+| `fov`            | Vertical field of view in degrees (30–110). Both pipelines render exactly this value; the vanilla run zeroes `fovEffectScale` so flight/sprint modifiers cannot widen it. |
 | `brightness`     | Minecraft `gamma` (0.0 – 1.0). |
 | `time_ticks`     | Frozen world time (0 – 24000, 6000 = noon). |
 | `width`,`height` | Output resolution. |
@@ -84,8 +84,14 @@ which:
    - patches `data/minecraft/weather.dat` to permanently clear weather;
    - writes `options.txt` with `onboardAccessibility: false` (skips the
      narrator welcome screen so `--quickPlaySingleplayer` runs without
-     manual input), `fov`, `gamma`, `renderDistance`, `music: 0`, no
-     bobbing, no fullscreen, etc.
+     manual input), `fov`, `fovEffectScale: 0` (see below), `gamma`,
+     `renderDistance`, `music: 0`, no bobbing, no fullscreen, etc.
+
+   The freeze keeps the player in creative flight, and vanilla multiplies
+   the FOV by 1.1 while flying (`AbstractClientPlayer#getFieldOfViewModifier`).
+   `fovEffectScale: 0` makes `Camera#tickFov` lerp that modifier to exactly
+   1.0, so the effective FOV equals the option and the spec's `fov` is the
+   FOV of both images. Without it vanilla renders ~10% wider than mcre.
 
 2. **Boots the client** via JNI in `mcje` with
    `--quickPlaySingleplayer <worldName>`, which fires once the title-screen
@@ -97,7 +103,7 @@ which:
    | step   | effect |
    |--------|--------|
    | `wait_for_world` | polls until the client's `player` is non-null and the render thread is alive. |
-   | `verify_camera`  | reads the player's eye and rotation; if not at spec (with 0.01 m and 0.1° epsilons), teleports via `ServerGamePacketListenerImpl#teleport`. The feet are placed so `feet + getEyeHeight()` lands exactly on `spec.eye` (vanilla's eye height is 1.62; `mcre_shot::EYE_HEIGHT` is 1.53). |
+   | `verify_camera`  | reads the player's eye, rotation and effective FOV; if out of spec (0.001 m, 0.05° and 0.05° epsilons), teleports via `ServerGamePacketListenerImpl#teleport`. The feet are placed so `feet + getEyeHeight()` lands exactly on `spec.eye` (`mcre_shot::EYE_HEIGHT` = 1.62, the standing player height). A wrong FOV fails the run instead of silently producing a mismatched image. |
    | `verify_framebuffer` | reads the window size; if it doesn't match `spec.width × height`, calls `Window#setWindowed(logical_w, logical_h)` and retries (handles macOS Retina 2×). |
    | `verify_clock`   | reads `ClientLevel.getOverworldClockTime()` (inherited from `Level`); must equal `spec.time_ticks`. |
    | `hide`           | `Minecraft.gui.hud.toggle()` if not already hidden. |
@@ -147,6 +153,11 @@ differs by more than 4 / 16, and writes an amplified grayscale PNG to
   attempts with `FIX_SETTLE` (1.5 s). If the server-side teleport never
   converges, the most common cause is the world being empty at that
   position (player is unloaded).
+- **`client fov is X, want Y (a camera modifier is active)`**: something
+  modified the effective FOV, so the vanilla image would not line up with
+  mcre. Check that `options.txt` (as written by `prep.rs`, not the copy the
+  client rewrites on exit) still has `fovEffectScale: 0.0` and that the
+  player is not using a bow/spyglass.
 - **`world_clocks.dat` not parsed**: the file must use the
   `{data: {…}, DataVersion}` shape, not the bare per-dimension map — the
   vanilla SavedData codec for `SavedDataType(world_clocks)` wraps the map

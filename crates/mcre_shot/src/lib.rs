@@ -12,8 +12,9 @@
 //!   down. The mcre camera uses yaw `0` = north with positive turning east
 //!   and positive pitch looking up, so the conversions in [`ShotSpec`] apply
 //!   a 180-degree yaw offset and negate pitch.
-//! - `fov` is the vanilla FOV option in degrees (70 = default), `brightness`
-//!   is the vanilla `gamma` option in `0.0..=1.0` (0.5 = default).
+//! - `fov` is the vertical field of view in degrees (70 = vanilla default),
+//!   rendered exactly by both pipelines; `brightness` is the vanilla `gamma`
+//!   option in `0.0..=1.0` (0.5 = default).
 //! - `time_ticks` is the overworld day clock in `0..=24000` (6000 = noon),
 //!   frozen in the vanilla world via a paused `world_clocks` entry.
 
@@ -21,9 +22,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// Standing player eye height in 26.4: `EntityDimensions.eyeHeight()` is
-/// `height * 0.85` and the player is 1.8 blocks tall.
-pub const EYE_HEIGHT: f64 = 1.53;
+/// Standing player eye height in 26.4 (`Avatar.DEFAULT_EYE_HEIGHT`), used to
+/// turn the spec's eye position into the feet position vanilla loads.
+pub const EYE_HEIGHT: f64 = 1.62;
 
 const DEFAULT_FOV: f64 = 70.0;
 const DEFAULT_BRIGHTNESS: f64 = 0.5;

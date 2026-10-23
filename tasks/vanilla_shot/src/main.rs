@@ -26,6 +26,7 @@ const FIX_SETTLE: Duration = Duration::from_millis(1500);
 const WINDOW_SETTLE: Duration = Duration::from_millis(500);
 const CAMERA_EPSILON_POS: f64 = 1e-3;
 const CAMERA_EPSILON_DEG: f64 = 0.05;
+const CAMERA_EPSILON_FOV: f64 = 0.05;
 
 struct Options {
     spec: PathBuf,
@@ -248,12 +249,19 @@ fn verify_and_fix_camera(
             && (eye[2] - expected_eye[2]).abs() < CAMERA_EPSILON_POS;
         let yaw_ok = angle_delta(state.yaw as f64, expected_yaw) < CAMERA_EPSILON_DEG;
         let pitch_ok = angle_delta(state.pitch as f64, expected_pitch) < CAMERA_EPSILON_DEG;
-        if position_ok && yaw_ok && pitch_ok {
+        let fov_ok = (f64::from(state.fov) - spec.fov).abs() < CAMERA_EPSILON_FOV;
+        if position_ok && yaw_ok && pitch_ok && fov_ok {
             eprintln!(
-                "vanilla_shot: camera verified at eye {eye:?} (eye height {})",
-                state.eye_height
+                "vanilla_shot: camera verified at eye {eye:?} (eye height {}, fov {})",
+                state.eye_height, state.fov
             );
             return Ok(());
+        }
+        if position_ok && yaw_ok && pitch_ok {
+            return Err(format!(
+                "client fov is {}, want {} (a camera modifier is active)",
+                state.fov, spec.fov
+            ));
         }
         eprintln!(
             "vanilla_shot: camera mismatch (eye {eye:?} yaw {} pitch {}), teleporting",
