@@ -17,7 +17,6 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec3<f32>,
-    @location(2) light: vec3<f32>,
     /// `x` spherical camera distance, `y` cylindrical camera distance.
     @location(3) distance: vec2<f32>,
     @location(4) raw_light: vec2<f32>,
@@ -67,9 +66,14 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instance: u32) -> VertexOut
     let world_pos = decode_position(in.position) + section_origin;
     out.clip_position = params.view_proj * vec4<f32>(world_pos, 1.0);
     out.uv = decode_texcoord(in.tex) + decode_texcoord_bias(in.tex) * params.fog_misc.x;
-    out.color = in.color.rgb;
     let light_uv = decode_lightmap_uv(in.light_data.xy);
-    out.light = textureSampleLevel(lightmap_texture, lightmap_sampler, light_uv, 0.0).rgb;
+    var light = textureSampleLevel(lightmap_texture, lightmap_sampler, light_uv, 0.0).rgb;
+    if ((params.flags.x & 1u) != 0u) {
+        light = vec3<f32>(1.0);
+    }
+    // Vanilla `terrain.vsh`: the lightmap multiplies the vertex color before
+    // interpolation, so the product (not each factor) is interpolated.
+    out.color = in.color.rgb * light;
     let relative = world_pos - params.camera_pos.xyz;
     out.distance = vec2<f32>(length(relative), max(length(relative.xz), abs(relative.y)));
     out.raw_light = light_uv;
@@ -88,11 +92,7 @@ fn terrain_color(in: VertexOutput, cutout: bool) -> vec4<f32> {
         if (cutout && texel.a < 0.5) {
             discard;
         }
-        var light = in.light;
-        if ((params.flags.x & 1u) != 0u) {
-            light = vec3<f32>(1.0);
-        }
-        rgb = texel.rgb * in.color * light;
+        rgb = texel.rgb * in.color;
         alpha = texel.a;
     }
     if ((params.flags.x & 4u) == 0u) {
