@@ -71,6 +71,13 @@ impl Tag {
         }
     }
 
+    pub fn as_i8_array(&self) -> Option<&[i8]> {
+        match self {
+            Tag::ByteArray(values) => Some(values),
+            _ => None,
+        }
+    }
+
     pub fn as_i64_array(&self) -> Option<Vec<i64>> {
         match self {
             Tag::LongArray(values) => Some(values.clone()),

@@ -34,6 +34,7 @@ pub struct Chunk {
     sections: Vec<Section>,
     biomes: Vec<Option<Box<[u16; BIOME_CELLS_PER_SECTION]>>>,
     light: ChunkLight,
+    stored_light: bool,
     emitters: Vec<(i32, i32, i32)>,
 }
 
@@ -48,6 +49,7 @@ impl Chunk {
             sections: Vec::new(),
             biomes: Vec::new(),
             light: ChunkLight::new(),
+            stored_light: false,
             emitters: Vec::new(),
         }
     }
@@ -62,6 +64,18 @@ impl Chunk {
 
     pub fn light_mut(&mut self) -> &mut ChunkLight {
         &mut self.light
+    }
+
+    /// Whether this chunk's light was imported from the save (vanilla renders
+    /// the stored light while it is marked on) instead of being computed.
+    pub fn has_stored_light(&self) -> bool {
+        self.stored_light
+    }
+
+    /// Marks the imported light as authoritative so the world skips relighting
+    /// this chunk.
+    pub fn mark_light_stored(&mut self) {
+        self.stored_light = true;
     }
 
     pub fn get_block(&self, local_x: i32, y: i32, local_z: i32) -> BlockState {

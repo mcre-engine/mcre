@@ -1,4 +1,5 @@
-use mcre_world::{Block, BlockState, ChunkLight, World};
+use mcre_world::light::SECTION_LIGHT_BYTES;
+use mcre_world::{Block, BlockState, Chunk, ChunkLight, ChunkPos, WORLD_MIN_Y, World};
 
 fn set_full_layer(world: &mut World, y: i32, state: BlockState) {
     for x in 0..16 {
@@ -80,4 +81,36 @@ fn combined_light_level_matches_channels() {
     assert_eq!(world.light_level((8, 0, 8)), (15, 0));
     assert_eq!(world.light_level((9, 0, 8)), (14, 15));
     assert_eq!(world.light_level((100, 0, 100)), (0, 15));
+}
+
+#[test]
+fn saved_light_is_imported_with_vanilla_nibble_order() {
+    let mut light = ChunkLight::new();
+    let mut sky = [0_u8; SECTION_LIGHT_BYTES];
+    // Vanilla `DataLayer` packs cell 0 in the low nibble and cell 1 in the
+    // high nibble, the opposite of this crate's packing.
+    sky[0] = 0xAB;
+    let block = [0_u8; SECTION_LIGHT_BYTES];
+
+    assert!(light.set_section_from_save(WORLD_MIN_Y, &sky, &block));
+    assert_eq!(light.sky_level(0, WORLD_MIN_Y, 0), 11);
+    assert_eq!(light.sky_level(1, WORLD_MIN_Y, 0), 10);
+    assert_eq!(light.block_level(0, WORLD_MIN_Y, 0), 0);
+
+    assert!(!light.set_section_from_save(WORLD_MIN_Y, &sky[..10], &block));
+}
+
+#[test]
+fn stored_light_is_adopted_instead_of_recomputed() {
+    let mut world = World::new(0);
+    let mut chunk = Chunk::new_at(ChunkPos::new(0, 0));
+    chunk.set_block(8, 0, 8, Block::STONE.default_state());
+    chunk.light_mut().set_sky_level(8, 1, 8, 7);
+    chunk.mark_light_stored();
+    world.add_chunk(chunk);
+
+    world.adopt_stored_light();
+    world.compute_light();
+
+    assert_eq!(world.sky_light((8, 1, 8)), 7);
 }

@@ -1,3 +1,4 @@
+use mcre_world::light::SECTION_LIGHT_BYTES;
 use mcre_world::{Biome, BlockState, Chunk, ChunkPos, WORLD_MIN_Y, World};
 
 use crate::Error;
@@ -375,8 +376,9 @@ pub struct ImportRect {
 }
 
 /// Loads one chunk from a region directory as a detached `Chunk` at true
-/// save coordinates, with zeroed light. Returns `None` when the chunk is
-/// not stored (caller typically substitutes an empty air chunk).
+/// save coordinates, including the light stored in the save when it is marked
+/// correct (`isLightOn`). Returns `None` when the chunk is not stored (caller
+/// typically substitutes an empty air chunk).
 pub fn load_chunk(
     region_dir: &std::path::Path,
     chunk_x: i32,
@@ -393,11 +395,21 @@ pub fn load_chunk(
         stats.skipped_chunks += 1;
         return Ok(None);
     };
+    let light_correct = root.get("isLightOn").and_then(Tag::as_i32) == Some(1);
     let mut chunk = Chunk::new_at(ChunkPos::new(chunk_x, chunk_z));
+    let mut sky_layers: Vec<Option<[u8; SECTION_LIGHT_BYTES]>> =
+        vec![None; mcre_world::SECTIONS_PER_CHUNK];
+    let mut block_layers: Vec<Option<[u8; SECTION_LIGHT_BYTES]>> =
+        vec![None; mcre_world::SECTIONS_PER_CHUNK];
     for section in sections {
         let Some(decoded) = decode_section(section, blocks, biomes, stats)? else {
             continue;
         };
+        let section_index = (decoded.base_y - WORLD_MIN_Y).div_euclid(16) as usize;
+        if light_correct && section_index < mcre_world::SECTIONS_PER_CHUNK {
+            sky_layers[section_index] = section_light_bytes(section, "SkyLight");
+            block_layers[section_index] = section_light_bytes(section, "BlockLight");
+        }
         for (x, y, z, state) in decoded.blocks {
             chunk.set_block(x, decoded.base_y + y, z, state);
             stats.blocks_set += 1;
@@ -406,8 +418,50 @@ pub fn load_chunk(
             chunk.set_biome(x, decoded.base_y + y, z, biome);
         }
     }
+    if light_correct {
+        import_chunk_light(&mut chunk, &sky_layers, &block_layers);
+        chunk.mark_light_stored();
+    }
     stats.chunks += 1;
     Ok(Some(chunk))
+}
+
+/// Decodes one section's nibble light array, if the section stores it.
+fn section_light_bytes(section: &Tag, key: &str) -> Option<[u8; SECTION_LIGHT_BYTES]> {
+    let values = section.get(key).and_then(Tag::as_i8_array)?;
+    if values.len() != SECTION_LIGHT_BYTES {
+        return None;
+    }
+    let mut bytes = [0u8; SECTION_LIGHT_BYTES];
+    for (dst, src) in bytes.iter_mut().zip(values) {
+        *dst = *src as u8;
+    }
+    Some(bytes)
+}
+
+/// Fills every section's light the way vanilla's light storage reads a save
+/// (`SkyLightSectionStorage`/`BlockLightSectionStorage`): sections above the
+/// topmost stored sky layer are fully lit, missing sky layers inherit the
+/// nearest layer above them, and missing block layers are dark.
+fn import_chunk_light(
+    chunk: &mut Chunk,
+    sky_layers: &[Option<[u8; SECTION_LIGHT_BYTES]>],
+    block_layers: &[Option<[u8; SECTION_LIGHT_BYTES]>],
+) {
+    let mut sky = [0xFFu8; SECTION_LIGHT_BYTES];
+    let mut block = [0u8; SECTION_LIGHT_BYTES];
+    for index in (0..mcre_world::SECTIONS_PER_CHUNK).rev() {
+        if let Some(layer) = sky_layers[index] {
+            sky = layer;
+        }
+        if let Some(layer) = block_layers[index] {
+            block = layer;
+        }
+        let base_y = WORLD_MIN_Y + index as i32 * 16;
+        chunk
+            .light_mut()
+            .set_section_from_save(base_y, &sky, &block);
+    }
 }
 
 pub fn import_area(

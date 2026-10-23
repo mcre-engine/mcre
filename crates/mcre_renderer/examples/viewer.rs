@@ -350,6 +350,7 @@ async fn prepare(
             }
         }
     }
+    world.adopt_stored_light();
     world.compute_light();
     let options = MeshOptions::default();
     let mut meshes = Vec::new();

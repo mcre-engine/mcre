@@ -256,6 +256,21 @@ impl World {
             .unwrap_or((0, 15))
     }
 
+    /// Trusts the light that was imported with every loaded chunk instead of
+    /// relighting the ring. Vanilla renders the light stored in the save (as
+    /// long as it is marked on), so this is what the client sees; it is only
+    /// skipped when a loaded chunk has no stored light or edits are pending.
+    pub fn adopt_stored_light(&mut self) {
+        let all_stored = self
+            .loaded
+            .iter()
+            .zip(self.chunks.iter())
+            .all(|(loaded, chunk)| !loaded || chunk.has_stored_light());
+        if all_stored && self.light_edits.is_empty() {
+            self.light_full = false;
+        }
+    }
+
     /// Recomputes sky and block light. After tracked edits only the
     /// affected region is recomputed; anything larger falls back to a
     /// whole-ring recompute. Both paths produce identical results.
@@ -716,19 +731,24 @@ impl World {
                 }
             }
         }
-        if !self.light_full && self.light_edits.len() + 2 < LIGHT_TRACK_CAP {
-            let (x0, z0) = (pos.x * CHUNK_WIDTH, pos.z * CHUNK_WIDTH);
-            self.light_edits
-                .push((x0, 0, z0, Block::AIR.default_state()));
-            self.light_edits.push((
-                x0 + CHUNK_WIDTH - 1,
-                0,
-                z0 + CHUNK_WIDTH - 1,
-                Block::AIR.default_state(),
-            ));
-        } else if !self.light_full {
-            self.light_full = true;
-            self.light_edits.clear();
+        // Chunks loaded from the save bring their own (already consistent)
+        // light, which the vanilla client renders too, so they must not be
+        // relit. Freshly built chunks still need the relight seeds.
+        if !self.chunks[chunk_idx].has_stored_light() {
+            if !self.light_full && self.light_edits.len() + 2 < LIGHT_TRACK_CAP {
+                let (x0, z0) = (pos.x * CHUNK_WIDTH, pos.z * CHUNK_WIDTH);
+                self.light_edits
+                    .push((x0, 0, z0, Block::AIR.default_state()));
+                self.light_edits.push((
+                    x0 + CHUNK_WIDTH - 1,
+                    0,
+                    z0 + CHUNK_WIDTH - 1,
+                    Block::AIR.default_state(),
+                ));
+            } else if !self.light_full {
+                self.light_full = true;
+                self.light_edits.clear();
+            }
         }
     }
 

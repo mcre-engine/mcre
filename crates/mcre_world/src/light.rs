@@ -13,7 +13,8 @@ pub const ALL_DIRECTIONS: [Direction; 6] = [
     Direction::East,
 ];
 
-const SECTION_LIGHT_BYTES: usize = 2048;
+/// Bytes per light channel in one 16^3 section (two 4-bit cells per byte).
+pub const SECTION_LIGHT_BYTES: usize = 2048;
 
 fn nibble_index(local_x: i32, y: i32, local_z: i32) -> Option<usize> {
     let offset = y - WORLD_MIN_Y;
@@ -79,6 +80,27 @@ impl Default for ChunkLight {
 impl ChunkLight {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Replaces one section's light with the save's nibble arrays (2048 bytes
+    /// per channel). Vanilla packs the even cell index in the low nibble and
+    /// the odd one in the high nibble, the opposite of this module, so the
+    /// bytes are rotated on the way in. Returns `false` for a section outside
+    /// the world or arrays of the wrong length.
+    pub fn set_section_from_save(&mut self, base_y: i32, sky: &[u8], block: &[u8]) -> bool {
+        if sky.len() != SECTION_LIGHT_BYTES || block.len() != SECTION_LIGHT_BYTES {
+            return false;
+        }
+        let Some(section) = self.section_mut(base_y, true) else {
+            return false;
+        };
+        for (dst, src) in section.sky.iter_mut().zip(sky) {
+            *dst = src.rotate_left(4);
+        }
+        for (dst, src) in section.block.iter_mut().zip(block) {
+            *dst = src.rotate_left(4);
+        }
+        true
     }
 
     fn section(&self, y: i32) -> Option<&SectionLight> {
