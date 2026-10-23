@@ -96,9 +96,26 @@ fn write_options(game_dir: &Path, spec: &ShotSpec, data_version: i32) -> Result<
         Clouds::Fast => "\"fast\"",
         Clouds::Fancy => "\"true\"",
     };
+    // `Minecraft` applies the graphics preset unconditionally after loading
+    // `options.txt`, so the preset has to be `custom` or it would overwrite
+    // the spec's render distance/clouds with the "fancy" defaults.
     let content = format!(
         "version:{data_version}\n\
+         graphicsPreset:\"custom\"\n\
          ao:true\n\
+         biomeBlendRadius:2\n\
+         cutoutLeaves:true\n\
+         mipmapLevels:4\n\
+         cloudRange:64\n\
+         particles:0\n\
+         maxAnisotropyBit:1\n\
+         textureFiltering:1\n\
+         weatherRadius:10\n\
+         entityShadows:true\n\
+         entityDistanceScaling:1.0\n\
+         prioritizeChunkUpdates:1\n\
+         improvedTransparency:false\n\
+         menuBackgroundBlurriness:5\n\
          onboardAccessibility:false\n\
          fov:{fov}\n\
          fovEffectScale:1.0\n\
@@ -108,10 +125,10 @@ fn write_options(game_dir: &Path, spec: &ShotSpec, data_version: i32) -> Result<
          renderDistance:{render_distance}\n\
          simulationDistance:{render_distance}\n\
          renderClouds:{clouds}\n\
+         soundCategory_music:0.0\n\
          bobView:false\n\
          pauseOnLostFocus:false\n\
-         fullscreen:false\n\
-         music:0\n",
+         fullscreen:false\n",
         gamma = spec.brightness,
         render_distance = spec.render_distance,
     );
