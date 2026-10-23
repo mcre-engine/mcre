@@ -15,8 +15,10 @@ mcre_anvil = { workspace = true }
 
 mcje = { workspace = true }
 
-tokio     = { workspace = true }
 thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["fs", "rt-multi-thread"] }
 
 [dev-dependencies]
 flate2 = { workspace = true }

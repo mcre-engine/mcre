@@ -2,6 +2,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +62,7 @@ impl BlockState {
         Ok(serde_json::from_str(&block_state_data_json)?)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn all() -> io::Result<Vec<Self>> {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let block_state_data_path = root.join("block_states.json");
@@ -71,7 +73,7 @@ impl BlockState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use crate::state::BlockState;
 

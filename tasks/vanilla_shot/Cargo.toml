@@ -17,4 +17,6 @@ mcje_downloader = { workspace = true }
 mcre_anvil = { workspace = true }
 mcre_shot = { workspace = true }
 
-tokio = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["fs", "rt-multi-thread"] }

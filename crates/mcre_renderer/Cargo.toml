@@ -16,7 +16,7 @@ mcre_core         = { workspace = true }
 mcre_world        = { workspace = true }
 mcre_fs           = { workspace = true }
 mcre_anvil        = { workspace = true }
-mcre_resource_pack = { workspace = true, features = ["download"] }
+mcre_resource_pack = { workspace = true }
 
 wgpu      = { workspace = true }
 winit     = { workspace = true }
@@ -28,7 +28,18 @@ egui      = { workspace = true }
 egui-winit  = { workspace = true }
 egui-wgpu   = { workspace = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["fs", "rt-multi-thread"] }
+
 [dev-dependencies]
-tokio = { workspace = true }
 serde_json = { workspace = true }
 mcre_shot = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+mcre_resource_pack = { workspace = true, features = ["download"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["console", "Document", "Event", "File", "FileList", "HtmlElement", "HtmlInputElement", "Node", "Window"] }

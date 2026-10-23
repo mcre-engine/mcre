@@ -31,8 +31,8 @@ reqwest = { workspace = true, optional = true }
 mcje_downloader = { workspace = true, optional = true }
 zip = { workspace = true }
 
-[dev-dependencies]
-tokio = { workspace = true }
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["fs"] }
 
 [features]
 download = ["reqwest", "mcje_downloader"]

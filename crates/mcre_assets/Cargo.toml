@@ -22,13 +22,14 @@ serde_json = { workspace = true }
 hashbrown  = { workspace = true }
 rustc-hash = { workspace = true }
 
-[dev-dependencies]
-tokio = { workspace = true }
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["fs"] }
 # Tests use std-only serde_json APIs; unified away in workspace builds.
 serde_json = { workspace = true, features = ["std"] }
 
 [build-dependencies]
 mcje_downloader = { workspace = true }
 
-tokio = { workspace = true }
+[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
+tokio = { workspace = true, features = ["fs", "rt-multi-thread"] }
 zip   = { workspace = true }

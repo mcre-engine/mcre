@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::fs;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -35,6 +36,7 @@ impl Biome {
         Ok(serde_json::from_str(&biome_data_json)?)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn all() -> io::Result<Vec<Self>> {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let biome_data_path = root.join("biomes.json");
@@ -45,7 +47,7 @@ impl Biome {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use crate::biome::Biome;
 

@@ -38,13 +38,13 @@ serde_json   = { version = "1", default-features = false, features = ["alloc"] }
 indexmap     = { version = "2", default-features = false, features = ["serde"] }
 hashbrown    = { version = "0.17", default-features = false, features = ["serde"] }
 rustc-hash   = { version = "2", default-features = false }
-tokio        = { version = "1", features = ["full"] }
+tokio        = { version = "1", features = ["io-util", "macros", "rt", "sync", "time"] }
 chrono       = { version = "0.4", features = ["serde"] }
 reqwest      = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
 url          = { version = "2", features = ["serde"] }
 futures-core = "0.3"
 bytes        = "1"
-zip          = "9"
+zip          = { version = "9", default-features = false, features = ["deflate"] }
 jni          = { version = "0.22", features = ["invocation"] }
 
 syn          = { version = "3", features = ["full"] }
@@ -64,7 +64,7 @@ thiserror = "2"
 flate2    = "1"
 libm      = "0.2"
 egui      = { version = "0.37", features = ["monochrome_emoji_fonts"] }
-egui-winit  = "0.37"
+egui-winit  = { version = "0.37", default-features = false }
 egui-wgpu   = "0.37"
 
 [workspace.metadata.cargo-shear]
