@@ -27,7 +27,10 @@ const SKY: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
-const ATLAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+/// Vanilla's GPU layer has no sRGB formats (`GpuFormat` is UNORM-only), so
+/// the atlas bytes are sampled as-is and all color math happens in gamma
+/// space. The atlas must therefore stay a plain UNORM texture.
+const ATLAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 const DEBUG_UNLIT: u32 = 1;
 const DEBUG_HEATMAP: u32 = 2;
@@ -257,11 +260,15 @@ impl Renderer {
             .await?;
 
         let caps = surface.get_capabilities(&adapter);
+        // Vanilla renders into an UNORM target with an UNORM block atlas, so
+        // its shaders multiply texture, lightmap and vertex color in gamma
+        // space. An sRGB surface would make the GPU decode/encode around that
+        // math, so pick a non-sRGB format to keep the same space.
         let format = caps
             .formats
             .iter()
             .copied()
-            .find(|f| f.is_srgb())
+            .find(|f| !f.is_srgb())
             .ok_or(RendererError::NoSurfaceFormats)?;
 
         let (device, queue) = adapter
