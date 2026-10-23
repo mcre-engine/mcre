@@ -137,6 +137,51 @@ differs by more than 4 / 16, and writes an amplified grayscale PNG to
 `diff.png`. With `--max-mae X`, the exit code is 1 when the MAE exceeds X
 (for scripted regression checks).
 
+## Rendering parity notes
+
+The capture only lines up if the two renderers agree on these details. Each
+one was verified against the 26.4 sources; changing any of them will move the
+MAE by a lot.
+
+- **Colour space.** The vanilla terrain pass renders into an `RGBA8_UNORM`
+  target, so all shader math happens in gamma space and the stored bytes are
+  the shader outputs. mcre therefore uses an `Rgba8Unorm` atlas, a non-sRGB
+  surface and a non-sRGB capture target. Any sRGB conversion adds ~10 MAE.
+- **Camera.** `mcre_yaw = vanilla_yaw + 180`, `mcre_pitch = -vanilla_pitch`,
+  eye height `1.62` (`Avatar.DEFAULT_EYE_HEIGHT`). `vanilla_shot` reads
+  `Camera#getFov()` after settling and fails the run if it is more than
+  `0.05°` from the spec.
+- **FOV.** Creative flight multiplies the vanilla FOV by `1.1`. The prep
+  writes `fovEffectScale:0.0`, which pins the modifier to `1.0`, so the
+  spec's `fov` is the rendered FOV.
+- **Graphics preset.** `Minecraft` applies the saved graphics preset *after*
+  loading `options.txt`, and the `CUSTOM` preset is a no-op. The prep writes
+  `graphicsPreset:"custom"` plus every quality key it cares about, otherwise
+  the preset would overwrite render distance, clouds and friends.
+- **Light levels.** `sample_lightmap.glsl` uses `uv / 256.0 + 0.5 / 16.0` and
+  `LightCoordsUtil.smoothBlend` averages the four samples in quarter-level
+  units, so the 16×16 lightmap is sampled at a *fractional* coordinate and
+  bilinearly blends between texels. mcre carries the level as `f32` and
+  encodes `level * 16 + 8` (`8..248`); truncating to an integer level costs
+  ~0.26 MAE on the noon shot.
+- **Vertex colour.** Vanilla multiplies the lightmap sample into the vertex
+  colour in `terrain.vsh` and interpolates the product. mcre does the same;
+  interpolating AO and light separately and multiplying per fragment is
+  visibly different on large faces.
+- **Fog.** Two independent linear fogs (environmental `0..1024` and
+  render-distance `115.2..128` at distance 8) are combined with `max`, then
+  mixed with `FogColor.rgb` lerped `0.1866` toward `#78a7ff`.
+- **Texture filtering.** `TextureAtlas` uses a `NEAREST` sampler with four
+  mip levels. Vanilla's `sampleNearest` only diverges from plain nearest when
+  minified, where `sampleRGSS` takes over. mcre samples nearest at mip 0, so
+  the far field is slightly sharper than vanilla.
+
+Known residual on `docs/shots/noon.json` (1280×720): MAE `1.6486`
+(RGB `2.198`), 23.4 % of pixels over 4, 5.3 % over 16. The remaining error is
+concentrated in per-block AO corner attachment and in minified texture
+sampling; swapping AO on/off on either side moves the MAE to ~5.5, so the
+overall AO strength is right.
+
 ## Adding a new shot
 
 1. Copy `docs/shots/noon.json` and tweak the fields (keep `world` and
