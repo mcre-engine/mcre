@@ -176,3 +176,32 @@ shot spec:
   cargo run -r -p mcre_renderer --example viewer -- --shot "{{spec}}"
   NAME=$(jq -r .name "{{spec}}")
   cargo run -r -p shotcmp -- "target/shots/$NAME.vanilla.png" "target/shots/$NAME.mcre.png" "target/shots/$NAME.diff.png"
+
+# Build the wasm viewer and prepare its browser bundle.
+web-build:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if ! command -v wasm-bindgen >/dev/null; then
+    echo "wasm-bindgen not found; install wasm-bindgen-cli 0.2.129" >&2
+    exit 1
+  fi
+  cargo build -p mcre_renderer --example viewer --target wasm32-unknown-unknown
+  mkdir -p target/web
+  wasm-bindgen --target web --out-name viewer --out-dir target/web target/wasm32-unknown-unknown/debug/examples/viewer.wasm
+  cp web/index.html target/web/index.html
+  python3 web/make_smoke_pack.py target/web/smoke-pack.zip
+
+# Regenerate the native demo reference used by the browser smoke test.
+web-reference:
+  cargo run -p mcre_renderer --example viewer -- --demo-shot web/demo-reference.png
+
+# Build and serve the wasm viewer locally at http://localhost:8000
+web:
+  just web-build
+  python3 -m http.server 8000 --directory target/web
+
+# Build the wasm viewer and smoke it in headless Chromium.
+web-smoke:
+  just web-build
+  npm ci --prefix web
+  npm --prefix web run smoke

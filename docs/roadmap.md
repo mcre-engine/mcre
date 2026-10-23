@@ -201,15 +201,17 @@ compatible — no Dear ImGui).
       exercises the full hot-reload path headless
 
 ### 2C. `mcre_fs` web completion + wasm viewer (approved: viewer runs on wasm)
-- [ ] Web backend to full `Fs`-trait parity (OPFS handles, dir iteration,
+- [x] Web backend to full `Fs`-trait parity (OPFS handles, dir iteration,
       persistence, quota/error mapping); conformance suite on both backends
-- [ ] wasm viewer: `winit` web backend, wgpu WebGL/WebGPU limits (atlas caps,
+- [x] wasm viewer: `winit` web backend, wgpu WebGL/WebGPU limits (atlas caps,
       no main-thread sync handles — worker/async OPFS), no direct Mojang
       fetch in browser (bundled or user-provided packs)
-- [ ] `just web` (build + local serve); CI headless-browser smoke with
+- [x] `just web` (build + local serve); CI headless-browser smoke with
       screenshot comparison vs native demo render
-- [ ] Design constraints: single-threaded wasm (mesh + `compute_light`
-      budgets), OPFS origin-private paths (export/import for user saves)
+- [x] Design constraints: single-threaded wasm (mesh + `compute_light`
+      budgets) documented in `docs/web.md`; OPFS paths are origin-private
+- [ ] OPFS save export/import: blocked on `mcre_anvil` moving from
+      `std::fs` to `mcre_fs` (the 2A deferred item), then a save-loading UI
 
 ### 2D. Milestone queue after Phase 2 (approved order)
 

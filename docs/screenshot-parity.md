@@ -179,6 +179,11 @@ MAE by a lot.
   `sampleNearest` + `sampleRGSS`. The sampler stays `NEAREST` because vanilla
   filters in the shader. Mips with plain nearest measure *worse* (1.6772) than
   no mips at all (1.6486); RGSS is what makes the far field line up.
+- **Atlas layout.** The sampler's mip selection assumes square texels. The
+  parity path keeps the packed (possibly non-square) native atlas to preserve
+  the baseline; the browser viewer pads small packs with
+  `build_atlas_square` so user packs do not sample several mip levels too
+  high.
 - **Cutout leaves.** `LeavesBlock.skipRendering` skips a leaf-to-leaf face
   only when `cutoutLeaves` is *false*; the option defaults to *true*, so
   vanilla renders those faces as cutout sprites. mcre's

@@ -95,6 +95,7 @@ Manual steps (if auto fails or you need a specific version):
 - **JNI bridge**: `mcje` crate embeds a JVM via JNI. `#[mcje::main]` wraps `async fn main(env: &mut JNIEnv)` with JVM init + bootstrap.
 - **Event-driven world model** documented in `docs/world-model.md`.
 - **Parity screenshots** documented in `docs/screenshot-parity.md`: one JSON spec (`mcre_shot`) drives both the embedded vanilla client (`tasks/vanilla_shot`) and the mcre viewer (`--shot`), diffed by `tasks/shotcmp` (`just shot <spec>`).
+- **Web viewer** documented in `docs/web.md`: `just web` serves the wasm build, `just web-smoke` runs the headless comparison against the native demo render.
 
 ## Notable Config Files
 
