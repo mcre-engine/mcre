@@ -179,26 +179,26 @@ MAE by a lot.
   `sampleNearest` + `sampleRGSS`. The sampler stays `NEAREST` because vanilla
   filters in the shader. Mips with plain nearest measure *worse* (1.6772) than
   no mips at all (1.6486); RGSS is what makes the far field line up.
-- **Cutout leaves.** `cutoutLeaves` defaults to *true*, so vanilla culls
-  leaf-to-leaf faces. mcre's `MeshOptions::default()` keeps them
-  (`fast_leaves: false`) because it renders both faces of a leaf block and
-  relies on the cutout pass to hide the back one. Matching vanilla's culling
-  changes the canopy's AO and measures worse (2.4385), so mcre deliberately
-  diverges here.
+- **Cutout leaves.** `LeavesBlock.skipRendering` skips a leaf-to-leaf face
+  only when `cutoutLeaves` is *false*; the option defaults to *true*, so
+  vanilla renders those faces as cutout sprites. mcre's
+  `MeshOptions::default()` matches that (`fast_leaves: false`); turning the
+  culling on measures worse (2.4385).
 - **Ambient occlusion.** `getShadeBrightness` is
   `state.isCollisionShapeFullBlock(level, pos) ? 0.2 : 1.0`, and leaves *are*
   full-collision blocks, so a leaf corner darkens a neighbouring face. The
-  `BlockModelLighter` shade and light formulas are ported verbatim, including
-  the `isLightPermeable` gate on the diagonal samples and the
-  `AmbientVertexRemap` vertex order.
+  `BlockModelLighter` shade and light formulas are ported, including the
+  `isLightPermeable` gate on diagonal samples. mcre attaches AO corners by
+  vertex position rather than vanilla's `AmbientVertexRemap`; this preserves
+  world-space corners under rotated variants and measured better on the noon
+  shot (1.9373 vs. 2.0412).
 
 Known residual on `docs/shots/noon.json` (1280×720): MAE `1.5954`
 (RGB `2.127`), 21.7 % of pixels over 4, 5.1 % over 16. The remaining error is
-concentrated in the tree canopy, where mcre is ~7 % darker: with ambient
-occlusion disabled on both sides the canopy still differs by ~3 %, and the
-extra ~4 % comes from mcre's ambient-occlusion corner shading being stronger
-than vanilla's there. The flat-lighting comparison is available through the
-spec's `ao` flag.
+concentrated in tree canopies and near-ground details. In the selected canopy
+region mcre is about 7 % darker overall; the flat-lighting comparison still
+differs by roughly 3 %, so the remaining gap is not explained by AO alone.
+Use the spec's `ao:false` setting on both paths to inspect flat lighting.
 
 ## Adding a new shot
 
