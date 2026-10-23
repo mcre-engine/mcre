@@ -182,7 +182,7 @@ pub fn pack_chunk_sections(
             let mut positions = [[0.0; 3]; 4];
             let mut uvs = [[0.0; 2]; 4];
             let mut colors = [[0.0; 3]; 4];
-            let mut light = [[0u8; 2]; 4];
+            let mut light = [[0.0_f32; 2]; 4];
             for (i, &vertex_index) in quad.iter().enumerate() {
                 let vertex = &mesh.vertices[vertex_index as usize];
                 positions[i] = [
@@ -192,10 +192,7 @@ pub fn pack_chunk_sections(
                 ];
                 uvs[i] = vertex.uv;
                 colors[i] = vertex.color;
-                light[i] = [
-                    (vertex.light[0].clamp(0.0, 15.0)) as u8,
-                    (vertex.light[1].clamp(0.0, 15.0)) as u8,
-                ];
+                light[i] = [vertex.light[0], vertex.light[1]];
             }
             let packed = encode_quad(&QuadEncodeInput {
                 positions,
@@ -521,7 +518,7 @@ fn vertex_remap(direction: Direction) -> [usize; 4] {
 /// Port of vanilla `LightCoordsUtil.smoothBlend`, per channel: fully dark
 /// neighbors inherit the center level (partially dark ones inherit only the
 /// sky channel) before the four samples are averaged.
-fn smooth_blend(n1: (u8, u8), n2: (u8, u8), n3: (u8, u8), center: (u8, u8)) -> (u8, u8) {
+fn smooth_blend(n1: (u8, u8), n2: (u8, u8), n3: (u8, u8), center: (u8, u8)) -> (f32, f32) {
     let mut neighbors = [n1, n2, n3];
     if center.0 > 2 || center.1 > 2 {
         for neighbor in &mut neighbors {
@@ -532,17 +529,9 @@ fn smooth_blend(n1: (u8, u8), n2: (u8, u8), n3: (u8, u8), center: (u8, u8)) -> (
             }
         }
     }
-    let block = (u32::from(neighbors[0].0)
-        + u32::from(neighbors[1].0)
-        + u32::from(neighbors[2].0)
-        + u32::from(center.0))
-        >> 2;
-    let sky = (u32::from(neighbors[0].1)
-        + u32::from(neighbors[1].1)
-        + u32::from(neighbors[2].1)
-        + u32::from(center.1))
-        >> 2;
-    (block as u8, sky as u8)
+    let block = f32::from(neighbors[0].0 + neighbors[1].0 + neighbors[2].0 + center.0) * 0.25;
+    let sky = f32::from(neighbors[0].1 + neighbors[1].1 + neighbors[2].1 + center.1) * 0.25;
+    (block, sky)
 }
 
 /// Vanilla `prepareQuadFlat`: one light sample, raised to the quad owner's
@@ -646,7 +635,7 @@ fn smooth_face<A: BlockAccess + ?Sized>(
     };
 
     let pairings = [(3, 0), (2, 0), (2, 1), (3, 1)];
-    let mut tblend = [(0_u8, 0_u8); 4];
+    let mut tblend = [(0.0_f32, 0.0_f32); 4];
     let mut tshade = [0.0_f32; 4];
     for (k, &(a, b)) in pairings.iter().enumerate() {
         tblend[k] = smooth_blend(edge_light[a], edge_light[b], diagonals[k].0, center_light);
@@ -669,7 +658,7 @@ fn smooth_face<A: BlockAccess + ?Sized>(
             let (diag_light, diag_shade) = diagonal(a, b);
             let blended = smooth_blend(edge_light[a], edge_light[b], diag_light, center_light);
             let ambient = (edge_shade[a] + edge_shade[b] + diag_shade + center_shade) * 0.25;
-            lights[i] = [f32::from(blended.0), f32::from(blended.1)];
+            lights[i] = [blended.0, blended.1];
             colors[i] = [color[0] * ambient, color[1] * ambient, color[2] * ambient];
         }
         return (colors, lights);
@@ -698,22 +687,25 @@ fn smooth_face<A: BlockAccess + ?Sized>(
             + tshade[2] * weights[2]
             + tshade[3] * weights[3])
             .clamp(0.0, 1.0);
-        lights[i] = [f32::from(blended.0), f32::from(blended.1)];
+        lights[i] = [blended.0, blended.1];
         colors[i] = [color[0] * ambient, color[1] * ambient, color[2] * ambient];
     }
     (colors, lights)
 }
 
-fn smooth_weighted_blend(lights: [(u8, u8); 4], weights: [f32; 4]) -> (u8, u8) {
-    let block = (f32::from(lights[0].0) * weights[0]
-        + f32::from(lights[1].0) * weights[1]
-        + f32::from(lights[2].0) * weights[2]
-        + f32::from(lights[3].0) * weights[3]) as u8;
-    let sky = (f32::from(lights[0].1) * weights[0]
-        + f32::from(lights[1].1) * weights[1]
-        + f32::from(lights[2].1) * weights[2]
-        + f32::from(lights[3].1) * weights[3]) as u8;
-    (block.min(15), sky.min(15))
+fn smooth_weighted_blend(lights: [(f32, f32); 4], weights: [f32; 4]) -> (f32, f32) {
+    let block = lights
+        .iter()
+        .zip(weights)
+        .map(|(l, w)| l.0 * w)
+        .sum::<f32>();
+    let sky = lights
+        .iter()
+        .zip(weights)
+        .map(|(l, w)| l.1 * w)
+        .sum::<f32>();
+    let quantize = |value: f32| (value.clamp(0.0, 15.0) * 16.0).floor() / 16.0;
+    (quantize(block), quantize(sky))
 }
 
 /// Normalized face bounds in SizeInfo order: min/max per axis then flips.
@@ -2707,6 +2699,14 @@ mod tests {
             corner_edges(Direction::North, &Vec3f::new(16.0, 8.0, 0.0), &corners),
             None
         );
+    }
+
+    #[test]
+    fn smooth_blend_keeps_quarter_levels() {
+        let blended = smooth_blend((15, 15), (15, 15), (15, 15), (14, 15));
+        assert_eq!(blended, (14.75, 15.0));
+        let blended = smooth_blend((15, 15), (15, 15), (15, 15), (15, 15));
+        assert_eq!(blended, (15.0, 15.0));
     }
 
     #[test]

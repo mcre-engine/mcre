@@ -183,8 +183,10 @@ pub fn decode_texcoord(tex: [u16; 2]) -> ([f32; 2], [f32; 2]) {
     (coord, bias)
 }
 
-pub fn encode_lightmap_coord(level: u8) -> u8 {
-    (((u32::from(level) << 4) + 8).clamp(8, 248)) as u8
+/// Vanilla `sample_lightmap`: `uv = level * 16 / 256 + 0.5 / 16`, keeping the
+/// fractional level so the 16x16 lightmap is sampled between texels.
+pub fn encode_lightmap_coord(level: f32) -> u8 {
+    (((level * 16.0).round() as i32 + 8).clamp(8, 248)) as u8
 }
 
 pub fn decode_lightmap_coord(coord: u8) -> f32 {
@@ -368,7 +370,7 @@ pub struct QuadEncodeInput {
     pub positions: [[f32; 3]; 4],
     pub uvs: [[f32; 2]; 4],
     pub colors: [[f32; 3]; 4],
-    pub light: [[u8; 2]; 4],
+    pub light: [[f32; 2]; 4],
     pub block_pos: [i32; 3],
     pub state_id: u16,
     pub translucent: bool,
@@ -494,11 +496,17 @@ mod tests {
 
     #[test]
     fn lightmap_coord_matches_vanilla_texel_centers() {
-        assert_eq!(encode_lightmap_coord(0), 8);
-        assert_eq!(encode_lightmap_coord(15), 248);
-        assert_eq!(encode_lightmap_coord(8), 136);
+        assert_eq!(encode_lightmap_coord(0.0), 8);
+        assert_eq!(encode_lightmap_coord(15.0), 248);
+        assert_eq!(encode_lightmap_coord(8.0), 136);
         assert!((decode_lightmap_coord(8) - 0.5 / 16.0).abs() < f32::EPSILON);
         assert!((decode_lightmap_coord(248) - 15.5 / 16.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lightmap_coord_keeps_fractional_levels() {
+        assert_eq!(encode_lightmap_coord(14.75), 244);
+        assert!((decode_lightmap_coord(244) - 15.25 / 16.0).abs() < 1e-6);
     }
 
     #[test]
@@ -628,7 +636,7 @@ mod tests {
             ],
             uvs: [[0.25, 0.25], [0.25, 0.75], [0.75, 0.75], [0.75, 0.25]],
             colors: [[1.0; 3]; 4],
-            light: [[15, 0]; 4],
+            light: [[15.0, 0.0]; 4],
             block_pos: [1, 2, 3],
             state_id: 7,
             translucent: true,
@@ -661,7 +669,7 @@ mod tests {
             ],
             uvs: [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]],
             colors: [[1.0; 3]; 4],
-            light: [[0, 15]; 4],
+            light: [[0.0, 15.0]; 4],
             block_pos: [0, 0, 0],
             state_id: 0,
             translucent: false,

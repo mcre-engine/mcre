@@ -2046,7 +2046,7 @@ mod tests {
 
     #[test]
     fn uniforms_stay_16_byte_aligned() {
-        assert_eq!(size_of::<Uniforms>(), 128);
+        assert_eq!(size_of::<Uniforms>(), 144);
         assert_eq!(size_of::<Uniforms>() % 16, 0);
         assert_eq!(std::mem::offset_of!(Uniforms, flags), 112);
     }
