@@ -143,17 +143,17 @@ fn atmospheric_fog_color(render_distance: u32, time_ticks: f32) -> [f32; 3] {
 /// Vanilla `FogRenderer.setupFog`: the environmental fog follows the
 /// dimension attributes (the overworld's default span is far past the loaded
 /// radius), while the render-distance fog hides the loaded edge.
-fn vanilla_fog(
-    render_distance: u32,
-    time_ticks: f32,
-    submerged: Option<FluidKind>,
-) -> Fog {
+fn vanilla_fog(render_distance: u32, time_ticks: f32, submerged: Option<FluidKind>) -> Fog {
     let render_distance_blocks = render_distance as f32 * 16.0;
     let span = (render_distance_blocks / 10.0).clamp(4.0, 64.0);
     let (color, environmental_start, environmental_end) = match submerged {
         Some(FluidKind::Water) => (WATER_FOG_COLOR, -8.0, 96.0),
         Some(FluidKind::Lava) => (LAVA_FOG_COLOR, 0.25, 1.0),
-        None => (atmospheric_fog_color(render_distance, time_ticks), 0.0, 1024.0),
+        None => (
+            atmospheric_fog_color(render_distance, time_ticks),
+            0.0,
+            1024.0,
+        ),
     };
     Fog {
         color,

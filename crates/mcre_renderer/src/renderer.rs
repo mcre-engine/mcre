@@ -880,12 +880,7 @@ impl Renderer {
                 cloud_fog_end(self.cloud_range_chunks),
             ],
             flags: [debug_bits(&self.debug_flags), 0, 0, 0],
-            fog_misc: [
-                self.tex_coord_shrink,
-                self.fog.density,
-                0.0,
-                0.0,
-            ],
+            fog_misc: [self.tex_coord_shrink, self.fog.density, 0.0, 0.0],
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

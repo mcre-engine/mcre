@@ -34,9 +34,7 @@ pub use region::{
     slice_mask, sort_translucent_quads, visible_faces,
 };
 pub use remesh::{MeshJob, MeshResult, MeshWorker, MeshedChunk, StreamSource, run_job};
-pub use renderer::{
-    DebugFlags, EguiFrame, Fog, FrameStats, RenderChunk, Renderer, RendererError,
-};
+pub use renderer::{DebugFlags, EguiFrame, Fog, FrameStats, RenderChunk, Renderer, RendererError};
 pub use vertex::{
     FACING_COUNT, FACING_NEG_X, FACING_NEG_Y, FACING_NEG_Z, FACING_POS_X, FACING_POS_Y,
     FACING_POS_Z, FACING_UNASSIGNED, FormatFlags, QuadEncodeInput, TerrainPass, TerrainVertex,
