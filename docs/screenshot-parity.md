@@ -172,15 +172,33 @@ MAE by a lot.
   render-distance `115.2..128` at distance 8) are combined with `max`, then
   mixed with `FogColor.rgb` lerped `0.1866` toward `#78a7ff`.
 - **Texture filtering.** `TextureAtlas` uses a `NEAREST` sampler with four
-  mip levels. Vanilla's `sampleNearest` only diverges from plain nearest when
-  minified, where `sampleRGSS` takes over. mcre samples nearest at mip 0, so
-  the far field is slightly sharper than vanilla.
+  mip levels, and `terrain.fsh` samples it through `sampleRGSS` when
+  `textureFiltering` is 1. mcre ports both: `mipmap.rs` reproduces
+  `MipmapGenerator` (AUTO reduced to MEAN/CUTOUT), `TextureUtil.solidify` and
+  the coverage-preserving alpha rescale, and the terrain shader ports
+  `sampleNearest` + `sampleRGSS`. The sampler stays `NEAREST` because vanilla
+  filters in the shader. Mips with plain nearest measure *worse* (1.6772) than
+  no mips at all (1.6486); RGSS is what makes the far field line up.
+- **Cutout leaves.** `cutoutLeaves` defaults to *true*, so vanilla culls
+  leaf-to-leaf faces. mcre's `MeshOptions::default()` keeps them
+  (`fast_leaves: false`) because it renders both faces of a leaf block and
+  relies on the cutout pass to hide the back one. Matching vanilla's culling
+  changes the canopy's AO and measures worse (2.4385), so mcre deliberately
+  diverges here.
+- **Ambient occlusion.** `getShadeBrightness` is
+  `state.isCollisionShapeFullBlock(level, pos) ? 0.2 : 1.0`, and leaves *are*
+  full-collision blocks, so a leaf corner darkens a neighbouring face. The
+  `BlockModelLighter` shade and light formulas are ported verbatim, including
+  the `isLightPermeable` gate on the diagonal samples and the
+  `AmbientVertexRemap` vertex order.
 
-Known residual on `docs/shots/noon.json` (1280×720): MAE `1.6486`
-(RGB `2.198`), 23.4 % of pixels over 4, 5.3 % over 16. The remaining error is
-concentrated in per-block AO corner attachment and in minified texture
-sampling; swapping AO on/off on either side moves the MAE to ~5.5, so the
-overall AO strength is right.
+Known residual on `docs/shots/noon.json` (1280×720): MAE `1.5954`
+(RGB `2.127`), 21.7 % of pixels over 4, 5.1 % over 16. The remaining error is
+concentrated in the tree canopy, where mcre is ~7 % darker: with ambient
+occlusion disabled on both sides the canopy still differs by ~3 %, and the
+extra ~4 % comes from mcre's ambient-occlusion corner shading being stronger
+than vanilla's there. The flat-lighting comparison is available through the
+spec's `ao` flag.
 
 ## Adding a new shot
 
