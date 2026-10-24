@@ -50,9 +50,10 @@ capturing; MCRE's shot scene and animation clock are fixed by the spec. The
 vanilla camera switches to spectator during shot teleport so collision and
 falling cannot move it away from the specified eye position. MCRE imports
 missing sky-light sections by repeating the section above's bottom light plane,
-as vanilla does, and leaves absent block-light sections dark. Underground
-lighting remains a parity gap. Current MAEs are `10.5688`, `21.1903`, `10.3398`,
-`7.9992`, and `10.3460`.
+as vanilla does, and leaves absent block-light sections dark. Once the full
+chunk ring has streamed, MCRE recomputes light across it and remeshes the ring;
+its Overworld lightmap also uses the dimension's `#0a0a0a` ambient-light color.
+Current MAEs are `0.6158`, `0.8930`, `0.4474`, `0.4534`, and `0.7880`.
 
 ## Spec format
 
@@ -224,8 +225,8 @@ MAE by a lot.
   world-space corners under rotated variants and measured better on the noon
   shot (1.9373 vs. 2.0412).
 
-Known residual on `docs/shots/noon.json` (1280×720): MAE `1.6247`,
-21.8 % of pixels over 4, 5.2 % over 16. The remaining error is concentrated in
+Known residual on `docs/shots/noon.json` (1280×720): MAE `1.4776`,
+21.3 % of pixels over 4, 5.0 % over 16. The remaining error is concentrated in
 tree canopies and near-ground details. In the selected canopy region mcre is
 about 7 % darker overall; the flat-lighting comparison still differs by roughly
 3 %, so the remaining gap is not explained by AO alone. Use the spec's

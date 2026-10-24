@@ -1932,7 +1932,7 @@ impl Viewer {
         if dirty.is_empty() {
             return;
         }
-        self.submit_job(Vec::new(), dirty);
+        self.submit_job(Vec::new(), dirty, false);
     }
 
     fn mesh_options(&self) -> MeshOptions {
@@ -2032,10 +2032,16 @@ impl Viewer {
         renderer.render(view_proj, camera_pos, &chunks, egui);
     }
 
-    fn submit_job(&mut self, stream: Vec<(i32, i32)>, dirty: Vec<ChunkPos>) {
+    fn submit_job(
+        &mut self,
+        stream: Vec<(i32, i32)>,
+        dirty: Vec<ChunkPos>,
+        recompute_light: bool,
+    ) {
         self.generation = self.worker.submit(
             self.world.clone(),
             stream,
+            recompute_light,
             dirty,
             self.world.pending_light_edits().to_vec(),
             self.light_mode,
@@ -2047,7 +2053,7 @@ impl Viewer {
     fn remesh_all(&mut self) {
         self.world.mark_all_dirty();
         let dirty = self.world.take_dirty();
-        self.submit_job(Vec::new(), dirty);
+        self.submit_job(Vec::new(), dirty, false);
     }
 
     /// Hot-reloads the pack stack after a selection change: rebuilds data +
@@ -2231,7 +2237,7 @@ impl Viewer {
     }
 
     /// Streams save chunks around the camera: rebases the ring when the
-    /// camera chunk moves and submits one pending chunk per quiet frame.
+    /// camera chunk moves and submits small batches per quiet frame.
     fn tick_stream(&mut self) {
         let Some(stream) = self.streamer.as_mut() else {
             return;
@@ -2270,7 +2276,7 @@ impl Viewer {
         // must see every later edit.
         if !self.pending_stream_dirty.is_empty() {
             let dirty = std::mem::take(&mut self.pending_stream_dirty);
-            self.submit_job(Vec::new(), dirty);
+            self.submit_job(Vec::new(), dirty, false);
             return;
         }
         if stream.pending.is_empty() {
@@ -2291,7 +2297,8 @@ impl Viewer {
             }
         }
         if !batch.is_empty() {
-            self.submit_job(batch, Vec::new());
+            let recompute_light = stream.pending.is_empty();
+            self.submit_job(batch, Vec::new(), recompute_light);
         }
     }
 }

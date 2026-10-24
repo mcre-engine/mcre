@@ -21,6 +21,7 @@ pub struct StreamSource {
 pub struct MeshJob {
     pub world: World,
     pub stream: Vec<(i32, i32)>,
+    pub recompute_light: bool,
     pub dirty: Vec<ChunkPos>,
     pub light_edits: Vec<(i32, i32, i32)>,
     pub generation: u64,
@@ -82,7 +83,13 @@ pub fn run_job(
     }
     let load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
     let light_start = std::time::Instant::now();
+    if job.recompute_light {
+        job.world.mark_light_full();
+    }
     job.world.compute_light();
+    if job.recompute_light {
+        job.world.mark_all_dirty();
+    }
     let light_ms = light_start.elapsed().as_secs_f64() * 1000.0;
     let mesh_start = std::time::Instant::now();
     // Main-side marks ride along explicitly (the main world drains its own
@@ -164,10 +171,12 @@ impl MeshWorker {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn submit(
         &mut self,
         world: World,
         stream: Vec<(i32, i32)>,
+        recompute_light: bool,
         dirty: Vec<ChunkPos>,
         light_edits: Vec<(i32, i32, i32)>,
         mode: LightMode,
@@ -178,6 +187,7 @@ impl MeshWorker {
         let _ = self.sender.send(MeshJob {
             world,
             stream,
+            recompute_light,
             dirty,
             light_edits,
             generation,
@@ -273,6 +283,7 @@ mod tests {
         let generation = worker.submit(
             world,
             Vec::new(),
+            false,
             dirty,
             light_edits,
             LightMode::Smooth,
@@ -304,6 +315,7 @@ mod tests {
         let generation = worker.submit(
             world,
             vec![(3, -2)],
+            true,
             Vec::new(),
             Vec::new(),
             LightMode::Smooth,
@@ -330,6 +342,7 @@ mod tests {
         let first = worker.submit(
             world.clone(),
             Vec::new(),
+            false,
             Vec::new(),
             Vec::new(),
             LightMode::Smooth,
@@ -338,6 +351,7 @@ mod tests {
         let second = worker.submit(
             world,
             Vec::new(),
+            false,
             Vec::new(),
             Vec::new(),
             LightMode::Flat,
