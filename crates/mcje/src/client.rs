@@ -28,6 +28,8 @@ pub struct PlayerState {
     /// Effective vertical field of view in degrees, after every modifier the
     /// client applies (flying, speed, effects).
     pub fov: f32,
+    /// Vanilla `LocalPlayer.getWaterVision()` used by underwater fog.
+    pub water_vision: f32,
 }
 
 /// Run `net.minecraft.client.main.Main` on the current thread.
@@ -129,12 +131,14 @@ impl ClientControl {
                 jni_sig!("Lnet/minecraft/client/Camera;"),
             )?;
             let fov = call_f(env, &camera, jni_str!("getFov"), jni_sig!("()F"))?;
+            let water_vision = call_f(env, &player, jni_str!("getWaterVision"), jni_sig!("()F"))?;
             Ok(PlayerState {
                 eye: [x, y + f64::from(eye_height), z],
                 yaw,
                 pitch,
                 eye_height,
                 fov,
+                water_vision,
             })
         })
     }
@@ -190,6 +194,12 @@ impl ClientControl {
         self.schedule_step("hide", None)
     }
 
+    /// Pin vanilla's water-vision timer to its saturated value so underwater
+    /// fog no longer depends on how long the camera has been submerged.
+    pub fn schedule_water_saturate(&self) -> Result<(), String> {
+        self.schedule_step("water-saturate", None)
+    }
+
     /// Screenshot the main render target to `screenshots/<name>`.
     pub fn schedule_grab(&self, name: &str) -> Result<(), String> {
         self.schedule_step("grab", Some(name))
@@ -236,6 +246,26 @@ impl ClientControl {
                 .try_to_string(env)
                 .map_err(|err| format!("ShotDriver.error decode failed: {err}"))?;
             Ok(Some(text))
+        })
+    }
+
+    /// Water-vision value and animation clock sampled by the last screenshot step.
+    pub fn shot_state(&self) -> Result<(f32, f64), String> {
+        self.with_env(|env| {
+            let class = env
+                .find_class(jni_str!("mcre/ShotDriver"))
+                .map_err(|err| format!("find mcre/ShotDriver failed: {err}"))?;
+            let water_vision = env
+                .get_static_field(&class, jni_str!("waterVision"), jni_sig!("F"))
+                .map_err(|err| format!("ShotDriver.waterVision read failed: {err}"))?
+                .f()
+                .map_err(|err| format!("ShotDriver.waterVision read failed: {err}"))?;
+            let animation_ticks = env
+                .get_static_field(&class, jni_str!("animationTicks"), jni_sig!("D"))
+                .map_err(|err| format!("ShotDriver.animationTicks read failed: {err}"))?
+                .d()
+                .map_err(|err| format!("ShotDriver.animationTicks read failed: {err}"))?;
+            Ok((water_vision, animation_ticks))
         })
     }
 

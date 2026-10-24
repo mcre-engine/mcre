@@ -204,15 +204,34 @@ fn drive(
     eprintln!("vanilla_shot: verifying clock");
     verify_clock(control, spec)?;
 
+    eprintln!("vanilla_shot: saturating water vision");
+    control.schedule_water_saturate()?;
+    check_step_error(control)?;
+
     eprintln!("vanilla_shot: hiding HUD");
     control.schedule_hide()?;
     thread::sleep(HIDE_SETTLE);
     check_step_error(control)?;
+    eprintln!(
+        "vanilla_shot: water vision {}",
+        control.player_state()?.water_vision
+    );
 
     let shot_path = game_dir.join("screenshots").join(shot_name);
     let _ = fs::remove_file(&shot_path);
     control.schedule_grab(shot_name)?;
     wait_for_screenshot(control, &shot_path)?;
+    let (water_vision, animation_ticks) = control.shot_state()?;
+    let state_path = out.with_extension("state.json");
+    if let Some(parent) = state_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("create {}: {err}", parent.display()))?;
+    }
+    fs::write(
+        &state_path,
+        format!("{{\"water_vision\":{water_vision},\"animation_ticks\":{animation_ticks}}}\n"),
+    )
+    .map_err(|err| format!("write {}: {err}", state_path.display()))?;
+    eprintln!("vanilla_shot: water_vision={water_vision}, animation_ticks={animation_ticks}");
 
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("create {}: {err}", parent.display()))?;

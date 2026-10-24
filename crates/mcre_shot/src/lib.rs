@@ -72,6 +72,12 @@ pub struct ShotSpec {
     /// Vanilla `gamma` option, `0.0..=1.0` (default 0.5).
     #[serde(default = "default_brightness")]
     pub brightness: f64,
+    /// Vanilla water-vision value used for underwater fog (default 0.0).
+    #[serde(default)]
+    pub water_vision: f64,
+    /// Client animation clock in ticks, used to phase-lock parity captures.
+    #[serde(default)]
+    pub animation_ticks: f64,
     /// Overworld day clock, `0..=24000`, 6000 = noon (default 6000).
     #[serde(default = "default_time_ticks")]
     pub time_ticks: i64,
@@ -185,6 +191,12 @@ impl ShotSpec {
         if !(0.0..=1.0).contains(&self.brightness) {
             return invalid("brightness must be in 0.0..=1.0".into());
         }
+        if !(0.0..=1.0).contains(&self.water_vision) {
+            return invalid("water_vision must be in 0.0..=1.0".into());
+        }
+        if !self.animation_ticks.is_finite() || self.animation_ticks < 0.0 {
+            return invalid("animation_ticks must be finite and non-negative".into());
+        }
         if !(1.0..=170.0).contains(&self.fov) {
             return invalid("fov must be in 1..=170".into());
         }
@@ -233,6 +245,8 @@ impl ShotSpec {
             pitch: -mcre_pitch_rad.to_degrees(),
             fov: fov_deg,
             brightness,
+            water_vision: 0.0,
+            animation_ticks: 0.0,
             time_ticks,
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
@@ -262,6 +276,8 @@ mod tests {
             pitch: -12.5,
             fov: 70.0,
             brightness: 0.5,
+            water_vision: 0.0,
+            animation_ticks: 0.0,
             time_ticks: 6000,
             width: 1280,
             height: 720,
