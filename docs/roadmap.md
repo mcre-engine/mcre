@@ -281,9 +281,17 @@ M8 — Liquids — done
       eye-block lava approximation, `WATER_FOG_COLOR`/lava colors, 70° → 60°
       FOV at the default `fovEffectScale`)
 
-Next in the queue: M10 animations (texture
-animations + torch flicker) → particles → block entities → entities
-(M11-M13). 2C (wasm) is independent and can land at any point.
+### M10. Texture animations — done
+- [x] `.png.mcmeta` animation metadata (`frametime`, `frames`, `width`/`height`,
+      `interpolate`), strip/grid frame extraction, per-frame mip chains
+- [x] `AtlasAnimator` updates the CPU atlas at 20 Hz (interpolated sprites at
+      40 Hz); `Renderer::update_atlas` re-uploads pixels + mips
+- [x] Native and web viewers advance animations; shot and demo-shot modes stay
+      on frame 0 for deterministic parity
+- Torch flicker is not present in 26.4-snapshot-4 (no `flicker` shader or
+  source); skipped.
+
+Next in the queue: particles → block entities → entities (M11-M13).
 
 ## 5. Open decisions / risks
 - UI toolkit locked to `egui` (native + wasm). Revisit only if it fights

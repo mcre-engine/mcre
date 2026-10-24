@@ -21,7 +21,9 @@ The browser build does **not** fetch anything from Mojang. It starts with an
 empty placeholder atlas and a resource-pack file picker. Select a zipped pack
 whose root contains `pack.mcmeta`; the zip is copied into OPFS, extracted into
 `pack_cache/`, and its blockstates/models/textures are baked into the atlas.
-The demo scene is a 3×3 stone/grass plane.
+The demo scene is a 3×3 stone/grass plane. Animated block textures
+(`.png.mcmeta`) play once the pack loads; the atlas updates at 20 Hz, or 40 Hz
+for sprites with `interpolate: true`.
 
 Everything the viewer writes is under the OPFS root for the page's origin
 (`resourcepacks/`, `pack_cache/`, `saves/`). Browsers clear it with site data,
@@ -66,7 +68,7 @@ runs `web/smoke.mjs` in headless Chromium with SwiftShader. The test:
 
 1. captures the empty viewer,
 2. uploads `target/web/smoke-pack.zip` through the file input,
-3. waits for the atlas/pack load,
+3. waits for the atlas/pack load and the first animated-texture tick,
 4. asserts the render changed, the canvas is 960×540, and the frame matches
    `web/demo-reference.png` (native demo render) within MAE 1.2 and 2.5 % of
    pixels over 16,

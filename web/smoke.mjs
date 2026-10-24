@@ -69,6 +69,9 @@ try {
   await page.waitForFunction(() => document.body.dataset.packLoaded === "true", null, {
     timeout: 120_000,
   });
+  await page.waitForFunction(() => document.body.dataset.animationTick !== undefined, null, {
+    timeout: 120_000,
+  });
   await page.waitForTimeout(1000);
   const canvasSize = await canvas.evaluate((element) => [
     element.width,

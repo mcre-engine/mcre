@@ -98,6 +98,10 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
         "pack.mcmeta",
         '{"pack":{"description":"MCRE browser smoke pack","min_format":[100,1],"max_format":[100,1]}}',
     )
+    archive.writestr(
+        "assets/minecraft/textures/block/stone.png.mcmeta",
+        '{"animation":{"frametime":1,"frames":[0,0]}}',
+    )
     files = [
         "blockstates/grass_block.json",
         "blockstates/stone.json",

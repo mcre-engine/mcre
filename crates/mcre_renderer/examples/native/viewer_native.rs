@@ -7,10 +7,10 @@ use mcre_fs::native::NativeFs;
 use mcre_renderer::clouds::{CLOUD_HEIGHT, CloudStatus, CloudTexture};
 use mcre_renderer::lightmap::{DAY_LENGTH_TICKS, DEFAULT_BRIGHTNESS, sky_light_factor};
 use mcre_renderer::{
-    Atlas, CullParams, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4, Mesh,
-    MeshOptions, MeshResult, MeshWorker, RenderChunk, Renderer, SectionMesh, SectionVisibility,
-    StreamSource, build_atlas, build_atlas_square, cloud_color_for, find_visible_sections,
-    mesh_chunk, pack_chunk_sections, vanilla_fog,
+    Atlas, AtlasAnimator, CullParams, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4,
+    Mesh, MeshOptions, MeshResult, MeshWorker, RenderChunk, Renderer, SectionMesh,
+    SectionVisibility, StreamSource, build_atlas, build_atlas_square, cloud_color_for,
+    find_visible_sections, mesh_chunk, pack_chunk_sections, vanilla_fog,
 };
 use mcre_resource_pack::{ResourcePackData, ResourcePackSet, download};
 use mcre_shot::ShotSpec;
@@ -121,10 +121,12 @@ fn main() {
     let (data, atlas, cloud_texture, world, meshes, camera_pos, streamer, packs) =
         runtime.block_on(prepare(args, demo_shot.is_some()));
     let total_chunks = meshes.len();
+    let animator = AtlasAnimator::new(&atlas);
 
     let mut viewer = Viewer {
         camera: FlyCamera::new(camera_pos),
         atlas: atlas.clone(),
+        animator,
         world,
         meshes,
         worker: MeshWorker::new(data, atlas, streamer.as_ref().map(|s| s.source.clone())),
@@ -920,6 +922,7 @@ fn raycast(
 struct Viewer {
     camera: FlyCamera,
     atlas: Arc<Atlas>,
+    animator: AtlasAnimator,
     world: World,
     meshes: Vec<ChunkMesh>,
     worker: MeshWorker,
@@ -1244,6 +1247,16 @@ impl Viewer {
         // Cloud drift follows real time, like vanilla world time.
         if self.shot.is_none() {
             self.cloud_ticks += f64::from(dt) * 20.0;
+        }
+        if self.shot.is_none()
+            && self.animator.update(&self.atlas, self.cloud_ticks)
+            && let Some(renderer) = self.renderer.as_mut()
+        {
+            renderer.update_atlas(
+                &self.atlas,
+                self.animator.pixels(),
+                self.animator.mips(),
+            );
         }
 
         let mut forward = 0.0;
@@ -1985,6 +1998,7 @@ impl Viewer {
                 }
                 self.cloud_texture = cloud_texture;
                 self.atlas = atlas.clone();
+                self.animator = AtlasAnimator::new(&atlas);
                 let source = self.streamer.as_ref().map(|s| s.source.clone());
                 self.worker = MeshWorker::new(data, atlas, source);
                 self.generation = 0;

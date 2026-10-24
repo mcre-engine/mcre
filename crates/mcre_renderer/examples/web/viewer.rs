@@ -9,8 +9,8 @@ use std::{
 use mcre_anvil::{BiomeResolver, BlockResolver, ImportStats, RegionFile, Spawn};
 use mcre_fs::{Fs as _, FsPath, web::OpfsFs};
 use mcre_renderer::{
-    Atlas, CloudStatus, CloudTexture, LightMode, MeshOptions, RenderChunk, Renderer, SectionMesh,
-    build_atlas_square, demo, mesh_chunk, pack_chunk_sections, vanilla_fog,
+    Atlas, AtlasAnimator, CloudStatus, CloudTexture, LightMode, MeshOptions, RenderChunk, Renderer,
+    SectionMesh, build_atlas_square, demo, mesh_chunk, pack_chunk_sections, vanilla_fog,
 };
 use mcre_renderer::lightmap::DEFAULT_BRIGHTNESS;
 use mcre_resource_pack::{Colormaps, ResourcePackData, ResourcePackSet, discover};
@@ -32,6 +32,8 @@ struct WebState {
     data: Arc<ResourcePackData>,
     world: World,
     atlas: Arc<Atlas>,
+    animator: AtlasAnimator,
+    animation_ticks: f64,
     sections: Vec<(
         [i32; 2],
         [Option<SectionMesh>; mcre_world::SECTIONS_PER_CHUNK],
@@ -69,10 +71,13 @@ pub fn start() {
                 .await
                 .expect("build placeholder atlas"),
         );
+        let animator = AtlasAnimator::new(&atlas);
         let state = Rc::new(RefCell::new(WebState {
             data,
             world: demo::demo_world(),
             atlas,
+            animator,
+            animation_ticks: 0.0,
             sections: Vec::new(),
             renderer: None,
             window: None,
@@ -278,6 +283,7 @@ async fn load_uploaded_pack(
         let state = state.borrow();
         build_sections(&data, &atlas, &state.world)
     };
+    let animator = AtlasAnimator::new(&atlas);
 
     let mut state = state.borrow_mut();
     state.generation += 1;
@@ -292,6 +298,8 @@ async fn load_uploaded_pack(
     }
     state.data = data;
     state.atlas = atlas;
+    state.animator = animator;
+    state.animation_ticks = 0.0;
     state.sections = sections;
     state.cloud_texture = cloud_texture;
     if let Some(body) = web_sys::window().and_then(|window| window.document()?.body()) {
@@ -744,6 +752,7 @@ impl ApplicationHandler for WebViewer {
         };
         state.last_frame_ms = now;
         if dt > 0.0 {
+            state.animation_ticks += f64::from(dt) * 20.0;
             let mut forward = 0.0;
             if state.keys.contains(&KeyCode::KeyW) {
                 forward += 1.0;
@@ -803,6 +812,14 @@ impl WebViewer {
         let Some(mut renderer) = state.renderer.take() else {
             return;
         };
+        let atlas = state.atlas.clone();
+        let ticks = state.animation_ticks;
+        if state.animator.update(&atlas, ticks) {
+            renderer.update_atlas(&atlas, state.animator.pixels(), state.animator.mips());
+            if let Some(body) = web_sys::window().and_then(|window| window.document()?.body()) {
+                let _ = body.set_attribute("data-animation-tick", &ticks.to_string());
+            }
+        }
         let chunks: Vec<_> = state
             .sections
             .iter()
