@@ -1077,6 +1077,16 @@ impl ApplicationHandler for Viewer {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        if self.shot.is_some()
+            && !matches!(
+                &event,
+                WindowEvent::CloseRequested
+                    | WindowEvent::Resized(_)
+                    | WindowEvent::RedrawRequested
+            )
+        {
+            return;
+        }
         let consumed = match (self.window.as_ref(), self.egui_state.as_mut()) {
             (Some(window), Some(state)) => state.on_window_event(window, &event).consumed,
             _ => false,
