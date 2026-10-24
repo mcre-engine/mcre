@@ -33,6 +33,21 @@ impl FluidState {
     pub fn is_source(self) -> bool {
         !self.falling && self.amount == 8
     }
+
+    /// Vanilla `FluidState.getHeightForCamera` with the block above.
+    pub fn camera_height(self, above: Option<BlockState>) -> f32 {
+        if self.is_source()
+            && above.is_some_and(|state| is_face_sturdy(state, mcre_core::Direction::Down))
+        {
+            return 1.0;
+        }
+        if above
+            .is_some_and(|state| fluid_state(state).is_some_and(|fluid| fluid.kind == self.kind))
+        {
+            return 1.0;
+        }
+        self.own_height()
+    }
 }
 
 /// `BlockStateBase.getFluidState` for the two fluids we model.
@@ -131,6 +146,18 @@ mod tests {
             }
         }
         assert!(checked > 0, "no waterlogged states found");
+    }
+
+    #[test]
+    fn camera_height_uses_fluid_above_and_sturdy_ceilings() {
+        let water = fluid_state(Block::WATER.min_state()).expect("water");
+        assert!((water.camera_height(None) - MAX_FLUID_HEIGHT).abs() < f32::EPSILON);
+        assert_eq!(water.camera_height(Some(Block::WATER.min_state())), 1.0);
+        assert_eq!(water.camera_height(Some(Block::STONE.default_state())), 1.0);
+        assert!(
+            (water.camera_height(Some(Block::AIR.default_state())) - MAX_FLUID_HEIGHT).abs()
+                < f32::EPSILON
+        );
     }
 
     #[test]
