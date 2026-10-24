@@ -14,8 +14,8 @@
 pub const BLOCK_LIGHT_TINT: [f32; 3] = [1.0, 216.0 / 255.0, 140.0 / 255.0];
 /// `EnvironmentAttributes.SKY_LIGHT_COLOR` default, `RGB24(-1)` (white).
 pub const SKY_LIGHT_COLOR: [f32; 3] = [1.0, 1.0, 1.0];
-/// `EnvironmentAttributes.AMBIENT_LIGHT_COLOR` default, `RGB24(-16777216)`.
-pub const AMBIENT_COLOR: [f32; 3] = [0.0, 0.0, 0.0];
+/// Overworld `DimensionTypes` ambient light color (`RGB24(-16119286)`).
+pub const AMBIENT_COLOR: [f32; 3] = [10.0 / 255.0; 3];
 /// `LightmapRenderStateExtractor.blockFactor` floor: `flicker + 1.4`.
 pub const BLOCK_LIGHT_FACTOR: f32 = 1.4;
 /// Vanilla `Options.gamma` default.
@@ -219,15 +219,12 @@ mod tests {
     }
 
     #[test]
-    fn zero_levels_are_black() {
-        for brightness in [0.0, 0.5, 1.0] {
-            let params = LightmapParams {
-                brightness,
-                ..LightmapParams::default()
-            };
-            let color = lightmap_color(0, 0, &params);
-            assert_eq!(color, [0.0, 0.0, 0.0], "brightness {brightness}");
-        }
+    fn zero_levels_use_overworld_ambient_light() {
+        let params = LightmapParams {
+            brightness: 0.0,
+            ..LightmapParams::default()
+        };
+        assert_eq!(lightmap_color(0, 0, &params), AMBIENT_COLOR);
     }
 
     #[test]
@@ -250,7 +247,7 @@ mod tests {
             ..LightmapParams::default()
         };
         let color = lightmap_color(12, 0, &params);
-        let expect = [0.7, 0.627_628, 0.486_596];
+        let expect = [0.739_215_7, 0.666_843_9, 0.525_811_8];
         for i in 0..3 {
             assert!(
                 (color[i] - expect[i]).abs() < 1e-5,
@@ -295,7 +292,7 @@ mod tests {
     fn texture_layout_maps_x_to_block_y_to_sky() {
         let params = LightmapParams::default();
         let pixels = lightmap_rgba(&params);
-        assert_eq!(pixels[0], [0, 0, 0, 255]);
+        assert_eq!(pixels[0], [24, 24, 24, 255]);
         assert_eq!(pixels[15], [255, 255, 255, 255]);
         assert_eq!(&pixels[15 * 16..16 * 16], &[[255, 255, 255, 255]; 16][..]);
         for (index, pixel) in pixels.iter().enumerate() {
