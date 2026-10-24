@@ -21,9 +21,9 @@ use crate::region::{
 use crate::vertex::{FormatFlags, TerrainPass};
 
 const SKY: wgpu::Color = wgpu::Color {
-    r: 0.53,
-    g: 0.81,
-    b: 0.92,
+    r: 0.66,
+    g: 0.78,
+    b: 1.0,
     a: 1.0,
 };
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
