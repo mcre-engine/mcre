@@ -42,12 +42,11 @@ Current liquid results: underwater MAE `3.389` (top half `3.019`), surface
 bottom half `1.995`. The surface shot's sky remains the dominant residual
 because the renderer still uses a flat sky clear color above water.
 
-The underground probe at `docs/shots/underground.json` compares the open cave
-at spawn (eye `[8.5, 40, 8.5]`) and currently measures MAE `9.7855`. Its
-vanilla camera is switched to spectator during shot teleport so collision and
-falling cannot move it away from the specified eye position. The renderer's
-flat sky clear color was shifted toward vanilla's pale blue sky, reducing the
-large exposed-sky residual in this view.
+Five underground probes (`docs/shots/underground*.json`) use the same noon
+world and gamma `0.1`; their MAEs are `3.9934`, `2.9639`, `3.5373`, `3.2152`,
+and `2.4473`. The vanilla camera switches to spectator during shot teleport so
+collision and falling cannot move it away from the specified eye position.
+The renderer's flat sky clear color was shifted toward vanilla's pale blue sky.
 
 ## Spec format
 
