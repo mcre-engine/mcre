@@ -48,10 +48,11 @@ They use noon and gamma `1.0` to keep the cave detail visible. The vanilla shot
 freezes world ticks and animated atlas textures and mutes master audio before
 capturing; MCRE's shot scene and animation clock are fixed by the spec. The
 vanilla camera switches to spectator during shot teleport so collision and
-falling cannot move it away from the specified eye position. Underground
-lighting is a known remaining parity gap, so these cave scores are not expected
-to match the prior near-black probes. Current MAEs are `17.7045`, `30.2189`,
-`20.4203`, `26.9217`, and `19.5916`.
+falling cannot move it away from the specified eye position. MCRE imports
+missing sky-light sections by repeating the section above's bottom light plane,
+as vanilla does, and leaves absent block-light sections dark. Underground
+lighting remains a parity gap. Current MAEs are `10.5688`, `21.1903`, `10.3398`,
+`7.9992`, and `10.3460`.
 
 ## Spec format
 

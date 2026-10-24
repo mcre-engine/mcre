@@ -454,27 +454,33 @@ fn section_light_bytes(section: &Tag, key: &str) -> Option<[u8; SECTION_LIGHT_BY
 
 /// Fills every section's light the way vanilla's light storage reads a save
 /// (`SkyLightSectionStorage`/`BlockLightSectionStorage`): sections above the
-/// topmost stored sky layer are fully lit, missing sky layers inherit the
-/// nearest layer above them, and missing block layers are dark.
+/// topmost stored sky layer are fully lit, missing sky layers repeat the
+/// nearest layer's bottom light plane, and missing block layers are dark.
 fn import_chunk_light(
     chunk: &mut Chunk,
     sky_layers: &[Option<[u8; SECTION_LIGHT_BYTES]>],
     block_layers: &[Option<[u8; SECTION_LIGHT_BYTES]>],
 ) {
     let mut sky = [0xFFu8; SECTION_LIGHT_BYTES];
-    let mut block = [0u8; SECTION_LIGHT_BYTES];
+    let dark = [0u8; SECTION_LIGHT_BYTES];
     for index in (0..mcre_world::SECTIONS_PER_CHUNK).rev() {
         if let Some(layer) = sky_layers[index] {
             sky = layer;
+        } else {
+            sky = repeat_first_light_layer(&sky);
         }
-        if let Some(layer) = block_layers[index] {
-            block = layer;
-        }
+        let block = block_layers[index].as_ref().unwrap_or(&dark);
         let base_y = WORLD_MIN_Y + index as i32 * 16;
-        chunk
-            .light_mut()
-            .set_section_from_save(base_y, &sky, &block);
+        chunk.light_mut().set_section_from_save(base_y, &sky, block);
     }
+}
+
+fn repeat_first_light_layer(layer: &[u8; SECTION_LIGHT_BYTES]) -> [u8; SECTION_LIGHT_BYTES] {
+    let mut repeated = [0u8; SECTION_LIGHT_BYTES];
+    for plane in repeated.as_chunks_mut::<128>().0 {
+        plane.copy_from_slice(&layer[..128]);
+    }
+    repeated
 }
 
 pub fn import_area(
@@ -607,6 +613,27 @@ mod tests {
         assert_eq!((chunk.pos().x, chunk.pos().z), (5, -3));
         assert_eq!(chunk.get_block(0, 5, 0).block().name(), "stone");
         assert_eq!(chunk.biome_at(0, 5, 0).name(), "plains");
+    }
+
+    #[test]
+    fn missing_light_sections_follow_vanilla_storage_defaults() {
+        let mut chunk = Chunk::new_at(mcre_world::ChunkPos::new(0, 0));
+        let mut sky = vec![None; mcre_world::SECTIONS_PER_CHUNK];
+        let mut block = vec![None; mcre_world::SECTIONS_PER_CHUNK];
+        let source_section = 2;
+        let mut sky_layer = [0xEF; SECTION_LIGHT_BYTES];
+        sky_layer[..128].fill(0x12);
+        sky[source_section] = Some(sky_layer);
+        block[source_section] = Some([0x33; SECTION_LIGHT_BYTES]);
+
+        import_chunk_light(&mut chunk, &sky, &block);
+
+        let lower_section_y = WORLD_MIN_Y + 16;
+        assert_eq!(chunk.light().level(0, WORLD_MIN_Y + 3 * 16, 0), (0, 15));
+        assert_eq!(chunk.light().level(0, WORLD_MIN_Y + 2 * 16, 0), (3, 2));
+        assert_eq!(chunk.light().level(0, WORLD_MIN_Y + 2 * 16 + 1, 0), (3, 15));
+        assert_eq!(chunk.light().level(0, lower_section_y, 0), (0, 2));
+        assert_eq!(chunk.light().level(0, lower_section_y + 15, 0), (0, 2));
     }
 
     fn chunk_payload_legacy_biomes() -> Vec<u8> {
