@@ -200,6 +200,10 @@ impl ClientControl {
         self.schedule_step("water-saturate", None)
     }
 
+    pub fn schedule_freeze(&self) -> Result<(), String> {
+        self.schedule_step("freeze", None)
+    }
+
     /// Screenshot the main render target to `screenshots/<name>`.
     pub fn schedule_grab(&self, name: &str) -> Result<(), String> {
         self.schedule_step("grab", Some(name))

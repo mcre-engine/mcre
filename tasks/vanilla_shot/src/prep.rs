@@ -127,6 +127,7 @@ fn write_options(game_dir: &Path, spec: &ShotSpec, data_version: i32) -> Result<
          renderDistance:{render_distance}\n\
          simulationDistance:{render_distance}\n\
          renderClouds:{clouds}\n\
+         soundCategory_master:0.0\n\
          soundCategory_music:0.0\n\
          bobView:false\n\
          pauseOnLostFocus:false\n\

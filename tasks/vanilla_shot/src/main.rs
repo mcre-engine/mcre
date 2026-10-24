@@ -217,6 +217,11 @@ fn drive(
         control.player_state()?.water_vision
     );
 
+    eprintln!("vanilla_shot: freezing world, animations, and sound");
+    control.schedule_freeze()?;
+    thread::sleep(FIX_SETTLE);
+    check_step_error(control)?;
+
     let shot_path = game_dir.join("screenshots").join(shot_name);
     let _ = fs::remove_file(&shot_path);
     control.schedule_grab(shot_name)?;

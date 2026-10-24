@@ -13,6 +13,7 @@ import net.minecraft.data.AtlasIds;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.GameType;
 
 /**
@@ -85,9 +86,28 @@ public final class ShotDriver implements Runnable {
                waterVisionTime.setInt(minecraft.player, 600);
                break;
             }
+            case "freeze": {
+               IntegratedServer server = minecraft.getSingleplayerServer();
+               if (server == null) {
+                  throw new IllegalStateException("no integrated server");
+               }
+               animationTicks = waterAnimationTicks(minecraft);
+               minecraft.options.getSoundSourceOptionInstance(SoundSource.MASTER).set(0.0);
+               minecraft.getSoundManager().stop();
+               server.execute(() -> server.tickRateManager().setFrozen(true));
+               minecraft.getAtlasManager().forEach((id, atlas) -> {
+                  try {
+                     Field statesField = TextureAtlas.class.getDeclaredField("animatedTexturesStates");
+                     statesField.setAccessible(true);
+                     statesField.set(atlas, List.of());
+                  } catch (ReflectiveOperationException error) {
+                     throw new IllegalStateException(error);
+                  }
+               });
+               break;
+            }
             case "grab":
                waterVision = minecraft.player.getWaterVision();
-               animationTicks = waterAnimationTicks(minecraft);
                Screenshot.grab(minecraft.gameDirectory, this.arg, minecraft.gameRenderer.mainRenderTarget(), 1, message -> {});
                break;
             case "fix": {
