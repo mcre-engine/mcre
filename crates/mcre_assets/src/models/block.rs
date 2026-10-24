@@ -16,6 +16,7 @@ pub struct BlockModelDefinition {
     pub ambientocclusion: bool,
     pub elements: Vec<BlockModelElement>,
     pub textures: FxHashMap<String, BlockModelTexture>,
+    pub particle: Option<BlockModelTexture>,
     pub display: FxHashMap<String, Transform>,
 }
 
@@ -389,6 +390,13 @@ impl BlockModelDefinition {
             };
             defs.insert(ReferenceId::new(name.clone()), value);
         }
+        if let Some(texture) = &self.particle {
+            let value = match texture {
+                BlockModelTexture::RefOr(value) => value.clone(),
+                BlockModelTexture::Object(obj) => obj.sprite.clone(),
+            };
+            defs.insert(ReferenceId::new("particle".to_string()), value);
+        }
 
         Ok(())
     }
@@ -666,6 +674,27 @@ mod tests {
                 quad.direction
             );
         }
+    }
+
+    #[test]
+    fn particle_texture_inherits_and_resolves_parent_texture_references() {
+        let parent: BlockModelDefinition = serde_json::from_str(
+            r##"{"textures":{"all":"minecraft:block/dirt"},"particle":"#all"}"##,
+        )
+        .unwrap();
+        let child: BlockModelDefinition = serde_json::from_str(
+            r##"{"parent":"minecraft:block/cube_all","textures":{"all":"minecraft:block/stone"}}"##,
+        )
+        .unwrap();
+
+        let textures = child.build_texture_map(|_| Some(parent.clone())).unwrap();
+        assert_eq!(
+            textures
+                .get(&crate::ReferenceId::new("particle".to_string()))
+                .unwrap()
+                .to_string(),
+            "minecraft:block/stone"
+        );
     }
 
     #[test]
@@ -1158,6 +1187,7 @@ mod de_impl {
                 "ambientocclusion",
                 "elements",
                 "textures",
+                "particle",
                 "display",
             ];
 
@@ -1182,6 +1212,7 @@ mod de_impl {
                     let mut ambientocclusion: Option<bool> = None;
                     let mut elements: Option<Vec<BlockModelElement>> = None;
                     let mut textures: Option<FxHashMap<String, BlockModelTexture>> = None;
+                    let mut particle: Option<BlockModelTexture> = None;
                     let mut display: Option<FxHashMap<String, Transform>> = None;
 
                     // Loop over key-value pairs in the input map
@@ -1236,6 +1267,12 @@ mod de_impl {
 
                                 textures = Some(filtered_map);
                             }
+                            "particle" => {
+                                if particle.is_some() {
+                                    return Err(de::Error::duplicate_field("particle"));
+                                }
+                                particle = Some(map.next_value()?);
+                            }
                             "display" => {
                                 if display.is_some() {
                                     return Err(de::Error::duplicate_field("display"));
@@ -1265,6 +1302,7 @@ mod de_impl {
                         ambientocclusion,
                         elements,
                         textures,
+                        particle,
                         display,
                     })
                 }

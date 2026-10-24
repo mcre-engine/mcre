@@ -111,10 +111,12 @@ impl ResourcePackSet {
 
         // Stage 5: Build string interner
         let mut interner = StringInterner::new();
-        let entries = lookup::build_entries(&resolved, &model_defs, &mut interner)?;
+        let (entries, particle_texture_ids) =
+            lookup::build_entries(&resolved, &model_defs, &mut interner)?;
 
         // Stage 6: Construct final lookup table
-        let data = ResourcePackData::new(entries, interner, culling, colormaps);
+        let data =
+            ResourcePackData::new(entries, particle_texture_ids, interner, culling, colormaps);
 
         Ok(data)
     }

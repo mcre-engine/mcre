@@ -105,6 +105,7 @@ fn empty_resource_pack_data() -> ResourcePackData {
     let map = || vec![0; 256 * 256 * 3].into_boxed_slice();
     ResourcePackData::new(
         Vec::new(),
+        Vec::new(),
         mcre_resource_pack::interner::StringInterner::new(),
         HashMap::new(),
         Colormaps {

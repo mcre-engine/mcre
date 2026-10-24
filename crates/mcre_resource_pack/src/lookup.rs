@@ -1,4 +1,3 @@
-use mcre_assets::BlockModelDefinition;
 use mcre_core::{Direction, Vec3f};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -91,6 +90,8 @@ impl FluidTextureIds {
 pub struct ResourcePackData {
     /// Indexed by `BlockState(u16).0`, length = BlockState::MAX + 1.
     pub entries: Vec<BlockStateEntry>,
+    /// Particle texture IDs indexed by `BlockState(u16).0`.
+    pub particle_texture_ids: Vec<Option<u32>>,
     /// Interned texture path strings, indexed by `texture_id` in `BakedQuadEntry`.
     pub texture_table: Vec<Box<str>>,
     /// Texture IDs for the built-in fluid models; always present in the table.
@@ -105,6 +106,7 @@ pub struct ResourcePackData {
 impl ResourcePackData {
     pub fn new(
         entries: Vec<BlockStateEntry>,
+        particle_texture_ids: Vec<Option<u32>>,
         mut interner: StringInterner,
         culling: HashMap<String, CullingOverride>,
         colormaps: Colormaps,
@@ -112,11 +114,21 @@ impl ResourcePackData {
         let fluid_textures = FluidTextureIds::intern(&mut interner);
         Self {
             entries,
+            particle_texture_ids,
             texture_table: interner.into_strings(),
             fluid_textures,
             culling,
             colormaps,
         }
+    }
+}
+
+impl ResourcePackData {
+    pub fn particle_texture_id(&self, state_id: u16) -> Option<u32> {
+        self.particle_texture_ids
+            .get(usize::from(state_id))
+            .copied()
+            .flatten()
     }
 }
 
@@ -131,11 +143,14 @@ pub fn build_entries(
     resolved: &[ResolvedState],
     model_defs: &ModelMap,
     interner: &mut StringInterner,
-) -> Result<Vec<BlockStateEntry>> {
+) -> Result<(Vec<BlockStateEntry>, Vec<Option<u32>>)> {
     let mut entries = Vec::with_capacity(resolved.len());
+    let mut particle_texture_ids = Vec::with_capacity(resolved.len());
+    let mut particle_texture_paths = HashMap::new();
 
     for state_resolved in resolved {
         let mut rules = Vec::with_capacity(state_resolved.rules.len());
+        let mut particle_texture_id = None;
 
         for rule in &state_resolved.rules {
             let mut variants = Vec::with_capacity(rule.len());
@@ -145,12 +160,25 @@ pub fn build_entries(
                     continue;
                 };
 
-                let parent_resolver =
-                    |id: &mcre_assets::BlockModelId| -> Option<BlockModelDefinition> {
-                        model_defs.get(&id.to_string()).cloned()
-                    };
+                let particle_texture = particle_texture_paths
+                    .entry(model_key.clone())
+                    .or_insert_with(|| {
+                        model
+                            .build_texture_map(|id: &mcre_assets::BlockModelId| {
+                                model_defs.get(&id.to_string()).cloned()
+                            })
+                            .ok()
+                            .and_then(|textures| {
+                                textures
+                                    .get(&mcre_assets::ReferenceId::new("particle".to_string()))
+                                    .map(ToString::to_string)
+                            })
+                    })
+                    .clone();
 
-                let mut baked = match model.bake_quads(parent_resolver) {
+                let mut baked = match model.bake_quads(|id: &mcre_assets::BlockModelId| {
+                    model_defs.get(&id.to_string()).cloned()
+                }) {
                     Ok(q) => q,
                     Err(_) => continue,
                 };
@@ -175,6 +203,13 @@ pub fn build_entries(
                     });
                 }
 
+                if particle_texture_id.is_none() {
+                    particle_texture_id = particle_texture
+                        .as_deref()
+                        .and_then(|texture| interner.get(texture))
+                        .or_else(|| quads.first().map(|quad| quad.texture_id));
+                }
+
                 variants.push(BlockVariant {
                     weight: variant.weight,
                     quads,
@@ -185,7 +220,45 @@ pub fn build_entries(
         }
 
         entries.push(BlockStateEntry { rules });
+        particle_texture_ids.push(particle_texture_id);
     }
 
-    Ok(entries)
+    Ok((entries, particle_texture_ids))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ModelMap;
+    use mcre_assets::BlockModelDefinition;
+
+    #[test]
+    fn particle_texture_uses_inherited_parent_reference() {
+        let parent: BlockModelDefinition = serde_json::from_str(
+            r##"{"textures":{"all":"minecraft:block/dirt"},"particle":"#all"}"##,
+        )
+        .unwrap();
+        let child: BlockModelDefinition = serde_json::from_str(
+            r##"{"parent":"minecraft:block/parent","textures":{"all":"minecraft:block/stone"}}"##,
+        )
+        .unwrap();
+        let variant = serde_json::from_str(r#"{"model":"minecraft:block/child"}"#).unwrap();
+        let resolved = [ResolvedState {
+            rules: vec![vec![("minecraft:block/child".to_string(), variant)]],
+        }];
+        let model_defs: ModelMap = [
+            ("minecraft:block/parent".to_string(), parent),
+            ("minecraft:block/child".to_string(), child),
+        ]
+        .into_iter()
+        .collect();
+        let mut interner = StringInterner::new();
+        interner.intern("minecraft:block/stone");
+
+        let (_, particle_texture_ids) =
+            build_entries(&resolved, &model_defs, &mut interner).unwrap();
+
+        let texture_id = particle_texture_ids[0].unwrap();
+        assert_eq!(interner.resolve(texture_id), Some("minecraft:block/stone"));
+    }
 }
