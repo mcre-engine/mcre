@@ -147,7 +147,7 @@ fn sample_rgss(uv: vec2<f32>, pixel_size: vec2<f32>) -> vec4<f32> {
     return mix(nearest, rgss, blend_factor);
 }
 
-fn terrain_color(in: VertexOutput, cutout: bool) -> vec4<f32> {
+fn terrain_color(in: VertexOutput, cutout: bool, mip: bool) -> vec4<f32> {
     var rgb: vec3<f32>;
     var alpha = 1.0;
     if ((params.flags.x & 2u) != 0u) {
@@ -155,7 +155,12 @@ fn terrain_color(in: VertexOutput, cutout: bool) -> vec4<f32> {
         let cool = mix(vec3<f32>(0.0, 0.0, 0.55), vec3<f32>(0.0, 0.85, 0.05), smoothstep(0.0, 0.5, t));
         rgb = mix(cool, vec3<f32>(1.0, 0.05, 0.0), smoothstep(0.5, 1.0, t));
     } else {
-        let texel = sample_rgss(in.uv, params.tex_size.xy);
+        var texel: vec4<f32>;
+        if (mip) {
+            texel = sample_rgss(in.uv, params.tex_size.xy);
+        } else {
+            texel = textureSampleLevel(atlas_texture, atlas_sampler, in.uv, 0.0);
+        }
         if (cutout && texel.a < 0.5) {
             discard;
         }
@@ -171,12 +176,12 @@ fn terrain_color(in: VertexOutput, cutout: bool) -> vec4<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return terrain_color(in, true);
+    return terrain_color(in, true, true);
 }
 
 @fragment
 fn fs_translucent(in: VertexOutput) -> @location(0) vec4<f32> {
-    return terrain_color(in, false);
+    return terrain_color(in, false, false);
 }
 
 struct LineOutput {

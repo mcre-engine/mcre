@@ -80,11 +80,23 @@ pub fn atmospheric_fog_color(render_distance: u32, time_ticks: f32) -> [f32; 3] 
 /// Vanilla `FogRenderer.setupFog`: the environmental fog follows the
 /// dimension attributes (the overworld's default span is far past the loaded
 /// radius), while the render-distance fog hides the loaded edge.
-pub fn vanilla_fog(render_distance: u32, time_ticks: f32, submerged: Option<FluidKind>) -> Fog {
+pub fn vanilla_fog(
+    render_distance: u32,
+    time_ticks: f32,
+    submerged: Option<FluidKind>,
+    water_vision: f32,
+) -> Fog {
     let render_distance_blocks = render_distance as f32 * 16.0;
     let span = (render_distance_blocks / 10.0).clamp(4.0, 64.0);
     let (color, environmental_start, environmental_end) = match submerged {
-        Some(FluidKind::Water) => (WATER_FOG_COLOR, -8.0, 96.0),
+        Some(FluidKind::Water) => {
+            let vision = water_vision.clamp(0.0, 1.0);
+            (
+                brightened_water_fog_color(vision),
+                -8.0,
+                96.0 * vision.max(0.25),
+            )
+        }
         Some(FluidKind::Lava) => (LAVA_FOG_COLOR, 0.25, 1.0),
         None => (
             atmospheric_fog_color(render_distance, time_ticks),
@@ -102,6 +114,17 @@ pub fn vanilla_fog(render_distance: u32, time_ticks: f32, submerged: Option<Flui
     }
 }
 
+/// Vanilla `FogRenderer.computeFogColor` water branch: lerp every channel
+/// toward `channel * (1 / maxChannel)` by the player's water vision.
+fn brightened_water_fog_color(water_vision: f32) -> [f32; 3] {
+    let mut color = WATER_FOG_COLOR;
+    let scale = 1.0 / color[2].max(color[1]).max(color[0]);
+    for channel in &mut color {
+        *channel += (*channel * scale - *channel) * water_vision;
+    }
+    color
+}
+
 /// Approximation of the vanilla `CLOUD_COLOR` timeline keyed on the same
 /// day/night scalar as the fog: white at day, dark blue-grey at night, with
 /// the overworld's 0.8 alpha.
@@ -113,4 +136,30 @@ pub fn cloud_color_for(sky: f32) -> [f32; 4] {
         NIGHT_CLOUD_COLOR[2] + (1.0 - NIGHT_CLOUD_COLOR[2]) * t,
         0.8,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn water_fog_uses_minimum_vision_and_vanilla_brightening() {
+        let fog = vanilla_fog(8, 6000.0, Some(FluidKind::Water), 0.0);
+        assert_eq!(fog.environmental_start, -8.0);
+        assert_eq!(fog.environmental_end, 24.0);
+        assert_eq!(fog.color, WATER_FOG_COLOR);
+
+        let fog = vanilla_fog(8, 6000.0, Some(FluidKind::Water), 0.5);
+        assert_eq!(fog.environmental_end, 48.0);
+        assert!((fog.color[2] - 0.6).abs() < 1.0e-6);
+        assert!((fog.color[0] - 0.058_823_53).abs() < 1.0e-6);
+
+        // Exact vanilla sample from the river probe at water vision 0.33:
+        // #050533 lerped toward #0c0cff by that amount.
+        let fog = vanilla_fog(8, 6000.0, Some(FluidKind::Water), 0.33);
+        assert!((fog.color[0] - 0.045_490_2).abs() < 1.0e-6);
+        assert!((fog.color[1] - 0.045_490_2).abs() < 1.0e-6);
+        assert!((fog.color[2] - 0.464).abs() < 1.0e-6);
+        assert!((fog.environmental_end - 31.68).abs() < 1.0e-5);
+    }
 }

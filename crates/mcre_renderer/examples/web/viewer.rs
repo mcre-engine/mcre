@@ -673,7 +673,7 @@ impl ApplicationHandler for WebViewer {
                 .expect("initialize WebGPU renderer");
             let size = window_for_renderer.inner_size();
             renderer.resize(size.width, size.height);
-            renderer.set_fog(vanilla_fog(1, 6000.0, None));
+            renderer.set_fog(vanilla_fog(1, 6000.0, None, 0.0));
             renderer.set_time(6000.0);
             renderer.set_brightness(DEFAULT_BRIGHTNESS);
             let mut state = state.borrow_mut();

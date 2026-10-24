@@ -274,6 +274,7 @@ pub struct Renderer {
     /// Inverse atlas size: vanilla's `TextureSize` uniform.
     atlas_texel_size: [f32; 2],
     fog: Fog,
+    clear_color: wgpu::Color,
     lightmap_params: LightmapParams,
     cloud_texture: Option<CloudTexture>,
     cloud_gpu: Option<CloudGpu>,
@@ -392,6 +393,7 @@ impl Renderer {
                 render_distance_start: 64.0,
                 render_distance_end: 160.0,
             },
+            clear_color: SKY,
             lightmap_params: LightmapParams::default(),
             cloud_texture: None,
             cloud_gpu: set.clouds,
@@ -415,6 +417,16 @@ impl Renderer {
     /// linear, blended toward `color` scaled by `density`.
     pub fn set_fog(&mut self, fog: Fog) {
         self.fog = fog;
+    }
+
+    /// Clear/sky color used behind terrain. `None` restores the default sky.
+    pub fn set_clear_color(&mut self, color: Option<[f32; 3]>) {
+        self.clear_color = color.map_or(SKY, |color| wgpu::Color {
+            r: f64::from(color[0]),
+            g: f64::from(color[1]),
+            b: f64::from(color[2]),
+            a: 1.0,
+        });
     }
 
     /// Vanilla `Timelines.OVERWORLD_DAY` environment: sets the sky light
@@ -931,7 +943,7 @@ impl Renderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(SKY),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -956,7 +968,7 @@ impl Renderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(SKY),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
