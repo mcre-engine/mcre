@@ -52,6 +52,7 @@ pub fn run_job(
     atlas: &Atlas,
     source: Option<&StreamSource>,
 ) -> MeshResult {
+    let streaming = !job.stream.is_empty();
     let load_start = std::time::Instant::now();
     let mut streamed: Vec<(i32, i32)> = Vec::new();
     if !job.stream.is_empty() {
@@ -122,11 +123,13 @@ pub fn run_job(
         });
     }
     let mesh_ms = mesh_start.elapsed().as_secs_f64() * 1000.0;
-    eprintln!(
-        "remesh: generation {} load={load_ms:.1}ms light={light_ms:.1}ms mesh={mesh_ms:.1}ms chunks={}",
-        job.generation,
-        chunks.len(),
-    );
+    if !streaming {
+        eprintln!(
+            "remesh: generation {} load={load_ms:.1}ms light={light_ms:.1}ms mesh={mesh_ms:.1}ms chunks={}",
+            job.generation,
+            chunks.len(),
+        );
+    }
     MeshResult {
         generation: job.generation,
         light_edits: job.light_edits,

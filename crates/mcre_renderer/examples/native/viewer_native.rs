@@ -27,6 +27,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 const DAY_LENGTH_SECS: f32 = 600.0;
+const STREAM_BATCH_SIZE: usize = 8;
 const FOV_SURFACE: f32 = 70.0 * std::f32::consts::PI / 180.0;
 /// Vanilla `Camera.modifyFovBasedOnDeathOrFluid` at the default
 /// `fovEffectScale` of 1.0 (`70 * 0.85714287 = 60`).
@@ -447,6 +448,7 @@ struct Streamer {
     center: (i32, i32),
     radius: i32,
     pending: VecDeque<(i32, i32)>,
+    ready_logged: bool,
 }
 
 struct SaveSetup {
@@ -706,6 +708,7 @@ fn load_save_into(world: &mut World, save_dir: &str, radius: u32) -> SaveSetup {
         center: spawn_chunk,
         radius,
         pending: pending.into_iter().map(|(pos, _)| pos).collect(),
+        ready_logged: false,
     };
     eprintln!(
         "viewer: streaming {} chunks in background (radius {radius})",
@@ -2150,7 +2153,6 @@ impl Viewer {
                 continue;
             }
             self.world.acknowledge_light_edits(&result.light_edits);
-            let mut remeshed = 0;
             for chunk in result.chunks {
                 if let Some(data) = chunk.chunk {
                     let origin = [chunk.pos.x * CHUNK_WIDTH, chunk.pos.z * CHUNK_WIDTH];
@@ -2169,7 +2171,6 @@ impl Viewer {
                             version: 0,
                         }),
                     }
-                    remeshed += 1;
                 } else {
                     self.world.set_chunk_light(chunk.pos, chunk.light);
                     if let Some(entry) = self
@@ -2180,17 +2181,12 @@ impl Viewer {
                         entry.visibility = chunk.mesh.section_visibility;
                         entry.sections = chunk.sections;
                         entry.version += 1;
-                        remeshed += 1;
                     }
                 }
             }
             self.prune_far_meshes();
             self.drop_evicted_meshes();
             self.total_chunks = self.meshes.len();
-            eprintln!(
-                "viewer: remeshed {remeshed} chunks (generation {})",
-                result.generation
-            );
         }
     }
 
@@ -2246,6 +2242,7 @@ impl Viewer {
         );
         if center != stream.center {
             stream.center = center;
+            stream.ready_logged = false;
             stream.pending.clear();
             let mut needed: Vec<((i32, i32), i32)> = Vec::new();
             for dz in -stream.radius..=stream.radius {
@@ -2276,15 +2273,25 @@ impl Viewer {
             self.submit_job(Vec::new(), dirty);
             return;
         }
-        // One chunk per quiet frame: keeps individual jobs short so an edit
-        // landing mid-stream never waits long behind a big batch.
-        while let Some(pos) = stream.pending.pop_front() {
-            let loaded = self.world.is_chunk_loaded(ChunkPos::new(pos.0, pos.1));
-            if loaded {
-                continue;
+        if stream.pending.is_empty() {
+            if !stream.ready_logged {
+                stream.ready_logged = true;
+                eprintln!("viewer: chunk ring ready");
             }
-            self.submit_job(vec![pos], Vec::new());
-            break;
+            return;
+        }
+        let mut batch = Vec::with_capacity(STREAM_BATCH_SIZE);
+        while batch.len() < STREAM_BATCH_SIZE {
+            let Some(pos) = stream.pending.pop_front() else {
+                break;
+            };
+            let loaded = self.world.is_chunk_loaded(ChunkPos::new(pos.0, pos.1));
+            if !loaded {
+                batch.push(pos);
+            }
+        }
+        if !batch.is_empty() {
+            self.submit_job(batch, Vec::new());
         }
     }
 }
