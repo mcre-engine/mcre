@@ -24,8 +24,21 @@ whose root contains `pack.mcmeta`; the zip is copied into OPFS, extracted into
 The demo scene is a 3×3 stone/grass plane.
 
 Everything the viewer writes is under the OPFS root for the page's origin
-(`resourcepacks/`, `pack_cache/`). Browsers clear it with site data, and other
-origins cannot read it.
+(`resourcepacks/`, `pack_cache/`, `saves/`). Browsers clear it with site data,
+and other origins cannot read it.
+
+## Saves
+
+After loading a pack, select a zipped Java world with the second file picker.
+The zip is extracted to `saves/upload/` in OPFS, then the viewer loads the 3×3
+chunks around the spawn point (modern
+`dimensions/<namespace>/<path>/region/` layout or legacy `region/`). Chunks
+missing from the zip are air. The current pack supplies the blockstates,
+models, and textures, so load a pack first.
+
+"Download world zip" re-zips `saves/upload/` and downloads it as `world.zip`.
+Region write-back (saving edits) is still out of scope; `mcre_anvil` only
+parses region files.
 
 ## Rendering notes
 
@@ -56,7 +69,10 @@ runs `web/smoke.mjs` in headless Chromium with SwiftShader. The test:
 3. waits for the atlas/pack load,
 4. asserts the render changed, the canvas is 960×540, and the frame matches
    `web/demo-reference.png` (native demo render) within MAE 1.2 and 2.5 % of
-   pixels over 16.
+   pixels over 16,
+5. uploads `target/web/smoke-save.zip`, waits for the save load, and asserts
+   the frame changed,
+6. clicks "Download world zip" and checks the download.
 
 Regenerate the native reference after intentional visual changes:
 
@@ -90,7 +106,7 @@ versions must match.
 
 ## Not yet implemented
 
-- Save import/export through OPFS. `mcre_anvil` still uses `std::fs`, so the
-  browser viewer only renders the built-in demo world. Once `mcre_anvil` uses
-  `mcre_fs`, a save can be uploaded like a resource pack and copied into OPFS.
+- Region write-back / saving edits. Saves can be imported and exported as
+  zips, but modified chunks are not written back into the region files
+  (`mcre_anvil` write support is a Phase 3 candidate).
 - Keyboard focus/pointer-lock polish and touch input.

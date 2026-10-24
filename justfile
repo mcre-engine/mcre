@@ -189,7 +189,7 @@ web-build:
   mkdir -p target/web
   wasm-bindgen --target web --out-name viewer --out-dir target/web target/wasm32-unknown-unknown/debug/examples/viewer.wasm
   cp web/index.html target/web/index.html
-  python3 web/make_smoke_pack.py target/web/smoke-pack.zip
+  python3 web/make_smoke_pack.py target/web/smoke-pack.zip target/web/smoke-save.zip
 
 # Regenerate the native demo reference used by the browser smoke test.
 web-reference:

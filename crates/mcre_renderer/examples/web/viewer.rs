@@ -1,5 +1,12 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    io::{Read as _, Write as _},
+    rc::Rc,
+    sync::Arc,
+};
 
+use mcre_anvil::{BiomeResolver, BlockResolver, ImportStats, RegionFile, Spawn};
 use mcre_fs::{Fs as _, FsPath, web::OpfsFs};
 use mcre_renderer::{
     Atlas, CloudStatus, CloudTexture, LightMode, MeshOptions, RenderChunk, Renderer, SectionMesh,
@@ -7,9 +14,10 @@ use mcre_renderer::{
 };
 use mcre_renderer::lightmap::DEFAULT_BRIGHTNESS;
 use mcre_resource_pack::{Colormaps, ResourcePackData, ResourcePackSet, discover};
+use mcre_world::{Chunk, ChunkPos, WORLD_HEIGHT, WORLD_MIN_Y, World};
 use wasm_bindgen::{JsCast as _, JsValue, closure::Closure};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::{Event, HtmlInputElement};
+use web_sys::{Event, HtmlButtonElement, HtmlInputElement};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -21,6 +29,8 @@ use winit::{
 };
 
 struct WebState {
+    data: Arc<ResourcePackData>,
+    world: World,
     atlas: Arc<Atlas>,
     sections: Vec<(
         [i32; 2],
@@ -53,13 +63,15 @@ pub fn start() {
             .await
             .expect("create resource pack cache");
 
-        let empty_data = empty_resource_pack_data();
+        let data = Arc::new(empty_resource_pack_data());
         let atlas = Arc::new(
-            build_atlas_square(&*fs, &[], &empty_data.texture_table)
+            build_atlas_square(&*fs, &[], &data.texture_table)
                 .await
                 .expect("build placeholder atlas"),
         );
         let state = Rc::new(RefCell::new(WebState {
+            data,
+            world: demo::demo_world(),
             atlas,
             sections: Vec::new(),
             renderer: None,
@@ -74,6 +86,8 @@ pub fn start() {
             last_frame_ms: 0.0,
         }));
         install_pack_input(fs.clone(), state.clone());
+        install_save_input(fs.clone(), state.clone());
+        install_save_download(fs);
 
         let event_loop = EventLoop::new().expect("event loop");
         event_loop.spawn_app(WebViewer { state });
@@ -108,6 +122,7 @@ fn install_pack_input(fs: Rc<OpfsFs>, state: Rc<RefCell<WebState>>) {
         .expect("pack input element");
     input.set_type("file");
     input.set_accept(".zip");
+    input.set_id("pack-input");
     input.set_title("Choose a Minecraft Java resource pack zip");
     if let Some(body) = document.body() {
         let _ = body.append_child(&input);
@@ -134,6 +149,85 @@ fn install_pack_input(fs: Rc<OpfsFs>, state: Rc<RefCell<WebState>>) {
     input
         .add_event_listener_with_callback("change", callback.as_ref().unchecked_ref())
         .expect("listen for pack selection");
+    callback.forget();
+}
+
+fn install_save_input(fs: Rc<OpfsFs>, state: Rc<RefCell<WebState>>) {
+    let document = web_sys::window()
+        .expect("window")
+        .document()
+        .expect("document");
+    let input: HtmlInputElement = document
+        .create_element("input")
+        .expect("create save input")
+        .dyn_into()
+        .expect("save input element");
+    input.set_type("file");
+    input.set_accept(".zip");
+    input.set_id("world-input");
+    input.set_title("Choose a Minecraft Java world zip");
+    input.style().set_property("top", "48px").ok();
+    if let Some(body) = document.body() {
+        let _ = body.append_child(&input);
+    }
+
+    let callback = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
+        let Some(input) = event
+            .target()
+            .and_then(|target| target.dyn_into::<HtmlInputElement>().ok())
+        else {
+            return;
+        };
+        let Some(file) = input.files().and_then(|files| files.item(0)) else {
+            return;
+        };
+        let fs = fs.clone();
+        let state = state.clone();
+        spawn_local(async move {
+            if let Err(error) = load_uploaded_save(fs, state, file).await {
+                web_sys::console::error_1(&JsValue::from_str(&error));
+            }
+        });
+    });
+    input
+        .add_event_listener_with_callback("change", callback.as_ref().unchecked_ref())
+        .expect("listen for save selection");
+    callback.forget();
+}
+
+fn install_save_download(fs: Rc<OpfsFs>) {
+    let document = web_sys::window()
+        .expect("window")
+        .document()
+        .expect("document");
+    let button: HtmlButtonElement = document
+        .create_element("button")
+        .expect("create save download button")
+        .dyn_into()
+        .expect("save download button");
+    button.set_id("download-save");
+    button.set_text_content(Some("Download world zip"));
+    let style = button.style();
+    style.set_property("position", "fixed").ok();
+    style.set_property("top", "84px").ok();
+    style.set_property("left", "12px").ok();
+    style.set_property("z-index", "2").ok();
+    style.set_property("display", "none").ok();
+    if let Some(body) = document.body() {
+        let _ = body.append_child(&button);
+    }
+
+    let callback = Closure::<dyn FnMut(Event)>::new(move |_event: Event| {
+        let fs = fs.clone();
+        spawn_local(async move {
+            if let Err(error) = download_save(fs).await {
+                web_sys::console::error_1(&JsValue::from_str(&error));
+            }
+        });
+    });
+    button
+        .add_event_listener_with_callback("click", callback.as_ref().unchecked_ref())
+        .expect("listen for save download");
     callback.forget();
 }
 
@@ -180,7 +274,10 @@ async fn load_uploaded_pack(
             .map_err(|error| error.to_string())?,
     );
     let cloud_texture = CloudTexture::load(&*fs, &roots).await;
-    let sections = build_demo_sections(&data, &atlas);
+    let sections = {
+        let state = state.borrow();
+        build_sections(&data, &atlas, &state.world)
+    };
 
     let mut state = state.borrow_mut();
     state.generation += 1;
@@ -193,6 +290,7 @@ async fn load_uploaded_pack(
             CloudStatus::Off
         });
     }
+    state.data = data;
     state.atlas = atlas;
     state.sections = sections;
     state.cloud_texture = cloud_texture;
@@ -202,15 +300,14 @@ async fn load_uploaded_pack(
     Ok(())
 }
 
-fn build_demo_sections(
+fn build_sections(
     data: &ResourcePackData,
     atlas: &Atlas,
+    world: &World,
 ) -> Vec<(
     [i32; 2],
     [Option<SectionMesh>; mcre_world::SECTIONS_PER_CHUNK],
 )> {
-    let world = demo::demo_world();
-
     world
         .iter_chunks()
         .map(|chunk| {
@@ -219,7 +316,7 @@ fn build_demo_sections(
                 data,
                 atlas,
                 chunk,
-                &world,
+                world,
                 origin,
                 LightMode::Smooth,
                 MeshOptions::default(),
@@ -227,6 +324,316 @@ fn build_demo_sections(
             (origin, pack_chunk_sections(&mesh, origin))
         })
         .collect()
+}
+
+async fn load_uploaded_save(
+    fs: Rc<OpfsFs>,
+    state: Rc<RefCell<WebState>>,
+    file: web_sys::File,
+) -> Result<(), String> {
+    let filename = file.name();
+    if !filename.ends_with(".zip") {
+        return Err("Choose a zipped Java world (.zip)".into());
+    }
+    let buffer = JsFuture::from(file.array_buffer())
+        .await
+        .map_err(|error| format!("read selected world: {error:?}"))?;
+    let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
+
+    let save_root = FsPath::from("saves").join("upload");
+    if fs.exists(&save_root).await {
+        fs.remove_dir_all(&save_root)
+            .await
+            .map_err(|error| format!("clear previous save: {error}"))?;
+    }
+    fs.create_dir_all(&save_root)
+        .await
+        .map_err(|error| format!("create save directory: {error}"))?;
+    extract_world_zip(&fs, &save_root, &bytes).await?;
+    let (world, spawn) = load_save_world(&fs, &save_root).await?;
+    let camera_position = save_camera(&world, &spawn);
+    let sections = {
+        let state = state.borrow();
+        build_sections(&state.data, &state.atlas, &world)
+    };
+
+    let mut state = state.borrow_mut();
+    state.world = world;
+    state.sections = sections;
+    state.camera.position = camera_position;
+    state.generation += 1;
+    if let Some(body) = web_sys::window().and_then(|window| window.document()?.body()) {
+        let _ = body.set_attribute("data-save-loaded", "true");
+    }
+    if let Some(button) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id("download-save"))
+        .and_then(|element| element.dyn_into::<HtmlButtonElement>().ok())
+    {
+        button.style().set_property("display", "block").ok();
+    }
+    Ok(())
+}
+
+async fn download_save(fs: Rc<OpfsFs>) -> Result<(), String> {
+    let save_root = FsPath::from("saves").join("upload");
+    let bytes = zip_save(&fs, &save_root).await?;
+    let parts = js_sys::Array::new();
+    parts.push(&js_sys::Uint8Array::from(bytes.as_slice()));
+    let blob = web_sys::Blob::new_with_u8_array_sequence(parts.as_ref())
+        .map_err(|error| format!("create save archive: {error:?}"))?;
+    let url = web_sys::Url::create_object_url_with_blob(&blob)
+        .map_err(|error| format!("create save download URL: {error:?}"))?;
+    let document = web_sys::window()
+        .and_then(|window| window.document())
+        .ok_or_else(|| "document unavailable".to_string())?;
+    let anchor: web_sys::HtmlAnchorElement = document
+        .create_element("a")
+        .map_err(|error| format!("create download link: {error:?}"))?
+        .dyn_into()
+        .map_err(|_| "download link element".to_string())?;
+    web_sys::HtmlAnchorElement::set_href(&anchor, &url);
+    web_sys::HtmlAnchorElement::set_download(&anchor, "world.zip");
+    anchor.click();
+    web_sys::Url::revoke_object_url(&url).ok();
+    Ok(())
+}
+
+async fn zip_save(fs: &OpfsFs, save_root: &FsPath) -> Result<Vec<u8>, String> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let mut pending = vec![save_root.clone()];
+    while let Some(dir) = pending.pop() {
+        let entries = fs
+            .read_dir(&dir)
+            .await
+            .map_err(|error| format!("list save directory: {error}"))?;
+        for entry in entries {
+            if entry.metadata.is_dir {
+                pending.push(entry.path);
+                continue;
+            }
+            let data = fs
+                .read(&entry.path)
+                .await
+                .map_err(|error| format!("read save file: {error}"))?;
+            let relative = entry.path.parts()[save_root.parts().len()..]
+                .iter()
+                .map(|part| part.as_ref())
+                .collect::<Vec<_>>()
+                .join("/");
+            writer
+                .start_file(
+                    relative,
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Deflated),
+                )
+                .map_err(|error| format!("write save archive: {error}"))?;
+            writer
+                .write_all(&data)
+                .map_err(|error| format!("write save archive: {error}"))?;
+        }
+    }
+    let cursor = writer
+        .finish()
+        .map_err(|error| format!("finish save archive: {error}"))?;
+    Ok(cursor.into_inner())
+}
+
+async fn extract_world_zip(
+    fs: &OpfsFs,
+    save_root: &FsPath,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+        .map_err(|error| format!("read world zip: {error}"))?;
+    let mut best: Option<(usize, String)> = None;
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|error| format!("read world zip entry: {error}"))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry
+            .name()
+            .map_err(|error| format!("read world zip entry name: {error}"))?;
+        if name == "level.dat" || name.ends_with("/level.dat") {
+            let depth = name.matches('/').count();
+            if best
+                .as_ref()
+                .is_none_or(|(best_depth, _)| depth < *best_depth)
+            {
+                let prefix = name
+                    .rsplit_once('/')
+                    .map(|(prefix, _)| prefix.to_string())
+                    .unwrap_or_default();
+                best = Some((depth, prefix));
+            }
+        }
+    }
+    let (_, prefix) = best.ok_or_else(|| "world zip has no level.dat".to_string())?;
+    let prefix = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{prefix}/")
+    };
+
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("read world zip entry: {error}"))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry
+            .name()
+            .map_err(|error| format!("read world zip entry name: {error}"))?
+            .into_owned();
+        let relative = name.strip_prefix(&prefix).unwrap_or(&name);
+        if relative.is_empty() || relative.starts_with('/') || relative.contains("..") {
+            continue;
+        }
+        let path = join_relative(save_root, relative);
+        if let Some(parent) = path.parent() {
+            fs.create_dir_all(&parent)
+                .await
+                .map_err(|error| format!("create save directory: {error}"))?;
+        }
+        let mut data = Vec::with_capacity(entry.size() as usize);
+        entry
+            .read_to_end(&mut data)
+            .map_err(|error| format!("read world zip entry: {error}"))?;
+        fs.write(&path, &data)
+            .await
+            .map_err(|error| format!("write save file: {error}"))?;
+    }
+    Ok(())
+}
+
+fn join_relative(base: &FsPath, relative: &str) -> FsPath {
+    let mut path = base.clone();
+    for part in relative.split('/').filter(|part| !part.is_empty()) {
+        path.push(part);
+    }
+    path
+}
+
+async fn load_save_world(fs: &OpfsFs, save_root: &FsPath) -> Result<(World, Spawn), String> {
+    let level_bytes = fs
+        .read(&save_root.join("level.dat"))
+        .await
+        .map_err(|error| format!("read level.dat: {error}"))?;
+    let level = mcre_anvil::read_gzip_nbt_bytes(&level_bytes)
+        .map_err(|error| format!("parse level.dat: {error}"))?;
+    let spawn =
+        mcre_anvil::read_spawn_from_root(&level).map_err(|error| format!("read spawn: {error}"))?;
+    let region_dir = resolve_region_dir(fs, save_root, &spawn.dimension).await;
+
+    let blocks = BlockResolver::new();
+    let biomes = BiomeResolver::new();
+    let mut stats = ImportStats::default();
+    let mut world = World::new(1);
+    let mut regions: HashMap<(i32, i32), Option<RegionFile>> = HashMap::new();
+    let spawn_chunk = (spawn.pos.0.div_euclid(16), spawn.pos.2.div_euclid(16));
+    for dz in -1..=1 {
+        for dx in -1..=1 {
+            let chunk_x = spawn_chunk.0 + dx;
+            let chunk_z = spawn_chunk.1 + dz;
+            let region_x = chunk_x.div_euclid(32);
+            let region_z = chunk_z.div_euclid(32);
+            let region = region_at(fs, &region_dir, &mut regions, region_x, region_z).await;
+            let chunk = match region {
+                Some(region) => match region.chunk_nbt(chunk_x, chunk_z) {
+                    Ok(Some(root)) => {
+                        match mcre_anvil::load_chunk_from_nbt(
+                            &root, chunk_x, chunk_z, &blocks, &biomes, &mut stats,
+                        ) {
+                            Ok(chunk) => chunk,
+                            Err(error) => {
+                                web_sys::console::warn_1(&JsValue::from_str(&format!(
+                                    "skipping corrupt chunk {chunk_x},{chunk_z}: {error}"
+                                )));
+                                None
+                            }
+                        }
+                    }
+                    Ok(None) => None,
+                    Err(error) => {
+                        web_sys::console::warn_1(&JsValue::from_str(&format!(
+                            "skipping unreadable chunk {chunk_x},{chunk_z}: {error}"
+                        )));
+                        None
+                    }
+                },
+                None => None,
+            };
+            world.replace_chunk(
+                chunk.unwrap_or_else(|| Chunk::new_at(ChunkPos::new(chunk_x, chunk_z))),
+            );
+        }
+    }
+    world.adopt_stored_light();
+    world.compute_light();
+    web_sys::console::log_1(&JsValue::from_str(&format!(
+        "loaded save: {} chunks, {} sections, {} blocks ({} unknown blocks)",
+        stats.chunks,
+        stats.sections,
+        stats.blocks_set,
+        stats.unknown_blocks.len()
+    )));
+    Ok((world, spawn))
+}
+
+async fn region_at<'a>(
+    fs: &OpfsFs,
+    region_dir: &FsPath,
+    regions: &'a mut HashMap<(i32, i32), Option<RegionFile>>,
+    region_x: i32,
+    region_z: i32,
+) -> Option<&'a RegionFile> {
+    if let std::collections::hash_map::Entry::Vacant(entry) =
+        regions.entry((region_x, region_z))
+    {
+        let path = region_dir.join(format!("r.{region_x}.{region_z}.mca"));
+        let region = match fs.read(&path).await {
+            Ok(bytes) => RegionFile::from_bytes(bytes).ok(),
+            Err(_) => None,
+        };
+        entry.insert(region);
+    }
+    regions
+        .get(&(region_x, region_z))
+        .and_then(Option::as_ref)
+}
+
+async fn resolve_region_dir(fs: &OpfsFs, save_root: &FsPath, dimension: &str) -> FsPath {
+    let (namespace, path) = dimension
+        .split_once(':')
+        .unwrap_or(("minecraft", dimension));
+    let mut modern = save_root.join("dimensions").join(namespace);
+    for part in path.split('/').filter(|part| !part.is_empty()) {
+        modern.push(part);
+    }
+    let modern = modern.join("region");
+    if fs.exists(&modern).await {
+        modern
+    } else {
+        save_root.join("region")
+    }
+}
+
+fn save_camera(world: &World, spawn: &Spawn) -> [f32; 3] {
+    let column = (spawn.pos.0 + 6, spawn.pos.2 + 20);
+    let mut top = spawn.pos.1;
+    for y in (WORLD_MIN_Y..WORLD_MIN_Y + WORLD_HEIGHT).rev() {
+        if let Some(state) = world.get_block((column.0, y, column.1))
+            && !state.is_air()
+        {
+            top = y;
+            break;
+        }
+    }
+    [column.0 as f32, top as f32 + 6.0, column.1 as f32]
 }
 
 impl ApplicationHandler for WebViewer {

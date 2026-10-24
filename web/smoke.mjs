@@ -9,6 +9,8 @@ import { PNG } from "pngjs";
 const root = join(fileURLToPath(new URL("..", import.meta.url)), "target/web");
 const pack = join(root, "smoke-pack.zip");
 assert(existsSync(pack), `smoke resource pack missing: ${pack}`);
+const save = join(root, "smoke-save.zip");
+assert(existsSync(save), `smoke world save missing: ${save}`);
 const referencePath = join(fileURLToPath(new URL(".", import.meta.url)), "demo-reference.png");
 assert(existsSync(referencePath), `native demo reference missing: ${referencePath}`);
 
@@ -37,24 +39,33 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
   const errors = [];
-  page.on("pageerror", (error) => errors.push(error.stack ?? String(error)));
+  page.on("pageerror", (error) => {
+    const text = error.stack ?? String(error);
+    errors.push(text);
+    console.error(`browser page error: ${text}`);
+  });
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
+    if (message.type() === "error") {
+      errors.push(message.text());
+      console.error(`browser error: ${message.text()}`);
+    }
     if (message.type() === "log") console.log(`browser: ${message.text()}`);
   });
 
   await page.goto(`http://127.0.0.1:${address.port}/index.html`);
   const canvas = page.locator("canvas");
   await canvas.waitFor();
-  await page.locator('input[type="file"]').waitFor();
+  await page.locator("#pack-input").waitFor();
+  await page.locator("#world-input").waitFor();
   await page.evaluate(() => {
-    const input = document.querySelector('input[type="file"]');
-    if (input) input.style.display = "none";
+    for (const input of document.querySelectorAll('input[type="file"]')) {
+      input.style.display = "none";
+    }
   });
   await page.waitForTimeout(1000);
   const before = PNG.sync.read(await canvas.screenshot());
 
-  await page.locator('input[type="file"]').setInputFiles(pack);
+  await page.locator("#pack-input").setInputFiles(pack);
   await page.waitForFunction(() => document.body.dataset.packLoaded === "true", null, {
     timeout: 120_000,
   });
@@ -104,8 +115,39 @@ try {
   assert(mae < 1.2, `web demo MAE vs native reference is ${mae.toFixed(3)}`);
   assert(overFraction < 0.025, `web demo has ${(overFraction * 100).toFixed(2)}% pixels over 16`);
 
+  await page.locator("#world-input").setInputFiles(save);
+  await page.waitForFunction(() => document.body.dataset.saveLoaded === "true", null, {
+    timeout: 120_000,
+  });
+  await page.waitForTimeout(750);
+  const saveShot = await canvas.screenshot();
+  writeFileSync(join(root, "web-save.png"), saveShot);
+  const saved = PNG.sync.read(saveShot);
+  assert.equal(saved.width, after.width);
+  assert.equal(saved.height, after.height);
+  let saveChanged = 0;
+  for (let pixel = 0; pixel < saved.width * saved.height; pixel++) {
+    const offset = pixel * 4;
+    const difference = Math.abs(saved.data[offset] - after.data[offset])
+      + Math.abs(saved.data[offset + 1] - after.data[offset + 1])
+      + Math.abs(saved.data[offset + 2] - after.data[offset + 2]);
+    if (difference > 12) saveChanged++;
+  }
+  assert(
+    saveChanged > saved.width * saved.height * 0.01,
+    `save import changed only ${saveChanged} pixels`,
+  );
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#download-save").click();
+  const download = await downloadPromise;
+  assert.equal(download.suggestedFilename(), "world.zip");
+  assert.equal(await download.failure(), null);
+
   assert.deepEqual(errors, [], `browser errors: ${errors.join("\n")}`);
-  console.log(`wasm viewer smoke passed; ${changed} pixels changed after OPFS pack load`);
+  console.log(
+    `wasm viewer smoke passed; ${changed} pixels changed after OPFS pack load, ${saveChanged} after save import`,
+  );
   console.log(`canvas backing store ${canvasSize[0]}x${canvasSize[1]}, css ${canvasSize[2]}x${canvasSize[3]}`);
   console.log(
     `native demo reference: mae ${mae.toFixed(3)}, over-16 ${(overFraction * 100).toFixed(2)}%`,

@@ -141,7 +141,8 @@ compatible — no Dear ImGui).
 
 ### 2A. `mcre_anvil` — load-only world loading (approved scope) — done
 - [x] New crate: owned-tree NBT parser, `.mca` region reader (sector table,
-      gzip/zlib/uncompressed payloads); `stdio` for now, `mcre_fs` in 2C
+      gzip/zlib/uncompressed payloads); native path helpers use `std::fs`,
+      the browser uses `mcre_fs` + byte-level APIs
 - [x] Palette → `BlockState` via `Block::state()` + `PropKey/PropVal`
       (`id`/`properties` new form, `Name`/`Properties` legacy, `{"":name}`,
       bare-string defaults); biome name → `Biome`, per-block→cell majority
@@ -210,8 +211,11 @@ compatible — no Dear ImGui).
       screenshot comparison vs native demo render
 - [x] Design constraints: single-threaded wasm (mesh + `compute_light`
       budgets) documented in `docs/web.md`; OPFS paths are origin-private
-- [ ] OPFS save export/import: blocked on `mcre_anvil` moving from
-      `std::fs` to `mcre_fs` (the 2A deferred item), then a save-loading UI
+- [x] OPFS save import/export: byte-level `mcre_anvil` APIs
+      (`RegionFile::from_bytes`, `chunk_nbt`, `read_gzip_nbt_bytes`,
+      `read_spawn_from_root`, `load_chunk_from_nbt`) plus a world-zip picker;
+      loads the 3×3 spawn area and re-zips OPFS saves for download. Region
+      write-back stays out of scope.
 
 ### 2D. Milestone queue after Phase 2 (approved order)
 
