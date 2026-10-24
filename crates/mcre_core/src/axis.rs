@@ -70,6 +70,21 @@ impl Direction {
         }
     }
 
+    pub const fn delta(self) -> [i32; 3] {
+        match self {
+            Direction::Down => [0, -1, 0],
+            Direction::Up => [0, 1, 0],
+            Direction::North => [0, 0, -1],
+            Direction::South => [0, 0, 1],
+            Direction::West => [-1, 0, 0],
+            Direction::East => [1, 0, 0],
+        }
+    }
+
+    pub const fn index(self) -> u8 {
+        self as u8
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Direction::Down => "down",

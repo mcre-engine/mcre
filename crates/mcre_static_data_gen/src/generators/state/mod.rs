@@ -1,5 +1,5 @@
 use convert_case::ccase;
-use mcre_data::state::BlockState;
+use mcre_data::{block::Block, shape::OcclusionShape, state::BlockState};
 use quote::{format_ident, quote};
 
 use crate::{
@@ -14,7 +14,9 @@ pub mod data;
 pub mod enums;
 
 pub struct StateScope<'a> {
+    pub blocks: &'a [Block],
     pub states: &'a [BlockState],
+    pub shapes: &'a [OcclusionShape],
 }
 
 impl<'a> ScopeGen<'a> for StateScope<'a> {
@@ -29,6 +31,8 @@ impl<'a> ScopeGen<'a> for StateScope<'a> {
             ]),
             sub_scopes: Box::new([Box::new(StateDataScope {
                 states: self.states,
+                blocks: self.blocks,
+                shapes: self.shapes,
             })]),
         }
     }
@@ -182,6 +186,47 @@ impl UnitGen for StateRootUnit<'_> {
 
                 pub fn solid_render(self) -> bool {
                     data::solid_render::get(self.0)
+                }
+
+                pub fn self_skip(self) -> u8 {
+                    data::self_skip::get(self.0)
+                }
+
+                pub fn face_sturdy(self) -> u8 {
+                    data::face_sturdy::get(self.0)
+                }
+
+                pub fn collision_full(self) -> bool {
+                    data::collision_full::get(self.0)
+                }
+
+                pub fn shade_brightness(self) -> f32 {
+                    f32::from(data::shade_brightness::get(self.0)) / 255.0
+                }
+
+                pub fn solid(self) -> bool {
+                    data::solid::get(self.0)
+                }
+
+                pub fn fluid(self) -> Option<&'static str> {
+                    let fluid = data::fluid::get(self.0);
+                    if fluid.is_empty() {
+                        None
+                    } else {
+                        Some(fluid)
+                    }
+                }
+
+                pub fn occlusion_shape(self) -> u16 {
+                    data::occlusion_shape::get(self.0)
+                }
+
+                pub fn occlusion_boxes(self) -> &'static [[f32; 6]] {
+                    data::shapes::get(data::occlusion_shape::get(self.0))
+                }
+
+                pub fn emissive_rendering(self) -> bool {
+                    data::emissive_rendering::get(self.0)
                 }
 
                 pub fn is_air(self) -> bool {

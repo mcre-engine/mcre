@@ -33,7 +33,7 @@ pub struct PackSection {
 }
 
 /// A pack version — either a single integer `42` or a pair `[42, 1]`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PackVersion {
     pub major: u32,
     pub minor: u32,
@@ -47,6 +47,11 @@ impl PackVersion {
     pub const fn with_minor(major: u32, minor: u32) -> Self {
         Self { major, minor }
     }
+
+    pub const CURRENT: Self = Self {
+        major: 100,
+        minor: 1,
+    };
 }
 
 impl<'de> Deserialize<'de> for PackVersion {
@@ -125,13 +130,14 @@ pub struct OverlaysSection {
 
 /// A single overlay entry.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct OverlayEntry {
     pub directory: String,
     #[serde(default)]
     pub min_format: Option<PackVersion>,
     #[serde(default)]
     pub max_format: Option<PackVersion>,
+    #[serde(default)]
+    pub formats: Option<(u32, u32)>,
 }
 
 impl PackMeta {
@@ -149,6 +155,53 @@ impl PackMeta {
         self.pack
             .max_format
             .map_or_else(|| self.pack.pack_format.unwrap_or(0), |v| v.major)
+    }
+
+    /// Overlay directories applicable to the current game version, in listed
+    /// order (later entries win, mirroring vanilla's reversed overlay stack).
+    /// Missing bounds are unbounded on that side.
+    pub fn applicable_overlays(&self) -> Vec<String> {
+        let Some(overlays) = &self.overlays else {
+            return Vec::new();
+        };
+        overlays
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry
+                    .min_format
+                    .is_none_or(|min| min <= PackVersion::CURRENT)
+                    && entry
+                        .max_format
+                        .is_none_or(|max| PackVersion::CURRENT <= max)
+                    && entry.formats.is_none_or(|(lo, hi)| {
+                        lo <= PackVersion::CURRENT.major && PackVersion::CURRENT.major <= hi
+                    })
+            })
+            .map(|entry| entry.directory.clone())
+            .collect()
+    }
+
+    /// Whether this pack declares support for the current game version.
+    /// Packs with no format declaration at all are treated as compatible.
+    pub fn supports_current_version(&self) -> bool {
+        if self.pack.pack_format.is_none()
+            && self.pack.min_format.is_none()
+            && self.pack.max_format.is_none()
+        {
+            return true;
+        }
+        let min = self
+            .pack
+            .min_format
+            .or(self.pack.pack_format.map(PackVersion::new))
+            .unwrap_or(PackVersion::new(0));
+        let max = self
+            .pack
+            .max_format
+            .or(self.pack.pack_format.map(PackVersion::new))
+            .unwrap_or(PackVersion::new(u32::MAX));
+        min <= PackVersion::CURRENT && PackVersion::CURRENT <= max
     }
 }
 
@@ -223,5 +276,86 @@ mod tests {
         let patterns = &meta.filter.as_ref().unwrap().block;
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].namespace.as_deref(), Some("minecraft"));
+    }
+
+    #[test]
+    fn test_applicable_overlays() {
+        let json = r#"{
+            "pack": {"description": "Test"},
+            "overlays": {
+                "entries": [
+                    {"directory": "old", "max_format": 50},
+                    {"directory": "current", "min_format": 90},
+                    {"directory": "exact", "min_format": [100, 1], "max_format": [100, 1]},
+                    {"directory": "legacy", "formats": [90, 200]},
+                    {"directory": "legacy_old", "formats": [10, 50]},
+                    {"directory": "future", "min_format": 200},
+                    {"directory": "unbounded"}
+                ]
+            }
+        }"#;
+
+        let meta: PackMeta = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            meta.applicable_overlays(),
+            vec![
+                "current".to_string(),
+                "exact".to_string(),
+                "legacy".to_string(),
+                "unbounded".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_supports_current_version() {
+        let bare: PackMeta =
+            serde_json::from_str(r#"{"pack": {"description": "No format declared"}}"#).unwrap();
+        assert!(bare.supports_current_version());
+
+        let matching: PackMeta = serde_json::from_str(
+            r#"{"pack": {"description": "Test", "min_format": 90, "max_format": 200}}"#,
+        )
+        .unwrap();
+        assert!(matching.supports_current_version());
+
+        let ancient: PackMeta =
+            serde_json::from_str(r#"{"pack": {"description": "Test", "pack_format": 18}}"#)
+                .unwrap();
+        assert!(!ancient.supports_current_version());
+
+        let future: PackMeta =
+            serde_json::from_str(r#"{"pack": {"description": "Test", "min_format": 1000}}"#)
+                .unwrap();
+        assert!(!future.supports_current_version());
+    }
+
+    #[test]
+    #[cfg(feature = "download")]
+    fn test_current_format_matches_game_jar() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let version = std::fs::read_to_string(manifest_dir.join("../../mc-version"))
+            .unwrap()
+            .trim()
+            .to_string();
+        let jar_path = manifest_dir
+            .join("../../target/downloads")
+            .join(&version)
+            .join("mc.jar");
+        let file = std::fs::File::open(jar_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut entry = archive.by_name("version.json").unwrap();
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut entry, &mut text).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let pack_version = &json["pack_version"];
+        assert_eq!(
+            pack_version["resource_major"].as_u64().unwrap(),
+            u64::from(PackVersion::CURRENT.major)
+        );
+        assert_eq!(
+            pack_version["resource_minor"].as_u64().unwrap(),
+            u64::from(PackVersion::CURRENT.minor)
+        );
     }
 }

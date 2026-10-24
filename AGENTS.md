@@ -2,28 +2,34 @@
 
 ## Project
 
-MCRE is an experimental Minecraft Java Edition client in Rust. Targets the version in `mc-version` (currently 26.3-snapshot-5).
+MCRE is an experimental Minecraft Java Edition client in Rust. Targets the version in `mc-version` (currently 26.4-snapshot-4).
 
 ## Toolchain
 
-- **Rust 1.97.0** (pinned in `rust-toolchain.toml`), edition 2024, resolver `"3"`
+- **Rust 1.99.0** (pinned in `rust-toolchain.toml`), edition 2024, resolver `"3"`
 - **`just` recipes** provide all dev commands. Nix flake provides an **optional** dev shell (JDK 25, clang, etc.).
 
 ## Workspace
 
 ```
-crates/           # library crates (9)
+crates/           # library crates (12)
   mcre_core/      # primitives (no_std)
   mcre_data/      # block/state JSON + typed accessors (uses std)
   mcre_world/     # world model (no_std)
   mcre_assets/    # asset extraction (no_std except test)
-  mcje/           # JVM bridge (JNI)
+  mcje/           # JVM bridge (JNI), server + client spawn, java hooks
   mcje_macros/    # proc macros: #[mcje::main], #[mcje::test]
   mcje_downloader/# MC jar/lib downloader
   mcre_static_data_gen/ # generates Rust source from JSON (build-dep of mcre_world)
   mcre_fs/      # platform-agnostic filesystem (embedded-io-async traits, native + web backends)
-tasks/            # binary tasks (1)
+  mcre_resource_pack/ # blockstate/model resolution + baked lookup table (ResourcePackData)
+  mcre_renderer/   # WGPU renderer: texture atlas, chunk meshing, `examples/viewer.rs`
+  mcre_shot/     # shared parity-shot spec (vanilla + mcre screenshot pipelines)
+tasks/            # binary tasks (4)
   data_gen/       # extracts block/state JSON from MC jar via JNI
+  gen_world/      # generates a vanilla-anvil world via the embedded server JVM
+  vanilla_shot/   # captures a vanilla screenshot from a shot spec (embedded client JVM)
+  shotcmp/        # diffs two PNG screenshots (parity stats + amplified diff image)
 ```
 
 ## Commands
@@ -88,6 +94,8 @@ Manual steps (if auto fails or you need a specific version):
 - **`no_std` crates**: `mcre_core`, `mcre_world` (and `mcre_assets` except under `cfg(test)`). Filesystem access uses `mcre_fs` (embedded-io-async traits with native tokio + web OPFS backends).
 - **JNI bridge**: `mcje` crate embeds a JVM via JNI. `#[mcje::main]` wraps `async fn main(env: &mut JNIEnv)` with JVM init + bootstrap.
 - **Event-driven world model** documented in `docs/world-model.md`.
+- **Parity screenshots** documented in `docs/screenshot-parity.md`: one JSON spec (`mcre_shot`) drives both the embedded vanilla client (`tasks/vanilla_shot`) and the mcre viewer (`--shot`), diffed by `tasks/shotcmp` (`just shot <spec>`).
+- **Web viewer** documented in `docs/web.md`: `just web` serves the wasm build, `just web-smoke` runs the headless comparison against the native demo render.
 
 ## Notable Config Files
 
@@ -96,7 +104,7 @@ Manual steps (if auto fails or you need a specific version):
 | `.cargo/config.toml` | Alias definitions (`ck`, `lint`) |
 | `.typos.toml` | Excludes `**/*.bin` from spell check |
 | `.gitignore` | Ignores `/target`, `**/logs`, `/crates/mcre_assets/assets` |
-| `rust-toolchain.toml` | Pins Rust 1.97.0 |
+| `rust-toolchain.toml` | Pins Rust 1.99.0 |
 
 ## Style Conventions
 

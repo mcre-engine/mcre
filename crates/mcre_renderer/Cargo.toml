@@ -1,0 +1,47 @@
+[package]
+name = "mcre_renderer"
+version = "0.1.0"
+description = "WGPU renderer for MCRE — texture atlas, chunk meshing, and the viewer example"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+categories.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mcre_core         = { workspace = true }
+mcre_world        = { workspace = true }
+mcre_fs           = { workspace = true }
+mcre_anvil        = { workspace = true }
+mcre_resource_pack = { workspace = true }
+
+wgpu      = { workspace = true }
+winit     = { workspace = true }
+png       = { workspace = true }
+bytemuck  = { workspace = true }
+pollster  = { workspace = true }
+thiserror = { workspace = true }
+egui      = { workspace = true }
+egui-winit  = { workspace = true }
+egui-wgpu   = { workspace = true }
+serde       = { workspace = true, features = ["std"] }
+serde_json  = { workspace = true, features = ["std"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["fs", "rt-multi-thread"] }
+
+[dev-dependencies]
+mcre_shot = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+mcre_resource_pack = { workspace = true, features = ["download"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+zip = { workspace = true }
+web-sys = { version = "0.3", features = ["Blob", "Document", "Event", "File", "FileList", "HtmlAnchorElement", "HtmlButtonElement", "HtmlElement", "HtmlInputElement", "Node", "Url", "Window", "console"] }

@@ -7,7 +7,7 @@ use crate::{
     generators::{Unit, UnitGen},
 };
 
-type MappingFn<'a, T, U> = Box<dyn Fn(&'a T, &Analysis) -> U>;
+type MappingFn<'a, T, U> = Box<dyn Fn(&'a T, &Analysis) -> U + 'a>;
 
 pub struct MultiByteGen<'a, T, U> {
     pub name: String,

@@ -19,7 +19,6 @@ mcre_data = { workspace = true }
 
 indexmap = { workspace = true }
 
-tokio = { workspace = true, optional = true }
 
 syn          = { workspace = true }
 quote        = { workspace = true }
@@ -29,3 +28,7 @@ prettyplease = { workspace = true }
 
 [features]
 default = ["tokio"]
+tokio = ["dep:tokio"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, optional = true, features = ["fs", "rt-multi-thread"] }

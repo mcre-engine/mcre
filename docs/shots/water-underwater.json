@@ -1,0 +1,16 @@
+{
+  "name": "water-parity-underwater",
+  "world": "target/gen_world/world",
+  "eye": [-312.5, 58.0, 520.5],
+  "yaw": 0.0,
+  "pitch": 0.0,
+  "fov": 70.0,
+  "brightness": 0.5,
+  "water_vision": 1.0,
+  "time_ticks": 6000,
+  "width": 948,
+  "height": 1005,
+  "render_distance": 8,
+  "clouds": "off",
+  "settle_ms": 4000
+}

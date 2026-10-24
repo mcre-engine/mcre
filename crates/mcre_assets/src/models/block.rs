@@ -16,6 +16,7 @@ pub struct BlockModelDefinition {
     pub ambientocclusion: bool,
     pub elements: Vec<BlockModelElement>,
     pub textures: FxHashMap<String, BlockModelTexture>,
+    pub particle: Option<BlockModelTexture>,
     pub display: FxHashMap<String, Transform>,
 }
 
@@ -54,14 +55,9 @@ pub struct BlockModelElement {
     pub to: Vec3f,
     pub rotation: Option<BlockModelElementRotation>,
     pub faces: FxHashMap<Direction, BlockModelFace>,
-    #[serde(default = "default_shade")]
-    pub shade: bool,
+    pub shade_direction_override: Option<Direction>,
     #[serde(default)]
     pub light_emission: u8,
-}
-
-fn default_shade() -> bool {
-    true
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +144,39 @@ pub enum BlockModelTexture {
 }
 
 impl BlockModelElementRotation {
+    /// Port of vanilla `CuboidRotation.computeTransform`: rotation about the
+    /// element origin (`angle` is in degrees, as authored), with rescale as
+    /// `M = R` unless rescale is set and the rotation is non-identity, then
+    /// `M = R·S` with per-axis factors from the transformed axis units.
+    fn transform_matrix(axis: Axis, angle_degrees: f32, rescale: bool) -> [[f32; 3]; 3] {
+        // libm: no float methods in `no_std` on this toolchain.
+        let radians = angle_degrees * (core::f32::consts::PI / 180.0);
+        let (sin, cos) = (libm::sinf(radians), libm::cosf(radians));
+        let r = match axis {
+            Axis::X => [[1.0, 0.0, 0.0], [0.0, cos, -sin], [0.0, sin, cos]],
+            Axis::Y => [[cos, 0.0, sin], [0.0, 1.0, 0.0], [-sin, 0.0, cos]],
+            Axis::Z => [[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]],
+        };
+        if !rescale || angle_degrees == 0.0 {
+            return r;
+        }
+        let mut s = [0.0; 3];
+        for j in 0..3 {
+            // libm: no float methods in `no_std` on this toolchain.
+            let mut max = libm::fabsf(r[0][j]);
+            let b = libm::fabsf(r[1][j]);
+            if b > max {
+                max = b;
+            }
+            let c = libm::fabsf(r[2][j]);
+            if c > max {
+                max = c;
+            }
+            s[j] = 1.0 / max;
+        }
+        array::from_fn(|i| array::from_fn(|j| r[i][j] * s[j]))
+    }
+
     fn rotate_axis_angle(
         point: Vec3f,
         origin: Vec3f,
@@ -155,54 +184,34 @@ impl BlockModelElementRotation {
         angle: f32,
         rescale: bool,
     ) -> Vec3f {
-        let mut point = point - origin;
-        let (sin, cos) = angle.sin_cos();
-
-        let scale = if rescale {
-            1.0 / (cos.abs() + sin.abs())
-        } else {
-            1.0
-        };
-
-        match axis {
-            Axis::X => {
-                let y = point[1];
-                let z = point[2];
-                point[1] = (y * cos - z * sin) * scale;
-                point[2] = (y * sin + z * cos) * scale;
-            }
-            Axis::Y => {
-                let x = point[0];
-                let z = point[2];
-                point[0] = (x * cos + z * sin) * scale;
-                point[2] = (z * cos - x * sin) * scale;
-            }
-            Axis::Z => {
-                let x = point[0];
-                let y = point[1];
-                point[0] = (x * cos - y * sin) * scale;
-                point[1] = (x * sin + y * cos) * scale;
-            }
-        }
-        point + origin
+        let m = Self::transform_matrix(axis, angle, rescale);
+        let point = point - origin;
+        Vec3f::new(
+            m[0][0] * point[0] + m[0][1] * point[1] + m[0][2] * point[2],
+            m[1][0] * point[0] + m[1][1] * point[1] + m[1][2] * point[2],
+            m[2][0] * point[0] + m[2][1] * point[1] + m[2][2] * point[2],
+        ) + origin
     }
 
     fn rotate_euler(mut point: Vec3f, origin: Vec3f, x: f32, y: f32, z: f32) -> Vec3f {
         point = point - origin;
 
-        let (sin, cos) = x.to_radians().sin_cos();
+        let radians = x * (core::f32::consts::PI / 180.0);
+        let (sin, cos) = (libm::sinf(radians), libm::cosf(radians));
         let y1 = point[1];
         let z1 = point[2];
         point[1] = y1 * cos - z1 * sin;
         point[2] = y1 * sin + z1 * cos;
 
-        let (sin, cos) = y.to_radians().sin_cos();
+        let radians = y * (core::f32::consts::PI / 180.0);
+        let (sin, cos) = (libm::sinf(radians), libm::cosf(radians));
         let x1 = point[0];
         let z1 = point[2];
         point[0] = x1 * cos + z1 * sin;
         point[2] = z1 * cos - x1 * sin;
 
-        let (sin, cos) = z.to_radians().sin_cos();
+        let radians = z * (core::f32::consts::PI / 180.0);
+        let (sin, cos) = (libm::sinf(radians), libm::cosf(radians));
         let x1 = point[0];
         let y1 = point[1];
         point[0] = x1 * cos - y1 * sin;
@@ -230,85 +239,186 @@ impl BlockModelElementRotation {
     }
 }
 
-fn build_quad(min: Vec3f, max: Vec3f, dir: Direction) -> [Vec3f; 4] {
-    // 1. The two axes that span the rectangle
-    let [a1, a2] = dir.axis().complementary_axes();
+fn build_quad(from: Vec3f, to: Vec3f, dir: Direction) -> [Vec3f; 4] {
+    let (x0, y0, z0) = (from[0], from[1], from[2]);
+    let (x1, y1, z1) = (to[0], to[1], to[2]);
+    let v = Vec3f::new;
+    match dir {
+        Direction::Down => [v(x0, y0, z1), v(x0, y0, z0), v(x1, y0, z0), v(x1, y0, z1)],
+        Direction::Up => [v(x0, y1, z0), v(x0, y1, z1), v(x1, y1, z1), v(x1, y1, z0)],
+        Direction::North => [v(x1, y1, z0), v(x1, y0, z0), v(x0, y0, z0), v(x0, y1, z0)],
+        Direction::South => [v(x0, y1, z1), v(x0, y0, z1), v(x1, y0, z1), v(x1, y1, z1)],
+        Direction::West => [v(x0, y1, z0), v(x0, y0, z0), v(x0, y0, z1), v(x0, y1, z1)],
+        Direction::East => [v(x1, y1, z1), v(x1, y0, z1), v(x1, y0, z0), v(x1, y1, z0)],
+    }
+}
 
-    // 2. Get min/max for variable axes
-    let range = |axis: Axis| -> (f32, f32) {
-        let min = axis.select(min);
-        let max = axis.select(max);
-        (min, max)
-    };
+fn default_face_uv(from: Vec3f, to: Vec3f, dir: Direction) -> Vec4f {
+    match dir {
+        Direction::Down => Vec4f::new(from[0], 16.0 - to[2], to[0], 16.0 - from[2]),
+        Direction::Up => Vec4f::new(from[0], from[2], to[0], to[2]),
+        Direction::North => Vec4f::new(16.0 - to[0], 16.0 - to[1], 16.0 - from[0], 16.0 - from[1]),
+        Direction::South => Vec4f::new(from[0], 16.0 - to[1], to[0], 16.0 - from[1]),
+        Direction::West => Vec4f::new(from[2], 16.0 - to[1], to[2], 16.0 - from[1]),
+        Direction::East => Vec4f::new(16.0 - to[2], 16.0 - to[1], 16.0 - from[2], 16.0 - from[1]),
+    }
+}
 
-    let (a1_min, a1_max) = range(a1);
-    let (a2_min, a2_max) = range(a2);
+fn quad_normal(vertices: [Vec3f; 4]) -> Vec3f {
+    let a = vertices[1] - vertices[0];
+    let b = vertices[2] - vertices[0];
+    Vec3f::new(
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+}
 
-    // 3. Build the quad (CCW)
-    fn make(axis: Axis, v: f32, x: f32, y: f32, z: f32) -> Vec3f {
-        let mut out = Vec3f::new(x, y, z);
-        *axis.select_mut(&mut out) = v;
-        out
+fn dir_unit(dir: Direction) -> Vec3f {
+    match dir {
+        Direction::Down => Vec3f::new(0.0, -1.0, 0.0),
+        Direction::Up => Vec3f::new(0.0, 1.0, 0.0),
+        Direction::North => Vec3f::new(0.0, 0.0, -1.0),
+        Direction::South => Vec3f::new(0.0, 0.0, 1.0),
+        Direction::West => Vec3f::new(-1.0, 0.0, 0.0),
+        Direction::East => Vec3f::new(1.0, 0.0, 0.0),
+    }
+}
+
+fn vanilla_closest_direction(normal: Vec3f) -> Option<Direction> {
+    if !(normal[0].is_finite() && normal[1].is_finite() && normal[2].is_finite()) {
+        return None;
     }
 
-    let axis = dir.axis();
-    let v = if dir.is_positive() {
-        axis.select(max)
-    } else {
-        axis.select(min)
-    };
+    let mut best = None;
+    let mut closest = 0.0f32;
+    for dir in Direction::ALL {
+        let unit = dir_unit(dir);
+        let product = normal[0] * unit[0] + normal[1] * unit[1] + normal[2] * unit[2];
+        if product >= 0.0 && product > closest {
+            closest = product;
+            best = Some(dir);
+        }
+    }
+    best
+}
 
-    [
-        make(axis, v, a1_min, a2_min, 0.0),
-        make(axis, v, a1_min, a2_max, 0.0),
-        make(axis, v, a1_max, a2_max, 0.0),
-        make(axis, v, a1_max, a2_min, 0.0),
-    ]
+/// Port of vanilla `FaceBakery.recalculateWinding`: reorders the vertices (and
+/// their UVs) against the canonical vertex order for `direction`, taken from
+/// the per-quad bounding box. Inverted model elements bake faces whose winding
+/// opposes their authored face key, so this restores the canonical winding.
+fn recalculate_winding(
+    vertices: [Vec3f; 4],
+    uvs: [[f32; 2]; 4],
+    direction: Direction,
+) -> ([Vec3f; 4], [[f32; 2]; 4]) {
+    let mut min = vertices[0];
+    let mut max = vertices[0];
+    for vertex in &vertices[1..] {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(vertex[axis]);
+            max[axis] = max[axis].max(vertex[axis]);
+        }
+    }
+
+    let canonical = build_quad(min, max, direction);
+    let mut vertices = vertices;
+    let mut uvs = uvs;
+    for (i, target) in canonical.iter().enumerate() {
+        let j = (i..4)
+            .find(|&j| vertices[j] == *target)
+            .expect("canonical vertex not found");
+        vertices.swap(i, j);
+        uvs.swap(i, j);
+    }
+    (vertices, uvs)
 }
 
 pub struct BakedQuad {
     pub vertices: [Vec3f; 4],
-    pub uv: Vec4f,
+    pub uvs: [[f32; 2]; 4],
+    pub direction: Direction,
     pub texture: TextureId,
     pub cullface: Option<Direction>,
     pub tintindex: Option<u8>,
-    pub shade: bool,
+    pub shade_direction_override: Option<Direction>,
     pub light_emission: u8,
 }
 
+pub fn cardinal_lighting(direction: Direction) -> f32 {
+    match direction {
+        Direction::Down => 0.5,
+        Direction::Up => 1.0,
+        Direction::North => 0.8,
+        Direction::South => 0.8,
+        Direction::West => 0.6,
+        Direction::East => 0.6,
+    }
+}
+
+impl BakedQuad {
+    pub fn shade_factor(&self) -> f32 {
+        cardinal_lighting(self.shade_direction_override.unwrap_or(self.direction))
+    }
+}
+
+#[derive(Debug)]
 pub enum ModelBakeError {
     TextureNotFound(String),
     ParentNotFound(String),
 }
 
 impl BlockModelDefinition {
-    fn _build_texture_map<F>(
+    fn _collect_texture_defs<F>(
         &self,
-        parent_resolver: F,
-        texture_map: &mut FxHashMap<ReferenceId, TextureId>,
+        parent_resolver: &F,
+        defs: &mut FxHashMap<ReferenceId, RefOr<TextureId>>,
     ) -> Result<(), ModelBakeError>
     where
         F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
     {
-        for (name, texture) in &self.textures {
-            let texture_id = match texture {
-                BlockModelTexture::RefOr(RefOr::Value(id)) => Some(id.clone()),
-                BlockModelTexture::Object(obj) => match &obj.sprite {
-                    RefOr::Value(id) => Some(id.clone()),
-                    _ => None,
-                },
-                _ => None,
-            };
-            if let Some(texture_id) = texture_id {
-                texture_map.insert(ReferenceId::new(name.clone()), texture_id);
-            }
+        if let Some(parent_id) = &self.parent {
+            let parent = parent_resolver(parent_id)
+                .ok_or_else(|| ModelBakeError::ParentNotFound(parent_id.to_string()))?;
+            parent._collect_texture_defs(parent_resolver, defs)?;
         }
 
-        self.parent.as_ref().map_or(Ok(()), |parent_id| {
-            parent_resolver(parent_id)
-                .ok_or_else(|| ModelBakeError::ParentNotFound(parent_id.to_string()))
-                .and_then(|parent| parent._build_texture_map(parent_resolver, texture_map))
-        })
+        for (name, texture) in &self.textures {
+            let value = match texture {
+                BlockModelTexture::RefOr(value) => value.clone(),
+                BlockModelTexture::Object(obj) => obj.sprite.clone(),
+            };
+            defs.insert(ReferenceId::new(name.clone()), value);
+        }
+        if let Some(texture) = &self.particle {
+            let value = match texture {
+                BlockModelTexture::RefOr(value) => value.clone(),
+                BlockModelTexture::Object(obj) => obj.sprite.clone(),
+            };
+            defs.insert(ReferenceId::new("particle".to_string()), value);
+        }
+
+        Ok(())
+    }
+
+    fn _resolve_elements<F>(
+        &self,
+        parent_resolver: &F,
+    ) -> Result<Vec<BlockModelElement>, ModelBakeError>
+    where
+        F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
+    {
+        if !self.elements.is_empty() {
+            return Ok(self.elements.clone());
+        }
+        match &self.parent {
+            Some(parent_id) => {
+                let parent = parent_resolver(parent_id)
+                    .ok_or_else(|| ModelBakeError::ParentNotFound(parent_id.to_string()))?;
+                parent._resolve_elements(parent_resolver)
+            }
+            None => Ok(Vec::new()),
+        }
     }
 
     pub fn build_texture_map<F>(
@@ -318,8 +428,28 @@ impl BlockModelDefinition {
     where
         F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
     {
+        let mut defs = FxHashMap::default();
+        self._collect_texture_defs(&parent_resolver, &mut defs)?;
+
         let mut texture_map = FxHashMap::default();
-        self._build_texture_map(parent_resolver, &mut texture_map)?;
+        for (name, value) in &defs {
+            let mut current = value.clone();
+            let mut hops = 0;
+            while hops <= 16 {
+                match current {
+                    RefOr::Value(texture) => {
+                        texture_map.insert(name.clone(), texture);
+                        break;
+                    }
+                    RefOr::Ref(next) => match defs.get(&next) {
+                        Some(next_value) => current = next_value.clone(),
+                        None => break,
+                    },
+                }
+                hops += 1;
+            }
+        }
+
         Ok(texture_map)
     }
 
@@ -336,49 +466,55 @@ impl BlockModelDefinition {
     where
         F: Fn(&BlockModelId) -> Option<BlockModelDefinition>,
     {
+        let elements = self._resolve_elements(&parent_resolver)?;
         let texture_map = self.build_texture_map(parent_resolver)?;
 
         let mut quads = Vec::new();
-        for element in &self.elements {
-            let min = Vec3f::new(
-                element.from[0].min(element.to[0]),
-                element.from[1].min(element.to[1]),
-                element.from[2].min(element.to[2]),
-            );
-            let max = Vec3f::new(
-                element.from[0].max(element.to[0]),
-                element.from[1].max(element.to[1]),
-                element.from[2].max(element.to[2]),
-            );
+        for element in &elements {
             for direction in Direction::ALL {
                 if let Some(face) = element.faces.get(&direction) {
-                    let quad_vertices = build_quad(min, max, direction);
+                    let quad_vertices = build_quad(element.from, element.to, direction);
                     let rotated_quad_vertices = if let Some(rotation) = &element.rotation {
                         rotation.apply_on_quad(quad_vertices)
                     } else {
                         quad_vertices
                     };
-                    let uv = face.uv.unwrap_or(Vec4f::new(0.0, 0.0, 16.0, 16.0));
-                    let rotated_uv = face.rotation.rotate_uv(uv);
+
+                    let uv = face
+                        .uv
+                        .unwrap_or_else(|| default_face_uv(element.from, element.to, direction));
+                    let [u1, v1, u2, v2] = *uv;
+                    let corners = [[u1, v1], [u1, v2], [u2, v2], [u2, v1]];
+                    let shift = face.rotation.quadrant();
+                    let uvs = array::from_fn(|i| corners[(i + shift) % 4]);
 
                     let texture = match &face.texture {
-                        RefOr::Ref(id) => {
-                            if let Some(texture_id) = texture_map.get(id) {
-                                texture_id.clone()
-                            } else {
-                                return Err(ModelBakeError::TextureNotFound(id.to_string()));
-                            }
-                        }
+                        RefOr::Ref(id) => texture_map.get(id).cloned().unwrap_or_else(|| {
+                            TextureId::Block(crate::BlockTextureId::new(
+                                "minecraft".to_string(),
+                                "missingno".to_string(),
+                            ))
+                        }),
                         RefOr::Value(id) => id.clone(),
                     };
 
+                    let facing = vanilla_closest_direction(quad_normal(rotated_quad_vertices));
+                    let (vertices, uvs) = if element.rotation.is_none()
+                        && let Some(facing) = facing
+                    {
+                        recalculate_winding(rotated_quad_vertices, uvs, facing)
+                    } else {
+                        (rotated_quad_vertices, uvs)
+                    };
+
                     quads.push(BakedQuad {
-                        vertices: rotated_quad_vertices,
-                        uv: rotated_uv,
+                        vertices,
+                        uvs,
+                        direction: facing.unwrap_or(Direction::Up),
                         texture,
                         tintindex: face.tintindex,
                         cullface: face.cullface,
-                        shade: element.shade,
+                        shade_direction_override: element.shade_direction_override,
                         light_emission: element.light_emission,
                     });
                 }
@@ -448,6 +584,579 @@ mod tests {
 
         assert_eq!(passed, total);
     }
+
+    use mcre_core::{Direction, Vec3f};
+    use mcre_world::BlockState;
+
+    use crate::{BlockStateDefinition, blockstates::ModelVariant, id::BlockModelId};
+
+    fn assets_dir() -> PathBuf {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let target_mc_version = std::fs::read_to_string(manifest_dir.join("../../mc-version"))
+            .unwrap()
+            .trim()
+            .to_string();
+        manifest_dir
+            .join("../../target/downloads")
+            .join(target_mc_version)
+            .join("assets/minecraft")
+    }
+
+    fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    }
+
+    fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+        [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+    }
+
+    fn dir_unit(dir: Direction) -> [f32; 3] {
+        match dir {
+            Direction::Down => [0.0, -1.0, 0.0],
+            Direction::Up => [0.0, 1.0, 0.0],
+            Direction::North => [0.0, 0.0, -1.0],
+            Direction::South => [0.0, 0.0, 1.0],
+            Direction::West => [-1.0, 0.0, 0.0],
+            Direction::East => [1.0, 0.0, 0.0],
+        }
+    }
+
+    #[test]
+    fn test_bake_default_uv_face_rotation_and_winding() {
+        let json = r##"{
+            "elements": [
+                {
+                    "from": [0, 0, 0],
+                    "to": [16, 8, 16],
+                    "faces": {
+                        "north": { "texture": "#t" },
+                        "south": { "texture": "#t", "rotation": 90 }
+                    }
+                }
+            ],
+            "textures": { "t": "minecraft:block/stone" }
+        }"##;
+
+        let def: BlockModelDefinition = serde_json::from_str(json).unwrap();
+        let quads = def.bake_quads(|_| None).unwrap();
+        assert_eq!(quads.len(), 2);
+
+        let north = quads
+            .iter()
+            .find(|q| q.direction == Direction::North)
+            .unwrap();
+        assert_eq!(
+            north.uvs,
+            [[0.0, 8.0], [0.0, 16.0], [16.0, 16.0], [16.0, 8.0]]
+        );
+
+        let south = quads
+            .iter()
+            .find(|q| q.direction == Direction::South)
+            .unwrap();
+        assert_eq!(
+            south.uvs,
+            [[0.0, 16.0], [16.0, 16.0], [16.0, 8.0], [0.0, 8.0]]
+        );
+
+        for quad in &quads {
+            let v: [[f32; 3]; 4] = quad.vertices.map(|v| [v[0], v[1], v[2]]);
+            let normal = cross(sub(v[1], v[0]), sub(v[2], v[0]));
+            let dir = dir_unit(quad.direction);
+            let dot = normal[0] * dir[0] + normal[1] * dir[1] + normal[2] * dir[2];
+            assert!(
+                dot > 0.0,
+                "quad facing {:?} has inward winding (dot = {dot})",
+                quad.direction
+            );
+        }
+    }
+
+    #[test]
+    fn particle_texture_inherits_and_resolves_parent_texture_references() {
+        let parent: BlockModelDefinition = serde_json::from_str(
+            r##"{"textures":{"all":"minecraft:block/dirt"},"particle":"#all"}"##,
+        )
+        .unwrap();
+        let child: BlockModelDefinition = serde_json::from_str(
+            r##"{"parent":"minecraft:block/cube_all","textures":{"all":"minecraft:block/stone"}}"##,
+        )
+        .unwrap();
+
+        let textures = child.build_texture_map(|_| Some(parent.clone())).unwrap();
+        assert_eq!(
+            textures
+                .get(&crate::ReferenceId::new("particle".to_string()))
+                .unwrap()
+                .to_string(),
+            "minecraft:block/stone"
+        );
+    }
+
+    #[test]
+    fn test_all_cube_faces_wind_outward() {
+        let json = r##"{
+            "elements": [
+                {
+                    "from": [0, 0, 0],
+                    "to": [16, 16, 16],
+                    "faces": {
+                        "down": { "texture": "#t" },
+                        "up": { "texture": "#t" },
+                        "north": { "texture": "#t" },
+                        "south": { "texture": "#t" },
+                        "west": { "texture": "#t" },
+                        "east": { "texture": "#t" }
+                    }
+                }
+            ],
+            "textures": { "t": "minecraft:block/stone" }
+        }"##;
+
+        let def: BlockModelDefinition = serde_json::from_str(json).unwrap();
+        let quads = def.bake_quads(|_| None).unwrap();
+        assert_eq!(quads.len(), 6);
+
+        for dir in Direction::ALL {
+            let quad = quads
+                .iter()
+                .find(|q| q.direction == dir)
+                .unwrap_or_else(|| panic!("missing {dir:?} face"));
+            let v: [[f32; 3]; 4] = quad.vertices.map(|v| [v[0], v[1], v[2]]);
+            let normal = cross(sub(v[1], v[0]), sub(v[2], v[0]));
+            let unit = dir_unit(dir);
+            let dot = normal[0] * unit[0] + normal[1] * unit[1] + normal[2] * unit[2];
+            assert!(
+                dot > 0.0,
+                "quad facing {dir:?} has inward winding (dot = {dot})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_cross_element_rotation_rescale() {
+        // cross.json rotates axis-aligned planes 45 degrees about Y with
+        // rescale: vanilla `CuboidRotation` enlarges them to corner-to-corner
+        // diagonals instead of shrinking their projected width.
+        let json = r##"{
+            "elements": [
+                {   "from": [ 0.8, 0, 8 ],
+                    "to": [ 15.2, 16, 8 ],
+                    "rotation": { "origin": [ 8, 8, 8 ], "axis": "y", "angle": 45, "rescale": true },
+                    "faces": {
+                        "north": { "uv": [ 0, 0, 16, 16 ], "texture": "#t" }
+                    }
+                }
+            ],
+            "textures": { "t": "minecraft:block/stone" }
+        }"##;
+
+        let def: BlockModelDefinition = serde_json::from_str(json).unwrap();
+        let quads = def.bake_quads(|_| None).unwrap();
+        assert_eq!(quads.len(), 1);
+
+        let expected = [
+            [15.2, 16.0, 0.8],
+            [15.2, 0.0, 0.8],
+            [0.8, 0.0, 15.2],
+            [0.8, 16.0, 15.2],
+        ];
+        for (got, want) in quads[0].vertices.iter().zip(expected) {
+            for a in 0..3 {
+                assert!(
+                    (got[a] - want[a]).abs() < 1e-3,
+                    "got {got:?}, want {want:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_variant_rotation_and_uvlock() {
+        let model: BlockModelId = serde_json::from_str("\"minecraft:block/test\"").unwrap();
+        let variant = ModelVariant {
+            model,
+            uvlock: true,
+            weight: 1,
+            x: crate::RotationDegrees::R0,
+            y: crate::RotationDegrees::R90,
+            z: crate::RotationDegrees::R0,
+        };
+
+        let north_face: [[f32; 3]; 4] = [
+            [16.0, 16.0, 0.0],
+            [16.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 16.0, 0.0],
+        ];
+        let mut quads = vec![crate::BakedQuad {
+            vertices: north_face.map(|v| Vec3f::new(v[0], v[1], v[2])),
+            uvs: [[0.0, 0.0], [16.0, 0.0], [16.0, 16.0], [0.0, 16.0]],
+            direction: Direction::North,
+            texture: crate::TextureId::Block(crate::BlockTextureId::new(
+                "minecraft".to_string(),
+                "stone".to_string(),
+            )),
+            cullface: Some(Direction::North),
+            tintindex: None,
+            shade_direction_override: None,
+            light_emission: 0,
+        }];
+
+        variant.transform_quads(&mut quads);
+
+        for vertex in &quads[0].vertices {
+            assert!(
+                (vertex[0] - 16.0).abs() < 1e-4,
+                "expected east plane, got {:?}",
+                vertex
+            );
+        }
+        assert_eq!(quads[0].direction, Direction::East);
+        assert_eq!(quads[0].cullface, Some(Direction::East));
+        assert_eq!(quads[0].shade_factor(), 0.6);
+    }
+
+    #[test]
+    fn test_real_furnace_variant_rotation() {
+        let assets = assets_dir();
+
+        let blockstate: BlockStateDefinition =
+            serde_json::from_reader(File::open(assets.join("blockstates/furnace.json")).unwrap())
+                .unwrap();
+
+        let state = BlockState::all()
+            .find(|s| s.block().name() == "furnace" && s.facing() == Direction::East)
+            .expect("furnace east state");
+
+        let resolution = blockstate.resolve(state).unwrap();
+        let crate::BlockModelResolution::Unified(variants) = resolution else {
+            panic!("expected unified resolution");
+        };
+        assert_eq!(variants.len(), 1);
+        assert!(matches!(variants[0].y, crate::RotationDegrees::R90));
+        assert!(!variants[0].uvlock);
+
+        let model: BlockModelDefinition =
+            serde_json::from_reader(File::open(assets.join("models/block/furnace.json")).unwrap())
+                .unwrap();
+
+        let resolver = |id: &BlockModelId| -> Option<BlockModelDefinition> {
+            let name = id.to_string().rsplit('/').next()?.to_string();
+            let path = assets.join("models/block").join(format!("{name}.json"));
+            serde_json::from_reader(File::open(path).ok()?).ok()
+        };
+
+        let mut quads = model.bake_quads(resolver).unwrap();
+        assert!(!quads.is_empty());
+
+        let front_index = quads
+            .iter()
+            .position(|q| q.texture.to_string().contains("furnace_front"))
+            .expect("front face quad");
+        assert_eq!(quads[front_index].direction, Direction::North);
+        for vertex in &quads[front_index].vertices {
+            assert!(
+                (vertex[2]).abs() < 1e-4,
+                "front should start on north plane"
+            );
+        }
+
+        variants[0].transform_quads(&mut quads);
+
+        for vertex in &quads[front_index].vertices {
+            assert!(
+                (vertex[0] - 16.0).abs() < 1e-4,
+                "front should move to east plane, got {:?}",
+                vertex
+            );
+        }
+
+        assert_eq!(quads[front_index].direction, Direction::East);
+        assert_eq!(quads[front_index].cullface, Some(Direction::East));
+        assert_eq!(quads[front_index].shade_factor(), 0.6);
+    }
+
+    #[test]
+    fn test_grass_side_uv_orientation() {
+        let assets = assets_dir();
+        let model: BlockModelDefinition = serde_json::from_reader(
+            File::open(assets.join("models/block/grass_block.json")).unwrap(),
+        )
+        .unwrap();
+
+        let resolver = |id: &BlockModelId| -> Option<BlockModelDefinition> {
+            let name = id.to_string().rsplit('/').next()?.to_string();
+            let path = assets.join("models/block").join(format!("{name}.json"));
+            serde_json::from_reader(File::open(path).ok()?).ok()
+        };
+
+        let quads = model.bake_quads(resolver).unwrap();
+
+        let south = quads
+            .iter()
+            .find(|q| q.direction == Direction::South && q.tintindex.is_none())
+            .expect("untinted south side face");
+        assert_eq!(south.vertices[0], Vec3f::new(0.0, 16.0, 16.0));
+        assert_eq!(
+            south.uvs,
+            [[0.0, 0.0], [0.0, 16.0], [16.0, 16.0], [16.0, 0.0]]
+        );
+        assert!(south.texture.to_string().ends_with("grass_block_side"));
+
+        let up = quads
+            .iter()
+            .find(|q| q.direction == Direction::Up)
+            .expect("top face");
+        assert_eq!(up.tintindex, Some(0));
+        assert_eq!(up.uvs, [[0.0, 0.0], [0.0, 16.0], [16.0, 16.0], [16.0, 0.0]]);
+    }
+
+    #[test]
+    fn test_cross_model_shade_override() {
+        let assets = assets_dir();
+        let model: BlockModelDefinition =
+            serde_json::from_reader(File::open(assets.join("models/block/cross.json")).unwrap())
+                .unwrap();
+
+        let quads = model.bake_quads(|_| None).unwrap();
+        assert_eq!(quads.len(), 4);
+
+        for quad in &quads {
+            assert_eq!(quad.shade_direction_override, Some(Direction::Up));
+            assert_eq!(quad.shade_factor(), 1.0);
+            assert!(matches!(
+                quad.direction,
+                Direction::North | Direction::South | Direction::West | Direction::East
+            ));
+        }
+    }
+
+    #[test]
+    fn test_grass_variant_rotation_permutes_faces_rigidly() {
+        use crate::blockstates::ModelVariant;
+        let assets = assets_dir();
+        let resolver = |id: &BlockModelId| -> Option<BlockModelDefinition> {
+            let name = id.to_string().rsplit('/').next()?.to_string();
+            let path = assets.join("models/block").join(format!("{name}.json"));
+            serde_json::from_reader(File::open(path).ok()?).ok()
+        };
+        let model: BlockModelDefinition = serde_json::from_reader(
+            File::open(assets.join("models/block/grass_block.json")).unwrap(),
+        )
+        .unwrap();
+        let mut quads = model.bake_quads(resolver).unwrap();
+        let variant = ModelVariant {
+            model: serde_json::from_str("\"minecraft:block/grass_block\"").unwrap(),
+            uvlock: false,
+            weight: 1,
+            x: crate::RotationDegrees::R0,
+            y: crate::RotationDegrees::R90,
+            z: crate::RotationDegrees::R0,
+        };
+        variant.transform_quads(&mut quads);
+        assert_eq!(quads.len(), 10);
+
+        // Authored-north faces rotate onto the east plane with east shade.
+        for (texture, tint) in [
+            ("grass_block_side", None),
+            ("grass_block_side_overlay", Some(0)),
+        ] {
+            let quad = quads
+                .iter()
+                .find(|q| {
+                    q.texture.to_string().ends_with(texture) && q.direction == Direction::East
+                })
+                .unwrap_or_else(|| panic!("missing rotated {texture}"));
+            assert_eq!(quad.cullface, Some(Direction::East));
+            assert_eq!(quad.shade_factor(), 0.6);
+            assert_eq!(quad.tintindex, tint);
+            for v in &quad.vertices {
+                assert!((v[0] - 16.0).abs() < 1e-3, "not rigid: {v:?}");
+            }
+        }
+
+        let top = quads
+            .iter()
+            .find(|q| q.direction == Direction::Up)
+            .expect("top face");
+        assert_eq!(top.shade_factor(), 1.0);
+        assert_eq!(top.tintindex, Some(0));
+    }
+
+    #[test]
+    fn test_inverted_element_bakes_flipped_winding() {
+        let json = r##"{
+            "elements": [
+                {
+                    "from": [16, 0, 0],
+                    "to": [0, 16, 16],
+                    "faces": {
+                        "down": { "texture": "minecraft:block/a" },
+                        "up": { "uv": [0, 0, 16, 16], "texture": "minecraft:block/b" },
+                        "north": { "texture": "minecraft:block/c" },
+                        "south": { "texture": "minecraft:block/d" },
+                        "west": { "texture": "minecraft:block/e" },
+                        "east": { "texture": "minecraft:block/f" }
+                    }
+                }
+            ]
+        }"##;
+
+        let def: BlockModelDefinition = serde_json::from_str(json).unwrap();
+        let quads = def.bake_quads(|_| None).unwrap();
+        assert_eq!(quads.len(), 6);
+
+        for (texture, direction) in [
+            ("a", Direction::Up),
+            ("b", Direction::Down),
+            ("c", Direction::South),
+            ("d", Direction::North),
+            ("e", Direction::West),
+            ("f", Direction::East),
+        ] {
+            let quad = quads
+                .iter()
+                .find(|q| q.texture.to_string().ends_with(texture))
+                .unwrap_or_else(|| panic!("missing quad {texture}"));
+            assert_eq!(quad.direction, direction, "texture {texture}");
+            let v: [[f32; 3]; 4] = quad.vertices.map(|v| [v[0], v[1], v[2]]);
+            let normal = cross(sub(v[1], v[0]), sub(v[2], v[0]));
+            let unit = dir_unit(direction);
+            let dot = normal[0] * unit[0] + normal[1] * unit[1] + normal[2] * unit[2];
+            assert!(
+                dot > 0.0,
+                "quad {texture} facing {:?} has inward winding (dot = {dot})",
+                quad.direction
+            );
+        }
+
+        let up = quads
+            .iter()
+            .find(|q| q.texture.to_string().ends_with('b'))
+            .unwrap();
+        for vertex in &up.vertices {
+            assert!((vertex[1] - 16.0).abs() < 1e-6, "up-key sits at to.y");
+        }
+        for (position, uv) in up.vertices.iter().zip(up.uvs) {
+            let expected = match [position[0] as i32, position[2] as i32] {
+                [0, 16] => [16.0, 16.0],
+                [0, 0] => [16.0, 0.0],
+                [16, 0] => [0.0, 0.0],
+                [16, 16] => [0.0, 16.0],
+                other => panic!("unexpected position {other:?}"),
+            };
+            assert_eq!(uv, expected, "uv follows its vertex during rewind");
+        }
+
+        let north = quads
+            .iter()
+            .find(|q| q.texture.to_string().ends_with('c'))
+            .unwrap();
+        assert_eq!(north.direction, Direction::South);
+        for vertex in &north.vertices {
+            assert!((vertex[2]).abs() < 1e-6, "north-key sits at from.z");
+        }
+    }
+
+    #[test]
+    fn test_trial_spawner_walls_are_double_sided() {
+        let assets = assets_dir();
+        let resolver = |id: &BlockModelId| -> Option<BlockModelDefinition> {
+            let name = id.to_string().rsplit('/').next()?.to_string();
+            let path = assets.join("models/block").join(format!("{name}.json"));
+            serde_json::from_reader(File::open(path).ok()?).ok()
+        };
+
+        let model: BlockModelDefinition = serde_json::from_reader(
+            File::open(assets.join("models/block/trial_spawner.json")).unwrap(),
+        )
+        .unwrap();
+        let quads = model.bake_quads(resolver).unwrap();
+        assert_eq!(quads.len(), 12);
+
+        for quad in &quads {
+            let v: [[f32; 3]; 4] = quad.vertices.map(|v| [v[0], v[1], v[2]]);
+            let normal = cross(sub(v[1], v[0]), sub(v[2], v[0]));
+            let unit = dir_unit(quad.direction);
+            let dot = normal[0] * unit[0] + normal[1] * unit[1] + normal[2] * unit[2];
+            assert!(
+                dot > 0.0,
+                "quad facing {:?} has inward winding (dot = {dot})",
+                quad.direction
+            );
+        }
+
+        let on_plane = |axis: usize, plane: f32| {
+            move |quad: &&crate::BakedQuad| {
+                quad.vertices.iter().all(|v| (v[axis] - plane).abs() < 1e-6)
+            }
+        };
+
+        for (axis, plane, outward, inward) in [
+            (2, 0.0, Direction::North, Direction::South),
+            (2, 16.0, Direction::South, Direction::North),
+            (0, 0.0, Direction::West, Direction::East),
+            (0, 16.0, Direction::East, Direction::West),
+            (1, 16.0, Direction::Up, Direction::Down),
+            (1, 0.0, Direction::Down, Direction::Up),
+        ] {
+            let outer = quads.iter().filter(on_plane(axis, plane));
+            assert!(
+                outer
+                    .clone()
+                    .any(|q| q.direction == outward && q.cullface == Some(outward)),
+                "missing outer {outward:?} wall at {plane}"
+            );
+            let inner_plane = if plane == 0.0 { 0.002 } else { plane - 0.002 };
+            assert!(
+                quads
+                    .iter()
+                    .filter(on_plane(axis, inner_plane))
+                    .any(|q| q.direction == inward),
+                "missing inner {inward:?} wall at {inner_plane}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_texture_chain_resolution() {
+        let assets = assets_dir();
+        let model: BlockModelDefinition = serde_json::from_reader(
+            File::open(assets.join("models/block/blast_furnace.json")).unwrap(),
+        )
+        .unwrap();
+
+        let resolver = |id: &BlockModelId| -> Option<BlockModelDefinition> {
+            let name = id.to_string().rsplit('/').next()?.to_string();
+            let path = assets.join("models/block").join(format!("{name}.json"));
+            serde_json::from_reader(File::open(path).ok()?).ok()
+        };
+
+        let quads = model.bake_quads(resolver).unwrap();
+        assert!(!quads.is_empty());
+
+        let down = quads
+            .iter()
+            .find(|q| q.direction == Direction::Down)
+            .expect("down face");
+        assert!(
+            down.texture.to_string().ends_with("blast_furnace_top"),
+            "chained ref down -> bottom -> top resolved to {}",
+            down.texture
+        );
+
+        assert!(
+            quads
+                .iter()
+                .any(|q| q.texture.to_string().contains("blast_furnace_front")),
+            "child texture override survives parent chain"
+        );
+    }
 }
 
 mod de_impl {
@@ -478,6 +1187,7 @@ mod de_impl {
                 "ambientocclusion",
                 "elements",
                 "textures",
+                "particle",
                 "display",
             ];
 
@@ -502,6 +1212,7 @@ mod de_impl {
                     let mut ambientocclusion: Option<bool> = None;
                     let mut elements: Option<Vec<BlockModelElement>> = None;
                     let mut textures: Option<FxHashMap<String, BlockModelTexture>> = None;
+                    let mut particle: Option<BlockModelTexture> = None;
                     let mut display: Option<FxHashMap<String, Transform>> = None;
 
                     // Loop over key-value pairs in the input map
@@ -556,6 +1267,12 @@ mod de_impl {
 
                                 textures = Some(filtered_map);
                             }
+                            "particle" => {
+                                if particle.is_some() {
+                                    return Err(de::Error::duplicate_field("particle"));
+                                }
+                                particle = Some(map.next_value()?);
+                            }
                             "display" => {
                                 if display.is_some() {
                                     return Err(de::Error::duplicate_field("display"));
@@ -585,6 +1302,7 @@ mod de_impl {
                         ambientocclusion,
                         elements,
                         textures,
+                        particle,
                         display,
                     })
                 }

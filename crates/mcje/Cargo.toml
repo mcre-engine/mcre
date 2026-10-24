@@ -20,4 +20,6 @@ jni = { workspace = true }
 [build-dependencies]
 mcje_downloader = { workspace = true }
 
-tokio = { workspace = true }
+[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
+tokio = { workspace = true, features = ["fs", "rt-multi-thread"] }
+zip = { workspace = true }

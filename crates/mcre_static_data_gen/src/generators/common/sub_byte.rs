@@ -6,7 +6,7 @@ use crate::{
     generators::{Unit, UnitGen},
 };
 
-type MappingFn<'a, T> = Box<dyn Fn(&'a T, &Analysis) -> u8>;
+type MappingFn<'a, T> = Box<dyn Fn(&'a T, &Analysis) -> u8 + 'a>;
 
 // u1 (bool), u2, u4, u8
 pub struct SubByteGen<'a, T> {

@@ -31,6 +31,12 @@ pub enum ResourcePackError {
 
     #[error("Download error: {0}")]
     Download(String),
+
+    #[error("Zip error: {0}")]
+    Zip(String),
+
+    #[error("Missing colormap: {0}")]
+    MissingColormap(String),
 }
 
 pub type Result<T> = core::result::Result<T, ResourcePackError>;

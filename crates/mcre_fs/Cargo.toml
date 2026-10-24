@@ -15,12 +15,19 @@ rust-version.workspace = true
 embedded-io-async = { workspace = true }
 futures-util = "0.3"
 
-# NOTE: The `opfs` crate is v0.2.0 (March 2026) and relatively new.
-# It handles OPFS on web and tokio::fs on native automatically.
-# If maturity becomes a concern, we can replace it with a custom wrapper
-# using web-sys directly for OPFS and tokio::fs for native.
-opfs = "0.2"
-
-tokio = { workspace = true }
 thiserror = "2"
-dirs = "5"
+opfs = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dirs = "7"
+tokio = { workspace = true, features = ["fs"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tempfile = "3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"

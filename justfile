@@ -78,6 +78,12 @@ install-hook:
 data-gen:
   cargo run -r -p data_gen
 
+# ==================== WORLD GENERATION ====================
+
+# Generate a vanilla world into target/gen_world/world (seed=0, radius=512 chunks)
+gen-world seed="0" radius="512" *args:
+  cargo run -r -p gen_world -- --seed {{seed}} --radius {{radius}} {{args}}
+
 # Decompile Minecraft client jar to Java source code (output in target/mc-src/)
 [unix]
 src version=`cat mc-version`:
@@ -146,3 +152,60 @@ bump-version:
   else
     echo "Already at latest version ($LATEST)"
   fi
+
+# ==================== PARITY SHOTS ====================
+
+# Capture a vanilla screenshot for a shot spec (writes target/shots/<name>.vanilla.png)
+shot-vanilla spec:
+  cargo run -r -p vanilla_shot -- --spec {{spec}}
+
+# Capture an mcre screenshot for a shot spec (writes target/shots/<name>.mcre.png)
+shot-mcre spec:
+  cargo run -r -p mcre_renderer --example viewer -- --shot {{spec}}
+
+# Compare two PNGs and write an amplified grayscale diff image
+shotcmp a b out *args:
+  cargo run -r -p shotcmp -- {{a}} {{b}} {{out}} {{args}}
+
+# Capture both engines for a spec and write the diff image
+[unix]
+shot spec:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  cargo run -r -p vanilla_shot -- --spec "{{spec}}"
+  NAME=$(jq -r .name "{{spec}}")
+  STATE="target/shots/$NAME.vanilla.state.json"
+  WATER_VISION=$(jq -r .water_vision "$STATE")
+  ANIMATION_TICKS=$(jq -r .animation_ticks "$STATE")
+  cargo run -r -p mcre_renderer --example viewer -- --shot "{{spec}}" \
+    --water-vision "$WATER_VISION" --animation-ticks "$ANIMATION_TICKS"
+  cargo run -r -p shotcmp -- "target/shots/$NAME.vanilla.png" "target/shots/$NAME.mcre.png" "target/shots/$NAME.diff.png"
+
+# Build the wasm viewer and prepare its browser bundle.
+web-build:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if ! command -v wasm-bindgen >/dev/null; then
+    echo "wasm-bindgen not found; install wasm-bindgen-cli 0.2.129" >&2
+    exit 1
+  fi
+  cargo build -p mcre_renderer --example viewer --target wasm32-unknown-unknown
+  mkdir -p target/web
+  wasm-bindgen --target web --out-name viewer --out-dir target/web target/wasm32-unknown-unknown/debug/examples/viewer.wasm
+  cp web/index.html target/web/index.html
+  python3 web/make_smoke_pack.py target/web/smoke-pack.zip target/web/smoke-save.zip
+
+# Regenerate the native demo reference used by the browser smoke test.
+web-reference:
+  cargo run -p mcre_renderer --example viewer -- --demo-shot web/demo-reference.png
+
+# Build and serve the wasm viewer locally at http://localhost:8000
+web:
+  just web-build
+  python3 -m http.server 8000 --directory target/web
+
+# Build the wasm viewer and smoke it in headless Chromium.
+web-smoke:
+  just web-build
+  npm ci --prefix web
+  npm --prefix web run smoke

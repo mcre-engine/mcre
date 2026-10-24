@@ -12,7 +12,7 @@ repository = "https://github.com/mcre-project/mcre"
 description = "A minecraft clone written in Rust."
 
 edition = "2024"
-rust-version = "1.97.0"
+rust-version = "1.99.0"
 
 [workspace.dependencies]
 mcre_core        = { version = "0.1.0", path = "crates/mcre_core" }
@@ -29,28 +29,43 @@ mcre_static_data_gen = { version = "0.1.0", path = "crates/mcre_static_data_gen"
 
 mcre_fs             = { version = "0.1.0", path = "crates/mcre_fs" }
 mcre_resource_pack  = { version = "0.1.0", path = "crates/mcre_resource_pack" }
+mcre_renderer       = { version = "0.1.0", path = "crates/mcre_renderer" }
+mcre_anvil          = { version = "0.1.0", path = "crates/mcre_anvil" }
+mcre_shot           = { version = "0.1.0", path = "crates/mcre_shot" }
 
 serde        = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json   = { version = "1", default-features = false, features = ["alloc"] }
 indexmap     = { version = "2", default-features = false, features = ["serde"] }
 hashbrown    = { version = "0.17", default-features = false, features = ["serde"] }
 rustc-hash   = { version = "2", default-features = false }
-tokio        = { version = "1", features = ["full"] }
+tokio        = { version = "1", features = ["io-util", "macros", "rt", "sync", "time"] }
 chrono       = { version = "0.4", features = ["serde"] }
 reqwest      = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
 url          = { version = "2", features = ["serde"] }
 futures-core = "0.3"
 bytes        = "1"
-zip          = "8"
+zip          = { version = "9", default-features = false, features = ["deflate"] }
 jni          = { version = "0.22", features = ["invocation"] }
 
 syn          = { version = "3", features = ["full"] }
 quote        = "1"
 proc-macro2  = "1"
-convert_case = "0.11"
+convert_case = "0.12"
 prettyplease = "0.3"
 
 embedded-io-async = "0.7"
+
+wgpu      = "30"
+winit     = "0.30"
+png       = "0.18"
+bytemuck  = { version = "1", features = ["derive"] }
+pollster  = "1"
+thiserror = "2"
+flate2    = "1"
+libm      = "0.2"
+egui      = { version = "0.37", features = ["monochrome_emoji_fonts"] }
+egui-winit  = { version = "0.37", default-features = false }
+egui-wgpu   = "0.37"
 
 [workspace.metadata.cargo-shear]
 ignored = ["mcre_assets", "mcre_static_data"]
