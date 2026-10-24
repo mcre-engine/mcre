@@ -57,6 +57,7 @@ fn atlas() -> Atlas {
         mips: Vec::new(),
         regions: vec![],
         has_alpha: vec![],
+        animations: Vec::new(),
         fallback: AtlasRegion {
             x: 0,
             y: 0,

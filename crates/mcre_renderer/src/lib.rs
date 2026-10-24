@@ -15,7 +15,10 @@ pub mod remesh;
 pub mod renderer;
 pub mod vertex;
 
-pub use atlas::{Atlas, AtlasError, AtlasRegion, build_atlas, build_atlas_square};
+pub use atlas::{
+    AnimationFrame, AnimationFramePixels, Atlas, AtlasAnimator, AtlasError, AtlasRegion,
+    SpriteAnimation, build_atlas, build_atlas_square,
+};
 pub use atmosphere::{
     FOG_COLOR_MULTIPLIER, LAVA_FOG_COLOR, NIGHT_CLOUD_COLOR, OVERWORLD_FOG_COLOR,
     OVERWORLD_SKY_COLOR, SKY_COLOR_MULTIPLIER, SKY_FOG_END_DISTANCE, WATER_FOG_COLOR,

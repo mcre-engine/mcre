@@ -262,6 +262,7 @@ pub struct Renderer {
     shared_indices: SharedQuadIndexBuffer,
     section_table: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
+    atlas_texture: wgpu::Texture,
     atlas_sampler: wgpu::Sampler,
     lightmap_sampler: wgpu::Sampler,
     lightmap_texture: wgpu::Texture,
@@ -369,6 +370,7 @@ impl Renderer {
             egui_renderer,
             bind_group: set.bind_group,
             bind_group_layout: set.bind_group_layout,
+            atlas_texture: set.atlas_texture,
             atlas_sampler: set.atlas_sampler,
             lightmap_sampler: set.lightmap_sampler,
             lightmap_texture: set.lightmap_texture,
@@ -628,7 +630,8 @@ impl Renderer {
     /// rebuilds the bind group. Pipelines and region caches are untouched;
     /// callers must remesh (UVs move) afterwards.
     pub fn set_atlas(&mut self, atlas: &Atlas) {
-        let (_texture, view) = create_atlas_texture(&self.device, &self.queue, atlas);
+        let (texture, view) = create_atlas_texture(&self.device, &self.queue, atlas);
+        self.atlas_texture = texture;
         self.tex_coord_shrink = shrink_for_width(atlas.width);
         self.atlas_texel_size = [1.0 / atlas.width as f32, 1.0 / atlas.height as f32];
         self.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -661,6 +664,19 @@ impl Renderer {
                 },
             ],
         });
+    }
+
+    /// Uploads animated atlas pixels and mip levels into the existing texture.
+    /// The bind group and sprite UVs are unchanged.
+    pub fn update_atlas(&mut self, atlas: &Atlas, pixels: &[u8], mips: &[Vec<u8>]) {
+        upload_atlas_texture(
+            &self.queue,
+            &self.atlas_texture,
+            atlas.width,
+            atlas.height,
+            pixels,
+            mips,
+        );
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -1297,6 +1313,7 @@ struct PipelineSet {
     border: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     bind_group_layout: wgpu::BindGroupLayout,
+    atlas_texture: wgpu::Texture,
     atlas_sampler: wgpu::Sampler,
     lightmap_sampler: wgpu::Sampler,
     lightmap_texture: wgpu::Texture,
@@ -1380,19 +1397,50 @@ fn create_atlas_texture(
         view_formats: &[],
     });
 
-    let levels = std::iter::once((atlas.width, atlas.height, atlas.pixels.as_slice())).chain(
-        atlas.mips.iter().enumerate().map(|(index, mip)| {
-            let level = index as u32 + 1;
-            (atlas.width >> level, atlas.height >> level, mip.as_slice())
-        }),
+    upload_atlas_texture(
+        queue,
+        &atlas_texture,
+        atlas.width,
+        atlas.height,
+        &atlas.pixels,
+        &atlas.mips,
     );
+
+    let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("atlas-view"),
+        format: None,
+        dimension: None,
+        usage: None,
+        aspect: wgpu::TextureAspect::All,
+        base_mip_level: 0,
+        mip_level_count: None,
+        base_array_layer: 0,
+        array_layer_count: None,
+    });
+    (atlas_texture, atlas_view)
+}
+
+fn upload_atlas_texture(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    mips: &[Vec<u8>],
+) {
+    let levels = std::iter::once((width, height, pixels)).chain(mips.iter().enumerate().map(
+        |(index, mip)| {
+            let level = index as u32 + 1;
+            (width >> level, height >> level, mip.as_slice())
+        },
+    ));
     for (level, (width, height, pixels)) in levels.enumerate() {
         if pixels.is_empty() || width == 0 || height == 0 {
             continue;
         }
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: &atlas_texture,
+                texture,
                 mip_level: level as u32,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -1410,19 +1458,6 @@ fn create_atlas_texture(
             },
         );
     }
-
-    let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor {
-        label: Some("atlas-view"),
-        format: None,
-        dimension: None,
-        usage: None,
-        aspect: wgpu::TextureAspect::All,
-        base_mip_level: 0,
-        mip_level_count: None,
-        base_array_layer: 0,
-        array_layer_count: None,
-    });
-    (atlas_texture, atlas_view)
 }
 
 fn create_pipeline(
@@ -1440,7 +1475,7 @@ fn create_pipeline(
     } else {
         wgpu::PolygonMode::Fill
     };
-    let (_atlas_texture, atlas_view) = create_atlas_texture(device, queue, atlas);
+    let (atlas_texture, atlas_view) = create_atlas_texture(device, queue, atlas);
 
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("atlas-sampler"),
@@ -1759,6 +1794,7 @@ fn create_pipeline(
         border,
         bind_group,
         bind_group_layout,
+        atlas_texture,
         atlas_sampler: sampler,
         lightmap_sampler,
         lightmap_texture,

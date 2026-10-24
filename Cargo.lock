@@ -1672,6 +1672,7 @@ dependencies = [
  "mcre_world",
  "png",
  "pollster",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
