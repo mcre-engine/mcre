@@ -1,11 +1,10 @@
 use bytemuck::{Pod, Zeroable};
-use mcre_world::World;
+use mcre_world::{ChunkPos, World};
 
 use crate::atlas::AtlasRegion;
 
 const MAX_PARTICLES: usize = 4096;
-#[cfg(test)]
-const PARTICLES_PER_BLOCK: usize = 64;
+const PARTICLES_PER_BLOCK: usize = 16;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -28,6 +27,7 @@ struct TerrainParticle {
     previous: [f32; 3],
     velocity: [f32; 3],
     size: f32,
+    color: [f32; 3],
     uv: [f32; 4],
     age: u32,
     lifetime: u32,
@@ -39,6 +39,7 @@ impl ParticleSystem {
         block: [i32; 3],
         sprite: AtlasRegion,
         atlas_size: [u32; 2],
+        color: [f32; 3],
     ) {
         let seed = self.seed
             ^ (block[0] as u32 as u64).wrapping_mul(3_129_871)
@@ -47,64 +48,58 @@ impl ParticleSystem {
         self.seed = self.seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut random = ParticleRandom::new(seed);
 
-        for y in 0..4 {
-            for z in 0..4 {
-                for x in 0..4 {
-                    if self.particles.len() >= MAX_PARTICLES {
-                        return;
-                    }
-                    let relative = [
-                        (x as f32 + 0.5) / 4.0,
-                        (y as f32 + 0.5) / 4.0,
-                        (z as f32 + 0.5) / 4.0,
-                    ];
-                    let mut velocity = [
-                        relative[0] - 0.5 + (random.next_f32() * 2.0 - 1.0) * 0.4,
-                        relative[1] - 0.5 + (random.next_f32() * 2.0 - 1.0) * 0.4,
-                        relative[2] - 0.5 + (random.next_f32() * 2.0 - 1.0) * 0.4,
-                    ];
-                    let speed = (random.next_f32() + random.next_f32() + 1.0) * 0.15;
-                    let length = (velocity[0] * velocity[0]
-                        + velocity[1] * velocity[1]
-                        + velocity[2] * velocity[2])
-                        .sqrt();
-                    if length > 0.0 {
-                        for component in &mut velocity {
-                            *component = *component / length * speed * 0.4;
-                        }
-                    }
-                    velocity[1] += 0.1;
-
-                    let lifetime = (4.0 / (random.next_f32() * 0.9 + 0.1)) as u32;
-                    let size = 0.05 * (random.next_f32() + 1.0);
-                    let u_offset = random.next_f32() * 3.0;
-                    let v_offset = random.next_f32() * 3.0;
-                    let uv = [
-                        (sprite.x as f32 + (u_offset + 1.0) * sprite.width as f32 * 0.25)
-                            / atlas_size[0] as f32,
-                        (sprite.x as f32 + u_offset * sprite.width as f32 * 0.25)
-                            / atlas_size[0] as f32,
-                        (sprite.y as f32 + v_offset * sprite.height as f32 * 0.25)
-                            / atlas_size[1] as f32,
-                        (sprite.y as f32 + (v_offset + 1.0) * sprite.height as f32 * 0.25)
-                            / atlas_size[1] as f32,
-                    ];
-                    let position = [
-                        block[0] as f32 + relative[0],
-                        block[1] as f32 + relative[1],
-                        block[2] as f32 + relative[2],
-                    ];
-                    self.particles.push(TerrainParticle {
-                        position,
-                        previous: position,
-                        velocity,
-                        size,
-                        uv,
-                        age: 0,
-                        lifetime,
-                    });
+        for _ in 0..PARTICLES_PER_BLOCK {
+            if self.particles.len() >= MAX_PARTICLES {
+                return;
+            }
+            let relative = [
+                random.next_f32() * 0.8 + 0.1,
+                random.next_f32() * 0.8 + 0.1,
+                random.next_f32() * 0.8 + 0.1,
+            ];
+            let mut velocity = [
+                relative[0] - 0.5 + (random.next_f32() * 2.0 - 1.0) * 0.4,
+                relative[1] - 0.5 + (random.next_f32() * 2.0 - 1.0) * 0.4,
+                relative[2] - 0.5 + (random.next_f32() * 2.0 - 1.0) * 0.4,
+            ];
+            let speed = (random.next_f32() + random.next_f32() + 1.0) * 0.15;
+            let length =
+                (velocity[0] * velocity[0] + velocity[1] * velocity[1] + velocity[2] * velocity[2])
+                    .sqrt();
+            if length > 0.0 {
+                for component in &mut velocity {
+                    *component = *component / length * speed * 0.4;
                 }
             }
+            velocity[1] += 0.1;
+
+            let lifetime = (4.0 / (random.next_f32() * 0.9 + 0.1)) as u32;
+            let size = 0.025 * (random.next_f32() + 1.0);
+            let u_offset = random.next_f32() * 3.0;
+            let v_offset = random.next_f32() * 3.0;
+            let uv = [
+                (sprite.x as f32 + (u_offset + 1.0) * sprite.width as f32 * 0.25)
+                    / atlas_size[0] as f32,
+                (sprite.x as f32 + u_offset * sprite.width as f32 * 0.25) / atlas_size[0] as f32,
+                (sprite.y as f32 + v_offset * sprite.height as f32 * 0.25) / atlas_size[1] as f32,
+                (sprite.y as f32 + (v_offset + 1.0) * sprite.height as f32 * 0.25)
+                    / atlas_size[1] as f32,
+            ];
+            let position = [
+                block[0] as f32 + relative[0],
+                block[1] as f32 + relative[1],
+                block[2] as f32 + relative[2],
+            ];
+            self.particles.push(TerrainParticle {
+                position,
+                previous: position,
+                velocity,
+                size,
+                color,
+                uv,
+                age: 0,
+                lifetime,
+            });
         }
     }
 
@@ -142,11 +137,7 @@ impl ParticleSystem {
                 particle.previous[axis]
                     + (particle.position[axis] - particle.previous[axis]) * self.tick_remainder
             });
-            let (block, sky) = world.light_level((
-                position[0].floor() as i32,
-                position[1].floor() as i32,
-                position[2].floor() as i32,
-            ));
+            let (block, sky) = particle_light(world, position);
             let light = [f32::from(block), f32::from(sky)];
             let [u0, u1, v0, v1] = particle.uv;
             let corners = [
@@ -166,7 +157,7 @@ impl ParticleSystem {
                 vertices.push(ParticleVertex {
                     position: points[index],
                     uv: [u, v],
-                    color: [0.6, 0.6, 0.6, 1.0],
+                    color: [particle.color[0], particle.color[1], particle.color[2], 1.0],
                     light,
                 });
             }
@@ -180,6 +171,38 @@ impl ParticleSystem {
 
     pub fn is_empty(&self) -> bool {
         self.particles.is_empty()
+    }
+}
+
+fn particle_light(world: &World, position: [f32; 3]) -> (u8, u8) {
+    let block = position.map(|value| value.floor() as i32);
+    let light = world.light_level((block[0], block[1], block[2]));
+    if light != (0, 0) {
+        return light;
+    }
+
+    let offsets = [
+        (1, 0, 0),
+        (-1, 0, 0),
+        (0, 1, 0),
+        (0, -1, 0),
+        (0, 0, 1),
+        (0, 0, -1),
+    ];
+    let nearest_light = offsets
+        .into_iter()
+        .filter_map(|(dx, dy, dz)| {
+            let neighbor = (block[0] + dx, block[1] + dy, block[2] + dz);
+            world
+                .is_chunk_loaded(ChunkPos::from_block(neighbor.0, neighbor.2))
+                .then(|| world.light_level(neighbor))
+        })
+        .max_by_key(|(block, sky)| (*block).max(*sky))
+        .unwrap_or((0, 0));
+    if nearest_light == (0, 0) {
+        (0, 4)
+    } else {
+        nearest_light
     }
 }
 
@@ -256,7 +279,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn block_break_spawns_sixty_four_textured_quads() {
+    fn block_break_spawns_sixteen_textured_quads() {
         let mut particles = ParticleSystem::default();
         particles.spawn_block_break(
             [2, 3, 4],
@@ -267,17 +290,31 @@ mod tests {
                 height: 16,
             },
             [128, 128],
+            [0.2, 0.4, 0.8],
         );
-        assert_eq!(particles.len(), PARTICLES_PER_BLOCK);
+        assert_eq!(particles.len(), 16);
+        assert!(
+            particles
+                .particles
+                .iter()
+                .all(|particle| (0.025..=0.05).contains(&particle.size))
+        );
 
         let world = World::new(0);
         let vertices =
             particles.vertices([0.0, 0.0, 0.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0], &world);
-        assert_eq!(vertices.len(), PARTICLES_PER_BLOCK * 6);
+        assert_eq!(vertices.len(), 16 * 6);
         assert!(vertices.iter().all(|vertex| {
             (16.0 / 128.0..=32.0 / 128.0).contains(&vertex.uv[0])
                 && (32.0 / 128.0..=48.0 / 128.0).contains(&vertex.uv[1])
+                && vertex.color == [0.2, 0.4, 0.8, 1.0]
         }));
+    }
+
+    #[test]
+    fn particles_in_unlit_blocks_get_a_minimum_light_level() {
+        let world = World::new(0);
+        assert_eq!(particle_light(&world, [0.5, 0.5, 0.5]), (0, 4));
     }
 
     #[test]
@@ -292,6 +329,7 @@ mod tests {
                 height: 16,
             },
             [16, 16],
+            [1.0, 1.0, 1.0],
         );
         let world = World::new(0);
         particles.update(3.0, &world);

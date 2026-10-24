@@ -1952,10 +1952,17 @@ impl Viewer {
             if current.spawn_terrain_particles()
                 && let Some(texture_id) = self.data.particle_texture_id(u16::from(current))
             {
+                let tint = mcre_renderer::mesh::particle_tint(
+                    &self.data,
+                    &self.world,
+                    current,
+                    target,
+                );
                 self.particles.spawn_block_break(
                     target,
                     self.atlas.region(texture_id),
                     [self.atlas.width, self.atlas.height],
+                    tint,
                 );
             }
             self.world.set_block(

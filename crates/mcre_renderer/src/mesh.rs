@@ -1162,9 +1162,31 @@ fn quad_tint<A: BlockAccess + ?Sized>(
     let Some(source) = tint_sources(state.block().name()).get(tintindex as usize) else {
         return [1.0; 3];
     };
-    rgb_to_float(match source {
+    rgb_to_float(tint_source_color(data, access, state, block_pos, *source))
+}
+
+pub fn particle_tint<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    access: &A,
+    state: BlockState,
+    block_pos: [i32; 3],
+) -> [f32; 3] {
+    let Some(source) = tint_sources(state.block().name()).first() else {
+        return [1.0; 3];
+    };
+    rgb_to_float(tint_source_color(data, access, state, block_pos, *source))
+}
+
+fn tint_source_color<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    access: &A,
+    state: BlockState,
+    block_pos: [i32; 3],
+    source: TintSource,
+) -> [u8; 3] {
+    match source {
         TintSource::Blank => [255, 255, 255],
-        TintSource::Constant(rgb) => *rgb,
+        TintSource::Constant(rgb) => rgb,
         TintSource::Grass | TintSource::SugarCane => {
             average_biome_color(access, block_pos, &data.colormaps, biome_grass_color)
         }
@@ -1187,7 +1209,7 @@ fn quad_tint<A: BlockAccess + ?Sized>(
         }
         TintSource::Redstone => redstone_color(state.power()),
         TintSource::Stem => stem_color(state.age()),
-    })
+    }
 }
 
 fn average_biome_color<A: BlockAccess + ?Sized>(
@@ -2563,6 +2585,15 @@ mod tests {
                 0x99 as f32 / 255.0,
                 0x61 as f32 / 255.0
             ]
+        );
+        assert_eq!(
+            particle_tint(&data, &access, spruce, [0, 10, 0]),
+            tint_of(&data, &access, spruce, Some(0))
+        );
+        let vine = Block::VINE.default_state();
+        assert_eq!(
+            particle_tint(&data, &access, vine, [0, 10, 0]),
+            tint_of(&data, &access, vine, Some(0))
         );
         let petals = Block::PINK_PETALS.default_state();
         assert_eq!(tint_of(&data, &access, petals, Some(0)), [1.0, 1.0, 1.0]);
