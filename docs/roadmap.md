@@ -299,7 +299,17 @@ M8 — Liquids — done
 - Torch flicker is not present in 26.4-snapshot-4 (no `flicker` shader or
   source); skipped.
 
-Next in the queue: particles → block entities → entities (M11-M13).
+Current queue: M11 particles → M12 block entities → M13 entities.
+
+### M11 — Particles (in progress)
+- [x] Native-viewer terrain debris on block break: respects
+      `shouldSpawnTerrainParticles`, resolves inherited model `particle`
+      textures already present in the terrain atlas (otherwise uses the first
+      baked quad texture), samples the atlas and lightmap, interpolates/ticks
+      particles, and draws depth-tested blended billboards.
+- [ ] Complete vanilla particle providers/events and shape-accurate particle
+      spawning/collision; the current debris spawn pattern uses unit-cube
+      bounds for every block shape.
 
 ## 5. Open decisions / risks
 - UI toolkit locked to `egui` (native + wasm). Revisit only if it fights

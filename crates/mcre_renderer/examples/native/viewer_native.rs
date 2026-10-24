@@ -8,7 +8,7 @@ use mcre_renderer::clouds::{CLOUD_HEIGHT, CloudStatus, CloudTexture};
 use mcre_renderer::lightmap::{DAY_LENGTH_TICKS, DEFAULT_BRIGHTNESS, sky_light_factor};
 use mcre_renderer::{
     Atlas, AtlasAnimator, CullParams, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4,
-    Mesh, MeshOptions, MeshResult, MeshWorker, RenderChunk, Renderer, SectionMesh,
+    Mesh, MeshOptions, MeshResult, MeshWorker, ParticleSystem, RenderChunk, Renderer, SectionMesh,
     SectionVisibility, StreamSource, build_atlas, build_atlas_square, cloud_color_for,
     find_visible_sections, mesh_chunk, pack_chunk_sections, vanilla_fog,
 };
@@ -134,9 +134,11 @@ fn main() {
 
     let mut viewer = Viewer {
         camera: FlyCamera::new(camera_pos),
+        data: data.clone(),
         atlas: atlas.clone(),
         animator,
         world,
+        particles: ParticleSystem::default(),
         meshes,
         worker: MeshWorker::new(data, atlas, streamer.as_ref().map(|s| s.source.clone())),
         streamer,
@@ -948,9 +950,11 @@ fn raycast(
 
 struct Viewer {
     camera: FlyCamera,
+    data: Arc<ResourcePackData>,
     atlas: Arc<Atlas>,
     animator: AtlasAnimator,
     world: World,
+    particles: ParticleSystem,
     meshes: Vec<ChunkMesh>,
     worker: MeshWorker,
     streamer: Option<Streamer>,
@@ -1290,6 +1294,9 @@ impl Viewer {
                 self.animator.pixels(),
                 self.animator.mips(),
             );
+        }
+        if self.shot.is_none() {
+            self.particles.update(dt, &self.world);
         }
 
         let mut forward = 0.0;
@@ -1821,6 +1828,12 @@ impl Viewer {
     /// capture offscreen and exit.
     fn shot_frame(&mut self, view_proj: [f32; 16], camera_pos: [f32; 3], size: (u32, u32)) {
         let masks = self.visible_masks(view_proj, camera_pos);
+        let particle_vertices = self.particles.vertices(
+            camera_pos,
+            self.camera.forward(),
+            self.camera.right(),
+            &self.world,
+        );
         let Some(shot) = self.shot.as_mut() else {
             return;
         };
@@ -1834,6 +1847,7 @@ impl Viewer {
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };
+        renderer.set_particles(&particle_vertices);
         let chunks: Vec<RenderChunk<'_>> = masks
             .iter()
             .enumerate()
@@ -1922,6 +1936,15 @@ impl Viewer {
                 Block::STONE.default_state(),
             );
         } else {
+            if current.spawn_terrain_particles()
+                && let Some(texture_id) = self.data.particle_texture_id(u16::from(current))
+            {
+                self.particles.spawn_block_break(
+                    target,
+                    self.atlas.region(texture_id),
+                    [self.atlas.width, self.atlas.height],
+                );
+            }
             self.world.set_block(
                 (target[0], target[1], target[2]),
                 Block::AIR.default_state(),
@@ -2012,9 +2035,16 @@ impl Viewer {
         egui: Option<EguiFrame<'_>>,
     ) {
         let masks = self.visible_masks(view_proj, camera_pos);
+        let particle_vertices = self.particles.vertices(
+            camera_pos,
+            self.camera.forward(),
+            self.camera.right(),
+            &self.world,
+        );
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };
+        renderer.set_particles(&particle_vertices);
         let chunks: Vec<RenderChunk<'_>> = masks
             .iter()
             .enumerate()
@@ -2074,6 +2104,8 @@ impl Viewer {
                 self.cloud_texture = cloud_texture;
                 self.atlas = atlas.clone();
                 self.animator = AtlasAnimator::new(&atlas);
+                self.data = data.clone();
+                self.particles = ParticleSystem::default();
                 let source = self.streamer.as_ref().map(|s| s.source.clone());
                 self.worker = MeshWorker::new(data, atlas, source);
                 self.generation = 0;

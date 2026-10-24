@@ -153,7 +153,22 @@ Storage decisions (locked):
 - [x] Viewer: demo pond, underwater fog + FOV
       (`Camera.calculateFogType`, `WATER_FOG_COLOR`, lava fog, 60°).
 
-Order: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M9 → M8. Next: M10 (animations).
+## M10 — Texture animations
+
+- [x] `.png.mcmeta` metadata, frame extraction and mip chains; `AtlasAnimator`
+      updates native/web atlases while shot captures remain fixed on frame 0.
+
+## M11 — Particles (in progress)
+
+- [x] Native viewer terrain-debris foundation: inherited model particle
+      textures where atlas-backed (otherwise first baked quad texture), atlas
+      UVs, lightmap/fog shading, fixed-step motion and a depth-tested blended
+      billboard pass for block-break interaction.
+- [ ] Vanilla particle providers/events, shape-aware spawn bounds and
+      collision, then effect/entity particle sources.
+
+Order: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M9 → M8 → M10 → M11.
+Next: continue M11 (particles).
 Verify each milestone: `cargo ck`, `cargo lint -- -D warnings`,
 `cargo test --workspace --all-features`, `cargo fmt --check`, `typos`,
 25s viewer smoke (expect exit 124).
