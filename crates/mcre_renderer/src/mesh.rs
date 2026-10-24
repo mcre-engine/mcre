@@ -1780,14 +1780,23 @@ mod tests {
         assert!(!should_render_face(&data, bot, bot, Direction::Up, options));
     }
 
-    /// State ids captured with `tasks/data_gen/examples/occlusion_probe.rs`:
-    /// stone, glass, oak_leaves, oak_stairs[east,straight,bottom], snow[1],
-    /// oak_fence[bare], oak_trapdoor[north,bottom,closed], glass_pane[bare],
-    /// hopper[down], oak_slab[top], oak_slab[bottom], powder_snow,
-    /// copper_grate. Re-run the probe after a version bump.
-    const PROBE_STATES: [u16; 13] = [
-        1, 661, 268, 5534, 8589, 8668, 8801, 10067, 13082, 15180, 15182, 30537, 32896,
-    ];
+    fn probe_states() -> [BlockState; 13] {
+        [
+            BlockState::from(1),
+            BlockState::from(661),
+            BlockState::from(268),
+            BlockState::from(5534),
+            BlockState::from(8589),
+            BlockState::from(8668),
+            BlockState::from(8801),
+            BlockState::from(10067),
+            BlockState::from(13082),
+            top_slab(),
+            bottom_slab(),
+            Block::POWDER_SNOW.default_state(),
+            Block::COPPER_GRATE.default_state(),
+        ]
+    }
 
     /// Vanilla `getFaceOcclusionShape` per direction: `c` = unit-cube
     /// singleton, `e` = empty singleton, `o` = any other shape.
@@ -1853,7 +1862,7 @@ mod tests {
             Direction::West,
             Direction::East,
         ];
-        let states = PROBE_STATES.map(BlockState::from);
+        let states = probe_states();
 
         for (i, state) in states.iter().enumerate() {
             let boxes = state.occlusion_boxes();
@@ -1868,9 +1877,10 @@ mod tests {
                     (true, true) => unreachable!(),
                 };
                 assert_eq!(
-                    actual, expected,
+                    actual,
+                    expected,
                     "face kind of state {} toward {direction:?}",
-                    PROBE_STATES[i]
+                    u16::from(*state)
                 );
             }
         }
@@ -1883,8 +1893,8 @@ mod tests {
                         should_render_face(&data, *state, *neighbor, *direction, options),
                         expected,
                         "state {} neighbor {} toward {direction:?}",
-                        PROBE_STATES[i],
-                        PROBE_STATES[j]
+                        u16::from(*state),
+                        u16::from(*neighbor)
                     );
                 }
             }

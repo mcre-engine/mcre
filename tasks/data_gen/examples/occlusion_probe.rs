@@ -46,10 +46,10 @@ async fn main(env: &mut Env<'_>) {
         (8801, "oak_trapdoor"),
         (10067, "glass_pane"),
         (13082, "hopper"),
-        (15180, "oak_slab_top"),
-        (15182, "oak_slab_bottom"),
-        (30537, "powder_snow"),
-        (32896, "copper_grate"),
+        (15592, "oak_slab_top"),
+        (15594, "oak_slab_bottom"),
+        (30949, "powder_snow"),
+        (33308, "copper_grate"),
     ];
 
     let mut states = Vec::new();

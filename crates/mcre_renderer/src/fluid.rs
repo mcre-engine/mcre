@@ -883,20 +883,20 @@ mod tests {
         // replicated via `getFaceOcclusionShape` + `Shapes.blockOccludes` on
         // `box(0, 0, 0, 1, height, 1)`; bit per height {0.5, 0.8889, 1.0} and
         // columns DOWN, UP, NORTH, SOUTH, WEST, EAST.
-        const PROBE_STATES: [u16; 13] = [
-            1,     // stone
-            661,   // glass
-            268,   // oak_leaves
-            5534,  // oak_stairs
-            8589,  // snow_1
-            8668,  // oak_fence
-            8801,  // oak_trapdoor
-            10067, // glass_pane
-            13082, // hopper
-            15180, // oak_slab_top
-            15182, // oak_slab_bottom
-            30537, // powder_snow
-            32896, // copper_grate
+        let probe_states = [
+            BlockState::from(1),
+            BlockState::from(661),
+            BlockState::from(268),
+            BlockState::from(5534),
+            BlockState::from(8589),
+            BlockState::from(8668),
+            BlockState::from(8801),
+            BlockState::from(10067),
+            BlockState::from(13082),
+            slab(SlabType::Top),
+            slab(SlabType::Bottom),
+            Block::POWDER_SNOW.default_state(),
+            Block::COPPER_GRATE.default_state(),
         ];
         const PROBE_HEIGHTS: [f32; 3] = [0.5, 0.8888889, 1.0];
         const PROBE_OCCLUDED: [[u8; 6]; 13] = [
@@ -922,15 +922,16 @@ mod tests {
             Direction::West,
             Direction::East,
         ];
-        for (index, id) in PROBE_STATES.iter().enumerate() {
-            let boxes = BlockState::from(*id).occlusion_boxes();
+        for (index, state) in probe_states.iter().enumerate() {
+            let boxes = state.occlusion_boxes();
             for (dir_idx, direction) in directions.iter().enumerate() {
                 for (height_idx, height) in PROBE_HEIGHTS.iter().enumerate() {
                     let expected = PROBE_OCCLUDED[index][dir_idx] >> height_idx & 1 == 1;
                     assert_eq!(
                         fluid_face_occluded(*direction, *height, boxes),
                         expected,
-                        "state {id} toward {direction:?} at height {height}"
+                        "state {} toward {direction:?} at height {height}",
+                        u16::from(*state)
                     );
                 }
             }

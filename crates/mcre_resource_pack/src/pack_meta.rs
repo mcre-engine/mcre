@@ -50,7 +50,7 @@ impl PackVersion {
 
     pub const CURRENT: Self = Self {
         major: 100,
-        minor: 1,
+        minor: 2,
     };
 }
 
@@ -286,7 +286,7 @@ mod tests {
                 "entries": [
                     {"directory": "old", "max_format": 50},
                     {"directory": "current", "min_format": 90},
-                    {"directory": "exact", "min_format": [100, 1], "max_format": [100, 1]},
+                    {"directory": "exact", "min_format": [100, 2], "max_format": [100, 2]},
                     {"directory": "legacy", "formats": [90, 200]},
                     {"directory": "legacy_old", "formats": [10, 50]},
                     {"directory": "future", "min_format": 200},

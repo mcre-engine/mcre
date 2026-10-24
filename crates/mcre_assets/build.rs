@@ -28,7 +28,14 @@ async fn main() {
         .join(&target_mc_version)
         .join("assets");
 
-    if cache_dir.exists() {
+    let minecraft_assets = cache_dir.join("minecraft");
+    if minecraft_assets
+        .join("models/block/grass_block.json")
+        .is_file()
+        && minecraft_assets
+            .join("blockstates/grass_block.json")
+            .is_file()
+    {
         return;
     }
 
