@@ -42,11 +42,16 @@ Current liquid results: underwater MAE `3.389` (top half `3.019`), surface
 bottom half `1.995`. The surface shot's sky remains the dominant residual
 because the renderer still uses a flat sky clear color above water.
 
-Five underground probes (`docs/shots/underground*.json`) use the same noon
-world and gamma `0.1`; their MAEs are `3.9934`, `2.9639`, `3.5373`, `3.2152`,
-and `2.4473`. The vanilla camera switches to spectator during shot teleport so
-collision and falling cannot move it away from the specified eye position.
-The renderer's flat sky clear color was shifted toward vanilla's pale blue sky.
+Five underground probes (`docs/shots/underground*.json`) now look into the same
+large dripstone cavern around `[76, 16, -24]`, from varied positions and angles.
+They use noon and gamma `1.0` to keep the cave detail visible. The vanilla shot
+freezes world ticks and animated atlas textures and mutes master audio before
+capturing; MCRE's shot scene and animation clock are fixed by the spec. The
+vanilla camera switches to spectator during shot teleport so collision and
+falling cannot move it away from the specified eye position. Underground
+lighting is a known remaining parity gap, so these cave scores are not expected
+to match the prior near-black probes. Current MAEs are `17.7045`, `30.2189`,
+`20.4203`, `26.9217`, and `19.5916`.
 
 ## Spec format
 
@@ -104,7 +109,7 @@ which:
    - writes `options.txt` with `onboardAccessibility: false` (skips the
      narrator welcome screen so `--quickPlaySingleplayer` runs without
      manual input), `fov`, `fovEffectScale: 0` (see below), `gamma`,
-     `renderDistance`, `music: 0`, no bobbing, no fullscreen, etc.
+     `renderDistance`, master/music volume 0, no bobbing, no fullscreen, etc.
 
    The freeze keeps the player in creative flight, and vanilla multiplies
    the FOV by 1.1 while flying (`AbstractClientPlayer#getFieldOfViewModifier`).
@@ -126,6 +131,7 @@ which:
    | `verify_framebuffer` | reads the window size; if it doesn't match `spec.width × height`, calls `Window#setWindowed(logical_w, logical_h)` and retries (handles macOS Retina 2×). |
    | `verify_clock`   | reads `ClientLevel.getOverworldClockTime()` (inherited from `Level`); must equal `spec.time_ticks`. |
    | `hide`           | `Minecraft.gui.hud.toggle()` if not already hidden. |
+   | `freeze`         | Freezes integrated-server ticks, clears animated atlas tick states, sets master volume to zero and stops active sounds. |
    | `grab`           | `Screenshot.grab(gameDirectory, name, mainRenderTarget, 1, cb)`. The callback is empty; the actual write happens on `Util.ioPool()` once the GPU readback fence drains. |
    | `stop`           | `Minecraft.stop()` to clean up. |
 
