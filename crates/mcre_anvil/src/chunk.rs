@@ -391,6 +391,19 @@ pub fn load_chunk(
         stats.skipped_chunks += 1;
         return Ok(None);
     };
+    load_chunk_from_nbt(&root, chunk_x, chunk_z, blocks, biomes, stats)
+}
+
+/// Loads one chunk from an already-parsed chunk NBT root. The browser save
+/// loader reads region bytes through OPFS and calls this directly.
+pub fn load_chunk_from_nbt(
+    root: &Tag,
+    chunk_x: i32,
+    chunk_z: i32,
+    blocks: &BlockResolver,
+    biomes: &BiomeResolver,
+    stats: &mut ImportStats,
+) -> Result<Option<Chunk>, Error> {
     let Some(sections) = root.get("sections").and_then(Tag::as_list) else {
         stats.skipped_chunks += 1;
         return Ok(None);
@@ -580,6 +593,20 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_chunk_from_parsed_nbt() {
+        let (_, root) = crate::nbt::read_named(&chunk_payload()).unwrap();
+        let blocks = BlockResolver::new();
+        let biomes = BiomeResolver::new();
+        let mut stats = ImportStats::default();
+        let chunk = load_chunk_from_nbt(&root, 5, -3, &blocks, &biomes, &mut stats)
+            .expect("load")
+            .expect("present");
+        assert_eq!((chunk.pos().x, chunk.pos().z), (5, -3));
+        assert_eq!(chunk.get_block(0, 5, 0).block().name(), "stone");
+        assert_eq!(chunk.biome_at(0, 5, 0).name(), "plains");
     }
 
     fn chunk_payload_legacy_biomes() -> Vec<u8> {

@@ -3,7 +3,9 @@ pub mod nbt;
 pub mod region;
 pub mod resolve;
 
-pub use chunk::{ImportRect, ImportStats, import_area, import_chunk, load_chunk};
+pub use chunk::{
+    ImportRect, ImportStats, import_area, import_chunk, load_chunk, load_chunk_from_nbt,
+};
 pub use region::{RegionFile, chunk_nbt, chunk_present, chunk_status, region_file_path};
 pub use resolve::{BiomeResolver, BlockResolver};
 
@@ -112,7 +114,13 @@ fn gzip(bytes: &[u8]) -> Vec<u8> {
 /// as its root compound. Plain NBT without a gzip header is accepted too.
 pub fn read_gzip_nbt(path: &Path) -> Result<nbt::Tag, Error> {
     let bytes = std::fs::read(path).map_err(|err| Error::Io(err.to_string()))?;
-    let raw = gunzip(&bytes)?;
+    read_gzip_nbt_bytes(&bytes)
+}
+
+/// Parse gzip-compressed (or plain) NBT bytes. The browser save loader uses
+/// this after reading `level.dat` through OPFS.
+pub fn read_gzip_nbt_bytes(bytes: &[u8]) -> Result<nbt::Tag, Error> {
+    let raw = gunzip(bytes)?;
     let (_, root) = nbt::read_named(&raw)?;
     Ok(root)
 }
@@ -143,9 +151,7 @@ pub fn write_level_dat(save_dir: &Path, root: &nbt::Tag) -> Result<(), Error> {
 fn load_level_data(save_dir: &Path) -> Result<nbt::Tag, Error> {
     let bytes =
         std::fs::read(save_dir.join("level.dat")).map_err(|err| Error::Io(err.to_string()))?;
-    let raw = gunzip(&bytes)?;
-    let (_, root) = nbt::read_named(&raw)?;
-    Ok(root)
+    read_gzip_nbt_bytes(&bytes)
 }
 
 /// Read the world seed.
@@ -181,8 +187,13 @@ pub fn read_seed(save_dir: &Path) -> Result<i64, Error> {
 }
 
 pub fn read_spawn(save_dir: &Path) -> Result<Spawn, Error> {
-    let root = load_level_data(save_dir)?;
-    let data = root.get("Data").unwrap_or(&root);
+    read_spawn_from_root(&load_level_data(save_dir)?)
+}
+
+/// Extract the spawn from an already-parsed `level.dat` root. The browser
+/// save loader uses this after reading and decompressing the file itself.
+pub fn read_spawn_from_root(root: &nbt::Tag) -> Result<Spawn, Error> {
+    let data = root.get("Data").unwrap_or(root);
     let spawn = data.get("spawn").ok_or(Error::MissingField("spawn"))?;
     let pos = spawn.get("pos").and_then(|tag| match tag {
         nbt::Tag::IntArray(values) => {
@@ -292,6 +303,45 @@ mod tests {
         assert_eq!(read_seed(&dir).unwrap(), -1234);
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reads_gzip_nbt_bytes() {
+        let nbt_bytes = vec![nbt::COMPOUND, 0, 0, 0];
+        let mut gzip = Vec::new();
+        {
+            use std::io::Write;
+            let mut encoder =
+                flate2::write::GzEncoder::new(&mut gzip, flate2::Compression::default());
+            encoder.write_all(&nbt_bytes).unwrap();
+            encoder.finish().unwrap();
+        }
+        let root = read_gzip_nbt_bytes(&gzip).unwrap();
+        assert!(matches!(root, nbt::Tag::Compound(_)));
+    }
+
+    #[test]
+    fn reads_spawn_from_root_tag() {
+        let root = nbt::Tag::Compound(vec![(
+            "Data".into(),
+            nbt::Tag::Compound(vec![(
+                "spawn".into(),
+                nbt::Tag::Compound(vec![
+                    ("pos".into(), nbt::Tag::IntArray(vec![8, 70, -3])),
+                    (
+                        "dimension".into(),
+                        nbt::Tag::String("minecraft:overworld".into()),
+                    ),
+                    ("yaw".into(), nbt::Tag::Float(90.0)),
+                    ("pitch".into(), nbt::Tag::Float(-10.0)),
+                ]),
+            )]),
+        )]);
+        let spawn = read_spawn_from_root(&root).unwrap();
+        assert_eq!(spawn.pos, (8, 70, -3));
+        assert_eq!(spawn.dimension, "minecraft:overworld");
+        assert_eq!(spawn.yaw, 90.0);
+        assert_eq!(spawn.pitch, -10.0);
     }
 
     #[test]

@@ -40,10 +40,30 @@ pub struct RegionFile {
 impl RegionFile {
     pub fn open(path: &Path) -> Result<Self, Error> {
         let bytes = std::fs::read(path).map_err(|err| Error::Io(err.to_string()))?;
+        Self::from_bytes(bytes)
+    }
+
+    /// Parses a region file already held in memory. The browser save loader
+    /// reads `.mca` files through OPFS and uses this instead of
+    /// [`RegionFile::open`].
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
         if bytes.len() < HEADER_SECTORS * SECTOR_BYTES {
             return Err(Error::RegionTooSmall(bytes.len()));
         }
         Ok(Self { bytes })
+    }
+
+    /// Reads the NBT root for a chunk. The file must be the region that
+    /// contains `chunk_x`/`chunk_z`; callers derive the path from those
+    /// coordinates (see [`chunk_nbt`]).
+    pub fn chunk_nbt(&self, chunk_x: i32, chunk_z: i32) -> Result<Option<nbt::Tag>, Error> {
+        let local_x = chunk_x.rem_euclid(32) as u32;
+        let local_z = chunk_z.rem_euclid(32) as u32;
+        let Some(payload) = self.chunk_payload(local_x, local_z)? else {
+            return Ok(None);
+        };
+        let (_, root) = nbt::read_named(&payload)?;
+        Ok(Some(root))
     }
 
     fn location(&self, local_x: u32, local_z: u32) -> (u32, u32) {
@@ -107,14 +127,7 @@ pub fn chunk_nbt(region_dir: &Path, chunk_x: i32, chunk_z: i32) -> Result<Option
     if !path.exists() {
         return Ok(None);
     }
-    let region = RegionFile::open(&path)?;
-    let local_x = chunk_x.rem_euclid(32) as u32;
-    let local_z = chunk_z.rem_euclid(32) as u32;
-    let Some(payload) = region.chunk_payload(local_x, local_z)? else {
-        return Ok(None);
-    };
-    let (_, root) = nbt::read_named(&payload)?;
-    Ok(Some(root))
+    RegionFile::open(&path)?.chunk_nbt(chunk_x, chunk_z)
 }
 
 pub fn region_file_path(region_dir: &Path, chunk_x: i32, chunk_z: i32) -> PathBuf {
@@ -260,6 +273,23 @@ mod tests {
         let (_, root) = nbt::read_named(&payload).unwrap();
         assert_eq!(root.get("xPos"), Some(&nbt::Tag::Int(-3)));
         assert!(region.chunk_payload(1, 0).unwrap().is_none());
+    }
+
+    #[test]
+    fn reads_chunk_from_bytes() {
+        let region = test_region(&sample_payload());
+        let parsed = RegionFile::from_bytes(region.bytes.clone()).unwrap();
+        let root = parsed.chunk_nbt(0, 0).unwrap().unwrap();
+        assert_eq!(root.get("xPos"), Some(&nbt::Tag::Int(-3)));
+        assert!(parsed.chunk_nbt(1, 0).unwrap().is_none());
+    }
+
+    #[test]
+    fn from_bytes_rejects_short_files() {
+        assert!(matches!(
+            RegionFile::from_bytes(vec![0; 100]),
+            Err(Error::RegionTooSmall(_))
+        ));
     }
 
     #[test]
