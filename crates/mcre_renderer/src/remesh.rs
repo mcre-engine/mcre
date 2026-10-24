@@ -145,7 +145,8 @@ pub fn run_job(
 }
 
 pub struct MeshWorker {
-    sender: Sender<MeshJob>,
+    background_sender: Sender<MeshJob>,
+    priority_sender: Sender<MeshJob>,
     receiver: Receiver<MeshResult>,
     next_generation: u64,
 }
@@ -156,16 +157,41 @@ impl MeshWorker {
         atlas: Arc<Atlas>,
         source: Option<StreamSource>,
     ) -> Self {
-        let (job_sender, job_receiver) = channel::<MeshJob>();
+        let (background_sender, background_receiver) = channel::<MeshJob>();
+        let (priority_sender, priority_receiver) = channel::<MeshJob>();
         let (result_sender, result_receiver) = channel::<MeshResult>();
+        let priority_data = data.clone();
+        let priority_atlas = atlas.clone();
+        let priority_source = source.clone();
+        let priority_result_sender = result_sender.clone();
         std::thread::spawn(move || {
-            while let Ok(job) = job_receiver.recv() {
+            while let Ok(job) = background_receiver.recv() {
                 let result = run_job(job, &data, &atlas, source.as_ref());
                 let _ = result_sender.send(result);
             }
         });
+        std::thread::spawn(move || {
+            while let Ok(job) = priority_receiver.recv() {
+                let (job, superseded) = newest_queued_job(job, &priority_receiver);
+                for generation in superseded {
+                    let _ = priority_result_sender.send(MeshResult {
+                        generation,
+                        light_edits: Vec::new(),
+                        chunks: Vec::new(),
+                    });
+                }
+                let result = run_job(
+                    job,
+                    &priority_data,
+                    &priority_atlas,
+                    priority_source.as_ref(),
+                );
+                let _ = priority_result_sender.send(result);
+            }
+        });
         Self {
-            sender: job_sender,
+            background_sender,
+            priority_sender,
             receiver: result_receiver,
             next_generation: 0,
         }
@@ -182,9 +208,58 @@ impl MeshWorker {
         mode: LightMode,
         options: MeshOptions,
     ) -> u64 {
+        let sender = self.background_sender.clone();
+        self.submit_to(
+            &sender,
+            world,
+            stream,
+            recompute_light,
+            dirty,
+            light_edits,
+            mode,
+            options,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn submit_priority(
+        &mut self,
+        world: World,
+        stream: Vec<(i32, i32)>,
+        recompute_light: bool,
+        dirty: Vec<ChunkPos>,
+        light_edits: Vec<(i32, i32, i32)>,
+        mode: LightMode,
+        options: MeshOptions,
+    ) -> u64 {
+        let sender = self.priority_sender.clone();
+        self.submit_to(
+            &sender,
+            world,
+            stream,
+            recompute_light,
+            dirty,
+            light_edits,
+            mode,
+            options,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn submit_to(
+        &mut self,
+        sender: &Sender<MeshJob>,
+        world: World,
+        stream: Vec<(i32, i32)>,
+        recompute_light: bool,
+        dirty: Vec<ChunkPos>,
+        light_edits: Vec<(i32, i32, i32)>,
+        mode: LightMode,
+        options: MeshOptions,
+    ) -> u64 {
         self.next_generation += 1;
         let generation = self.next_generation;
-        let _ = self.sender.send(MeshJob {
+        let _ = sender.send(MeshJob {
             world,
             stream,
             recompute_light,
@@ -204,6 +279,15 @@ impl MeshWorker {
         }
         results
     }
+}
+
+fn newest_queued_job(mut job: MeshJob, receiver: &Receiver<MeshJob>) -> (MeshJob, Vec<u64>) {
+    let mut superseded = Vec::new();
+    while let Ok(newer) = receiver.try_recv() {
+        superseded.push(job.generation);
+        job = newer;
+    }
+    (job, superseded)
 }
 
 #[cfg(test)]
@@ -266,6 +350,31 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
+    }
+
+    fn empty_job(generation: u64) -> MeshJob {
+        MeshJob {
+            world: World::new(0),
+            stream: Vec::new(),
+            recompute_light: false,
+            dirty: Vec::new(),
+            light_edits: Vec::new(),
+            generation,
+            mode: LightMode::Smooth,
+            options: MeshOptions::default(),
+        }
+    }
+
+    #[test]
+    fn priority_queue_keeps_only_the_newest_queued_snapshot() {
+        let (sender, receiver) = channel();
+        assert!(sender.send(empty_job(2)).is_ok());
+        assert!(sender.send(empty_job(3)).is_ok());
+
+        let (job, superseded) = newest_queued_job(empty_job(1), &receiver);
+
+        assert_eq!(job.generation, 3);
+        assert_eq!(superseded, [1, 2]);
     }
 
     #[test]

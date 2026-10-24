@@ -1958,7 +1958,7 @@ impl Viewer {
         if dirty.is_empty() {
             return;
         }
-        self.submit_job(Vec::new(), dirty, false);
+        self.submit_priority_job(Vec::new(), dirty, false);
     }
 
     fn mesh_options(&self) -> MeshOptions {
@@ -2071,19 +2071,55 @@ impl Viewer {
         dirty: Vec<ChunkPos>,
         recompute_light: bool,
     ) {
+        self.submit_job_with_priority(stream, dirty, recompute_light, false);
+    }
+
+    fn submit_priority_job(
+        &mut self,
+        stream: Vec<(i32, i32)>,
+        dirty: Vec<ChunkPos>,
+        recompute_light: bool,
+    ) {
+        self.submit_job_with_priority(stream, dirty, recompute_light, true);
+    }
+
+    fn submit_job_with_priority(
+        &mut self,
+        stream: Vec<(i32, i32)>,
+        dirty: Vec<ChunkPos>,
+        recompute_light: bool,
+        priority: bool,
+    ) {
         merge_dirty_positions(&mut self.pending_mesh_dirty, dirty);
         let world = &self.world;
         self.pending_mesh_dirty
             .retain(|pos| world.chunk_at_pos(*pos).is_some());
-        self.generation = self.worker.submit(
-            self.world.clone(),
-            stream,
-            recompute_light,
-            self.pending_mesh_dirty.clone(),
-            self.world.pending_light_edits().to_vec(),
-            self.light_mode,
-            self.mesh_options(),
-        );
+        let world = self.world.clone();
+        let dirty = self.pending_mesh_dirty.clone();
+        let light_edits = self.world.pending_light_edits().to_vec();
+        let mode = self.light_mode;
+        let options = self.mesh_options();
+        self.generation = if priority {
+            self.worker.submit_priority(
+                world,
+                stream,
+                recompute_light,
+                dirty,
+                light_edits,
+                mode,
+                options,
+            )
+        } else {
+            self.worker.submit(
+                world,
+                stream,
+                recompute_light,
+                dirty,
+                light_edits,
+                mode,
+                options,
+            )
+        };
         self.inflight += 1;
     }
 
