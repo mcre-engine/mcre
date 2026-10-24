@@ -1088,8 +1088,8 @@ mod tests {
             regions: vec![AtlasRegion {
                 x: 0,
                 y: 0,
-                width,
-                height,
+                width: animation.width,
+                height: animation.height,
             }],
             has_alpha: vec![false],
             fallback: AtlasRegion {

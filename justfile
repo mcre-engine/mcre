@@ -173,8 +173,12 @@ shot spec:
   #!/usr/bin/env bash
   set -euo pipefail
   cargo run -r -p vanilla_shot -- --spec "{{spec}}"
-  cargo run -r -p mcre_renderer --example viewer -- --shot "{{spec}}"
   NAME=$(jq -r .name "{{spec}}")
+  STATE="target/shots/$NAME.vanilla.state.json"
+  WATER_VISION=$(jq -r .water_vision "$STATE")
+  ANIMATION_TICKS=$(jq -r .animation_ticks "$STATE")
+  cargo run -r -p mcre_renderer --example viewer -- --shot "{{spec}}" \
+    --water-vision "$WATER_VISION" --animation-ticks "$ANIMATION_TICKS"
   cargo run -r -p shotcmp -- "target/shots/$NAME.vanilla.png" "target/shots/$NAME.mcre.png" "target/shots/$NAME.diff.png"
 
 # Build the wasm viewer and prepare its browser bundle.

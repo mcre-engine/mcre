@@ -280,6 +280,14 @@ M8 — Liquids — done
 - [x] Viewer: demo pond, underwater fog (`Camera.calculateFogType` water +
       eye-block lava approximation, `WATER_FOG_COLOR`/lava colors, 70° → 60°
       FOV at the default `fovEffectScale`)
+- [x] Parity capture: water-vision fog scaling and water-animation phase are
+      sampled from vanilla and replayed by MCRE; underwater shot FOV respects
+      the spec's `fovEffectScale: 0` behavior
+- [x] Camera fog uses `FluidState.getHeightForCamera` (including the same-fluid
+      block above), so moving through a water column no longer drops the
+      underwater state
+- [x] Underwater clear color uses the water/lava fog color; translucent
+      terrain samples atlas mip 0 to avoid sprite-edge seams on water surfaces
 
 ### M10. Texture animations — done
 - [x] `.png.mcmeta` animation metadata (`frametime`, `frames`, `width`/`height`,

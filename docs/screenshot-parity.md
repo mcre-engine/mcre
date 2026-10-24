@@ -29,6 +29,19 @@ just shot docs/shots/noon.json                    # both engines + diff
 The `just shot` recipe chains `shot-vanilla`, `shot-mcre`, and `shotcmp`. The
 spec's `name` field (`"noon"` here) picks the output filenames.
 
+The liquid probes use `docs/shots/water-surface.json` and
+`docs/shots/water-underwater.json`. Their 948×1005 size matches the physical
+framebuffer available in the current macOS capture environment. `just shot`
+pins vanilla's water-vision timer to its saturated value, records the resulting
+water-vision value and water-still animation clock in
+`target/shots/<name>.vanilla.state.json`, then passes both to the MCRE capture
+so fog and water texture phase match. Running `shot-mcre` alone uses the
+values in the spec instead.
+
+Current liquid results: underwater MAE `3.389` (top half `3.019`), surface
+bottom half `1.995`. The surface shot's sky remains the dominant residual
+because the renderer still uses a flat sky clear color above water.
+
 ## Spec format
 
 `docs/shots/noon.json`:
@@ -198,12 +211,12 @@ MAE by a lot.
   world-space corners under rotated variants and measured better on the noon
   shot (1.9373 vs. 2.0412).
 
-Known residual on `docs/shots/noon.json` (1280×720): MAE `1.5954`
-(RGB `2.127`), 21.7 % of pixels over 4, 5.1 % over 16. The remaining error is
-concentrated in tree canopies and near-ground details. In the selected canopy
-region mcre is about 7 % darker overall; the flat-lighting comparison still
-differs by roughly 3 %, so the remaining gap is not explained by AO alone.
-Use the spec's `ao:false` setting on both paths to inspect flat lighting.
+Known residual on `docs/shots/noon.json` (1280×720): MAE `1.6247`,
+21.8 % of pixels over 4, 5.2 % over 16. The remaining error is concentrated in
+tree canopies and near-ground details. In the selected canopy region mcre is
+about 7 % darker overall; the flat-lighting comparison still differs by roughly
+3 %, so the remaining gap is not explained by AO alone. Use the spec's
+`ao:false` setting on both paths to inspect flat lighting.
 
 ## Adding a new shot
 

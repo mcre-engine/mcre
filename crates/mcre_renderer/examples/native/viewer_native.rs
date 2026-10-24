@@ -14,7 +14,7 @@ use mcre_renderer::{
 };
 use mcre_resource_pack::{ResourcePackData, ResourcePackSet, download};
 use mcre_shot::ShotSpec;
-use mcre_world::fluid::{FluidKind, fluid_state, is_face_sturdy};
+use mcre_world::fluid::{FluidKind, fluid_state};
 use mcre_world::{
     Block, CHUNK_WIDTH, Chunk, ChunkPos, PropVal, SECTIONS_PER_CHUNK, WORLD_HEIGHT, WORLD_MIN_Y,
     World,
@@ -98,12 +98,20 @@ fn main() {
     let args = ViewerArgs::parse();
     let reload_test = args.reload_test;
     let emit_spec = args.emit_spec.clone();
-    let shot = args.shot.as_deref().map(|path| {
+    let mut shot = args.shot.as_deref().map(|path| {
         ShotSpec::load(std::path::Path::new(path)).unwrap_or_else(|err| {
             eprintln!("viewer: {err}");
             std::process::exit(2);
         })
     });
+    if let Some(spec) = shot.as_mut() {
+        if let Some(water_vision) = args.water_vision {
+            spec.water_vision = f64::from(water_vision);
+        }
+        if let Some(animation_ticks) = args.animation_ticks {
+            spec.animation_ticks = animation_ticks;
+        }
+    }
     let mut args = args;
     let demo_shot = args.demo_shot.clone().map(std::path::PathBuf::from);
     let world_path = args.world.clone().unwrap_or_default();
@@ -158,6 +166,8 @@ fn main() {
         fog_enabled: true,
         render_distance,
         submerged: None,
+        water_vision: 0.0,
+        water_vision_time: 0.0,
         sky_factor: 1.0,
         time_ticks: 6000.0,
         brightness: DEFAULT_BRIGHTNESS,
@@ -179,6 +189,7 @@ fn main() {
         backface_cull: true,
         chunk_borders: false,
         shot: None,
+        shot_animation_applied: false,
         emit_spec: emit_spec.map(Into::into),
         world_path,
     };
@@ -190,6 +201,7 @@ fn main() {
         viewer.camera.yaw = spec.mcre_yaw();
         viewer.camera.pitch = spec.mcre_pitch();
         viewer.camera.fov = (spec.fov as f32).to_radians();
+        viewer.water_vision = spec.water_vision as f32;
         viewer.time_ticks = spec.time_ticks as f32;
         viewer.brightness = spec.brightness as f32;
         viewer.cloud_status = match spec.clouds {
@@ -234,6 +246,8 @@ fn main() {
                 pitch: 0.15,
                 fov: 70.0,
                 brightness: DEFAULT_BRIGHTNESS as f64,
+                water_vision: 0.0,
+                animation_ticks: 0.0,
                 time_ticks: 6000,
                 width: 960,
                 height: 540,
@@ -341,6 +355,8 @@ struct ViewerArgs {
     packs: Vec<String>,
     reload_test: bool,
     shot: Option<String>,
+    water_vision: Option<f32>,
+    animation_ticks: Option<f64>,
     shot_out: Option<String>,
     demo_shot: Option<String>,
     emit_spec: Option<String>,
@@ -354,6 +370,8 @@ impl ViewerArgs {
         let mut packs = Vec::new();
         let mut reload_test = false;
         let mut shot = None;
+        let mut water_vision = None;
+        let mut animation_ticks = None;
         let mut shot_out = None;
         let mut demo_shot = None;
         let mut emit_spec = None;
@@ -369,6 +387,10 @@ impl ViewerArgs {
                 reload_test = true;
             } else if arg == "--shot" {
                 shot = args.next();
+            } else if arg == "--water-vision" {
+                water_vision = args.next().and_then(|value| value.parse().ok());
+            } else if arg == "--animation-ticks" {
+                animation_ticks = args.next().and_then(|value| value.parse().ok());
             } else if arg == "--shot-out" {
                 shot_out = args.next();
             } else if arg == "--demo-shot" {
@@ -411,6 +433,8 @@ impl ViewerArgs {
             packs,
             reload_test,
             shot,
+            water_vision,
+            animation_ticks,
             shot_out,
             demo_shot,
             emit_spec,
@@ -952,6 +976,8 @@ struct Viewer {
     fog_enabled: bool,
     render_distance: u32,
     submerged: Option<FluidKind>,
+    water_vision: f32,
+    water_vision_time: f32,
     sky_factor: f32,
     time_ticks: f32,
     brightness: f32,
@@ -973,6 +999,7 @@ struct Viewer {
     backface_cull: bool,
     chunk_borders: bool,
     shot: Option<ShotMode>,
+    shot_animation_applied: bool,
     emit_spec: Option<std::path::PathBuf>,
     world_path: String,
 }
@@ -1002,11 +1029,14 @@ impl ApplicationHandler for Viewer {
         renderer.set_wireframe(self.wireframe);
         renderer.set_backface_culling(self.backface_cull);
         renderer.set_chunk_borders(self.chunk_borders);
-        renderer.set_fog(vanilla_fog(
+        let fog = vanilla_fog(
             self.render_distance,
             self.time_ticks,
             self.submerged,
-        ));
+            self.water_vision,
+        );
+        renderer.set_fog(fog);
+        renderer.set_clear_color(self.submerged.map(|_| fog.color));
         renderer.set_time(self.time_ticks);
         renderer.set_brightness(self.brightness);
         renderer.set_cloud_texture(self.cloud_texture.clone());
@@ -1301,13 +1331,44 @@ impl Viewer {
         let aspect = width as f32 / height as f32;
         let old_submerged = self.submerged;
         let old_sky_factor = self.sky_factor;
+        let old_water_vision = self.water_vision;
         self.submerged = self.fog_fluid();
-        if self.submerged != old_submerged {
+        if self.shot.is_none() {
+            self.water_vision_time = if self.submerged == Some(FluidKind::Water) {
+                (self.water_vision_time + dt * 20.0).min(600.0)
+            } else {
+                (self.water_vision_time - dt * 200.0).max(0.0)
+            };
+            let time = self.water_vision_time;
+            let a = (time / 100.0).clamp(0.0, 1.0);
+            let b = ((time - 100.0) / 500.0).clamp(0.0, 1.0);
+            self.water_vision = a * 0.6 + b * 0.4;
+        }
+        if let Some(shot) = &self.shot {
+            self.camera.fov = (shot.spec.fov as f32).to_radians();
+        } else if self.submerged != old_submerged {
             self.camera.fov = if self.submerged.is_some() {
                 FOV_UNDERWATER
             } else {
                 FOV_SURFACE
             };
+        }
+        let shot_animation_ticks = self
+            .shot
+            .as_ref()
+            .filter(|_| !self.shot_animation_applied)
+            .map(|shot| shot.spec.animation_ticks);
+        if let Some(ticks) = shot_animation_ticks {
+            if self.animator.update(&self.atlas, ticks)
+                && let Some(renderer) = self.renderer.as_mut()
+            {
+                renderer.update_atlas(
+                    &self.atlas,
+                    self.animator.pixels(),
+                    self.animator.mips(),
+                );
+            }
+            self.shot_animation_applied = true;
         }
         let view_proj = self.camera.view_projection(aspect);
         let camera_pos = self.camera.position;
@@ -1684,12 +1745,18 @@ impl Viewer {
             renderer.set_backface_culling(self.backface_cull);
             renderer.set_chunk_borders(self.chunk_borders);
         }
-        if self.submerged != old_submerged || self.sky_factor != old_sky_factor {
-            renderer.set_fog(vanilla_fog(
+        if self.submerged != old_submerged
+            || self.sky_factor != old_sky_factor
+            || self.water_vision != old_water_vision
+        {
+            let fog = vanilla_fog(
                 self.render_distance,
                 self.time_ticks,
                 self.submerged,
-            ));
+                self.water_vision,
+            );
+            renderer.set_fog(fog);
+            renderer.set_clear_color(self.submerged.map(|_| fog.color));
         }
         if self.time_ticks != old_time {
             renderer.set_time(self.time_ticks);
@@ -1720,7 +1787,12 @@ impl Viewer {
     /// Push the environment settings a parity shot needs (fog, time,
     /// brightness, clouds) without the interactive change detection.
     fn push_shot_settings(&mut self) {
-        let fog = vanilla_fog(self.render_distance, self.time_ticks, self.submerged);
+        let fog = vanilla_fog(
+            self.render_distance,
+            self.time_ticks,
+            self.submerged,
+            self.water_vision,
+        );
         let (time_ticks, brightness) = (self.time_ticks, self.brightness);
         let (cloud_status, cloud_range) = (self.cloud_status, self.cloud_range);
         let cloud_ticks = (
@@ -1732,6 +1804,7 @@ impl Viewer {
             return;
         };
         renderer.set_fog(fog);
+        renderer.set_clear_color(self.submerged.map(|_| fog.color));
         renderer.set_time(time_ticks);
         renderer.set_brightness(brightness);
         renderer.set_cloud_status(cloud_status);
@@ -1880,17 +1953,10 @@ impl Viewer {
             return self.submerged;
         }
         let fluid = fluid_state(self.world.get_block(block_pos)?)?;
-        let top = block_pos.1 as f32
-            + if fluid.is_source()
-                && self
-                    .world
-                    .get_block((block_pos.0, block_pos.1 + 1, block_pos.2))
-                    .is_some_and(|above| is_face_sturdy(above, Direction::Down))
-            {
-                1.0
-            } else {
-                fluid.own_height()
-            };
+        let above = self
+            .world
+            .get_block((block_pos.0, block_pos.1 + 1, block_pos.2));
+        let top = block_pos.1 as f32 + fluid.camera_height(above);
         (y < top).then_some(fluid.kind)
     }
 
