@@ -1,0 +1,15 @@
+{
+  "name": "underground",
+  "world": "target/gen_world/world",
+  "eye": [8.5, 40.0, 8.5],
+  "yaw": 45.0,
+  "pitch": 20.0,
+  "fov": 70.0,
+  "brightness": 0.5,
+  "time_ticks": 6000,
+  "width": 948,
+  "height": 1005,
+  "render_distance": 8,
+  "clouds": "off",
+  "settle_ms": 4000
+}

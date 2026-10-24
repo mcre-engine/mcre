@@ -13,6 +13,7 @@ import net.minecraft.data.AtlasIds;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.GameType;
 
 /**
  * Render-thread steps for the Rust parity-shot tooling (tasks/vanilla_shot).
@@ -102,14 +103,15 @@ public final class ShotDriver implements Runnable {
                double y = this.y;
                double z = this.z;
                float yaw = this.yaw;
-               float pitch = this.pitch;
-               server.execute(() -> {
+                float pitch = this.pitch;
+                server.execute(() -> {
                   ServerPlayer player = server.getPlayerList().getPlayer(id);
                   if (player != null) {
+                     player.setGameMode(GameType.SPECTATOR);
                      ServerGamePacketListenerImpl connection = player.connection;
                      connection.teleport(x, y, z, yaw, pitch);
                   }
-               });
+                });
                break;
             }
             case "stop":
