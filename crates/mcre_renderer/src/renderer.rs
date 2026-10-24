@@ -14,6 +14,7 @@ use crate::clouds::{
 };
 use crate::lightmap::{LightmapParams, lightmap_rgba, sky_light_color, sky_light_factor};
 use crate::mesh::SectionMesh;
+use crate::particles::ParticleVertex;
 use crate::region::{
     RegionKey, RenderRegion, SharedQuadIndexBuffer, chunk_section_slot, merge_visible_runs,
     section_world_origin, visible_faces,
@@ -49,6 +50,7 @@ const TERRAIN_SHADER: &str = concat!(
     "\n",
     include_str!("shader.wgsl"),
 );
+const PARTICLE_SHADER: &str = include_str!("particle.wgsl");
 
 /// One chunk's packed sections for a frame, with an identity the renderer
 /// uses to cache region allocations across frames. `version` must change
@@ -245,6 +247,10 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     pipelines: [wgpu::RenderPipeline; 4],
     translucent_pipelines: [wgpu::RenderPipeline; 4],
+    particle_pipeline: wgpu::RenderPipeline,
+    particle_vertex_buffer: wgpu::Buffer,
+    particle_vertex_capacity: u64,
+    particle_vertex_count: u32,
     wireframe: bool,
     cull_back: bool,
     debug_flags: DebugFlags,
@@ -345,6 +351,13 @@ impl Renderer {
             mapped_at_creation: false,
         });
         let set = create_pipeline(&device, &queue, atlas, config.format, &section_table);
+        let particle_vertex_capacity = size_of::<ParticleVertex>() as u64;
+        let particle_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("particle-vertices"),
+            size: particle_vertex_capacity,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let depth_view = create_depth_view(&device, config.width, config.height);
         let (border_vertices, border_vertex_count) = create_border_buffers(&device);
         let egui_renderer = egui_wgpu::Renderer::new(
@@ -361,6 +374,10 @@ impl Renderer {
             config,
             pipelines: set.mains,
             translucent_pipelines: set.translucent,
+            particle_pipeline: set.particle,
+            particle_vertex_buffer,
+            particle_vertex_capacity,
+            particle_vertex_count: 0,
             wireframe: false,
             cull_back: true,
             debug_flags: DebugFlags::default(),
@@ -689,6 +706,25 @@ impl Renderer {
             pixels,
             mips,
         );
+    }
+
+    pub fn set_particles(&mut self, vertices: &[ParticleVertex]) {
+        self.particle_vertex_count = vertices.len() as u32;
+        if vertices.is_empty() {
+            return;
+        }
+        let bytes = bytemuck::cast_slice(vertices);
+        if bytes.len() as u64 > self.particle_vertex_capacity {
+            self.particle_vertex_capacity = (bytes.len() as u64).next_power_of_two();
+            self.particle_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("particle-vertices"),
+                size: self.particle_vertex_capacity,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        self.queue
+            .write_buffer(&self.particle_vertex_buffer, 0, bytes);
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -1044,6 +1080,36 @@ impl Renderer {
             }
         }
 
+        if self.particle_vertex_count > 0 {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("particle-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.particle_pipeline);
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_vertex_buffer(0, self.particle_vertex_buffer.slice(..));
+            pass.draw(0..self.particle_vertex_count, 0..1);
+        }
+
         let cloud_draw = self.cloud_gpu.as_ref().and_then(|clouds| {
             clouds
                 .mesh
@@ -1322,6 +1388,7 @@ struct PipelineSet {
     mains: [wgpu::RenderPipeline; 4],
     /// Alpha-blended variants for translucent fluid quads.
     translucent: [wgpu::RenderPipeline; 4],
+    particle: wgpu::RenderPipeline,
     border: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -1699,6 +1766,13 @@ fn create_pipeline(
         ),
     ];
 
+    let particle_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("mcre-particle-shader"),
+        source: wgpu::ShaderSource::Wgsl(PARTICLE_SHADER.into()),
+    });
+    let particle =
+        build_particle_pipeline(device, &pipeline_layout, &particle_shader, surface_format);
+
     let cloud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("mcre-cloud-shader"),
         source: wgpu::ShaderSource::Wgsl(include_str!("clouds.wgsl").into()),
@@ -1803,6 +1877,7 @@ fn create_pipeline(
     PipelineSet {
         mains,
         translucent,
+        particle,
         border,
         bind_group,
         bind_group_layout,
@@ -1815,6 +1890,62 @@ fn create_pipeline(
         clouds,
         uniform_buffer,
     }
+}
+
+fn build_particle_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    surface_format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("mcre-particle-pipeline"),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_particle"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: size_of::<ParticleVertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &wgpu::vertex_attr_array![
+                    0 => Float32x3,
+                    1 => Float32x2,
+                    2 => Float32x4,
+                    3 => Float32x2
+                ],
+            })],
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_particle"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 fn build_cloud_pipeline(

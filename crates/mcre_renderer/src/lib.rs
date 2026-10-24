@@ -10,6 +10,7 @@ pub mod math;
 pub mod mesh;
 pub mod mipmap;
 pub mod occlusion;
+pub mod particles;
 pub mod region;
 pub mod remesh;
 pub mod renderer;
@@ -39,6 +40,7 @@ pub use occlusion::{
     CullParams, FULL_VISIBILITY, SectionVisibility, compute_section_visibility,
     find_visible_sections,
 };
+pub use particles::{ParticleSystem, ParticleVertex};
 pub use region::{
     RegionKey, RenderRegion, SectionAlloc, SectionPassAlloc, SharedQuadIndexBuffer,
     chunk_section_slot, local_section_index, merge_visible_runs, region_key, section_world_origin,
