@@ -148,6 +148,7 @@ fn main() {
         inflight: 0,
         generation: 0,
         pending_stream_dirty: Vec::new(),
+        pending_mesh_dirty: Vec::new(),
         light_mode: if shot.as_ref().is_some_and(|spec| !spec.ao) {
             LightMode::Flat
         } else {
@@ -966,6 +967,7 @@ struct Viewer {
     /// Chunk positions whose streamed data was salvaged from a stale worker
     /// result and still need a remesh with the current world.
     pending_stream_dirty: Vec<ChunkPos>,
+    pending_mesh_dirty: Vec<ChunkPos>,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     keys: HashSet<KeyCode>,
@@ -1839,6 +1841,7 @@ impl Viewer {
         };
         let quiet = self.inflight == 0
             && self.pending_stream_dirty.is_empty()
+            && self.pending_mesh_dirty.is_empty()
             && self
                 .streamer
                 .as_ref()
@@ -2068,11 +2071,15 @@ impl Viewer {
         dirty: Vec<ChunkPos>,
         recompute_light: bool,
     ) {
+        merge_dirty_positions(&mut self.pending_mesh_dirty, dirty);
+        let world = &self.world;
+        self.pending_mesh_dirty
+            .retain(|pos| world.chunk_at_pos(*pos).is_some());
         self.generation = self.worker.submit(
             self.world.clone(),
             stream,
             recompute_light,
-            dirty,
+            self.pending_mesh_dirty.clone(),
             self.world.pending_light_edits().to_vec(),
             self.light_mode,
             self.mesh_options(),
@@ -2111,6 +2118,7 @@ impl Viewer {
                 self.generation = 0;
                 self.inflight = 0;
                 self.pending_stream_dirty.clear();
+                self.pending_mesh_dirty.clear();
                 for err in &self.packs.errors {
                     eprintln!("viewer: {err}");
                 }
@@ -2191,6 +2199,10 @@ impl Viewer {
                 continue;
             }
             self.world.acknowledge_light_edits(&result.light_edits);
+            remove_meshed_positions(
+                &mut self.pending_mesh_dirty,
+                result.chunks.iter().map(|chunk| chunk.pos),
+            );
             for chunk in result.chunks {
                 if let Some(data) = chunk.chunk {
                     let origin = [chunk.pos.x * CHUNK_WIDTH, chunk.pos.z * CHUNK_WIDTH];
@@ -2271,6 +2283,12 @@ impl Viewer {
     /// Streams save chunks around the camera: rebases the ring when the
     /// camera chunk moves and submits small batches per quiet frame.
     fn tick_stream(&mut self) {
+        if self.streamer.is_none() {
+            if self.inflight == 0 && !self.pending_mesh_dirty.is_empty() {
+                self.submit_job(Vec::new(), Vec::new(), false);
+            }
+            return;
+        }
         let Some(stream) = self.streamer.as_mut() else {
             return;
         };
@@ -2311,6 +2329,10 @@ impl Viewer {
             self.submit_job(Vec::new(), dirty, false);
             return;
         }
+        if !self.pending_mesh_dirty.is_empty() {
+            self.submit_job(Vec::new(), Vec::new(), false);
+            return;
+        }
         if stream.pending.is_empty() {
             if !stream.ready_logged {
                 stream.ready_logged = true;
@@ -2332,5 +2354,40 @@ impl Viewer {
             let recompute_light = stream.pending.is_empty();
             self.submit_job(batch, Vec::new(), recompute_light);
         }
+    }
+}
+
+fn merge_dirty_positions(target: &mut Vec<ChunkPos>, positions: impl IntoIterator<Item = ChunkPos>) {
+    for pos in positions {
+        if !target.contains(&pos) {
+            target.push(pos);
+        }
+    }
+}
+
+fn remove_meshed_positions(
+    pending: &mut Vec<ChunkPos>,
+    positions: impl IntoIterator<Item = ChunkPos>,
+) {
+    let meshed: HashSet<ChunkPos> = positions.into_iter().collect();
+    pending.retain(|pos| !meshed.contains(pos));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remesh_submissions_preserve_and_deduplicate_pending_chunks() {
+        let mut pending = vec![ChunkPos::new(1, 2)];
+        merge_dirty_positions(
+            &mut pending,
+            [ChunkPos::new(3, 4), ChunkPos::new(1, 2), ChunkPos::new(5, 6)],
+        );
+        remove_meshed_positions(&mut pending, [ChunkPos::new(3, 4)]);
+        assert_eq!(
+            pending,
+            [ChunkPos::new(1, 2), ChunkPos::new(5, 6)]
+        );
     }
 }
