@@ -38,14 +38,47 @@ fn display_name(id: &str, meta: Option<&PackMeta>) -> String {
 fn read_meta_from_zip(bytes: &[u8]) -> Result<PackMeta> {
     let mut archive = ZipArchive::new(Cursor::new(bytes))
         .map_err(|err| ResourcePackError::Zip(err.to_string()))?;
+    let meta_path = pack_meta_path(&mut archive)?;
     let mut entry = archive
-        .by_name("pack.mcmeta")
-        .map_err(|_| ResourcePackError::InvalidPackFormat("pack.mcmeta not found".to_string()))?;
+        .by_name(&meta_path)
+        .map_err(|err| ResourcePackError::Zip(err.to_string()))?;
     let mut json = String::new();
     entry
         .read_to_string(&mut json)
         .map_err(|err| ResourcePackError::Zip(err.to_string()))?;
     serde_json::from_str(&json).map_err(ResourcePackError::Json)
+}
+
+fn pack_meta_path(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<String> {
+    let mut wrapper_dirs = Vec::new();
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|err| ResourcePackError::Zip(err.to_string()))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry
+            .name()
+            .map_err(|err| ResourcePackError::Zip(err.to_string()))?;
+        if name == "pack.mcmeta" {
+            return Ok(name.to_string());
+        }
+        if let Some((wrapper, "pack.mcmeta")) = name.rsplit_once('/')
+            && !wrapper.is_empty()
+            && !wrapper.contains('/')
+        {
+            wrapper_dirs.push(wrapper.to_string());
+        }
+    }
+    wrapper_dirs.sort();
+    wrapper_dirs.dedup();
+    match wrapper_dirs.as_slice() {
+        [wrapper] => Ok(format!("{wrapper}/pack.mcmeta")),
+        _ => Err(ResourcePackError::InvalidPackFormat(
+            "pack.mcmeta not found at archive root or under one top-level folder".to_string(),
+        )),
+    }
 }
 
 /// Scans `dir` for resource packs: subdirectories and `.zip` files.
@@ -151,8 +184,10 @@ pub async fn ensure_extracted(
     fs.remove_dir_all(&target).await.ok();
     fs.create_dir_all(&target).await?;
     let bytes = fs.read(&pack.path).await?;
-    let mut archive = ZipArchive::new(Cursor::new(bytes))
+    let mut archive = ZipArchive::new(Cursor::new(bytes.as_slice()))
         .map_err(|err| ResourcePackError::Zip(err.to_string()))?;
+    let meta_path = pack_meta_path(&mut archive)?;
+    let wrapper = meta_path.strip_suffix("pack.mcmeta").unwrap();
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
@@ -165,6 +200,12 @@ pub async fn ensure_extracted(
             return Err(ResourcePackError::Zip(format!("unsafe path: {name}")));
         }
         if entry.is_dir() {
+            continue;
+        }
+        let Some(name) = name.strip_prefix(wrapper) else {
+            continue;
+        };
+        if name.is_empty() {
             continue;
         }
         let parts: Vec<Box<str>> = name
@@ -244,6 +285,15 @@ mod tests {
             "zipped.zip",
             &[("pack.mcmeta", META.as_bytes()), ("assets/x.txt", b"x")],
         );
+        stage_zip(
+            &root,
+            "wrapped.zip",
+            &[
+                ("wrapped/pack.mcmeta", META.as_bytes()),
+                ("wrapped/assets/x.txt", b"x"),
+                ("README.txt", b"ignored"),
+            ],
+        );
         stage_zip(&root, "notazip.zip", &[("pack.mcmeta", b"{oops")]);
         std::fs::write(root.join("packs").join("notes.txt"), b"hi").unwrap();
         let fs = NativeFs::new_custom_path(root.clone()).await.unwrap();
@@ -266,6 +316,11 @@ mod tests {
         assert!(zipped.size > 0);
         assert_eq!(zipped.compatible, Some(true));
 
+        let wrapped = by_id("wrapped.zip");
+        assert_eq!(wrapped.display_name, "Pretty Pack");
+        assert_eq!(wrapped.compatible, Some(true));
+        assert!(wrapped.error.is_none());
+
         assert!(by_id("notazip.zip").error.is_some());
         assert!(packs.iter().all(|pack| pack.id != "notes.txt"));
 
@@ -285,6 +340,15 @@ mod tests {
             "evil.zip",
             &[("pack.mcmeta", META.as_bytes()), ("../evil.txt", b"!")],
         );
+        stage_zip(
+            &root,
+            "wrapped.zip",
+            &[
+                ("wrapped/pack.mcmeta", META.as_bytes()),
+                ("wrapped/assets/a.txt", b"a"),
+                ("README.txt", b"ignored"),
+            ],
+        );
         let fs = NativeFs::new_custom_path(root.clone()).await.unwrap();
         let cache = FsPath::from("cache");
 
@@ -294,6 +358,13 @@ mod tests {
         assert!(fs.exists(&out.join("assets").join("a.txt")).await);
         let again = ensure_extracted(&fs, zipped, &cache).await.unwrap();
         assert_eq!(out, again);
+
+        let wrapped = packs.iter().find(|pack| pack.id == "wrapped.zip").unwrap();
+        let out = ensure_extracted(&fs, wrapped, &cache).await.unwrap();
+        assert!(fs.exists(&out.join("pack.mcmeta")).await);
+        assert!(fs.exists(&out.join("assets").join("a.txt")).await);
+        assert!(!fs.exists(&out.join("wrapped")).await);
+        assert!(!fs.exists(&out.join("README.txt")).await);
 
         let evil = packs.iter().find(|pack| pack.id == "evil.zip").unwrap();
         assert!(ensure_extracted(&fs, evil, &cache).await.is_err());

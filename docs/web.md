@@ -19,8 +19,9 @@ required. The first build downloads the Minecraft client jar (through the
 
 The browser build does **not** fetch anything from Mojang. It starts with an
 empty placeholder atlas and a resource-pack file picker. Select a zipped pack
-whose root contains `pack.mcmeta`; the zip is copied into OPFS, extracted into
-`pack_cache/`, and its blockstates/models/textures are baked into the atlas.
+with `pack.mcmeta` at the archive root or under one enclosing folder; the zip
+is copied into OPFS, extracted into `pack_cache/`, and its
+blockstates/models/textures are baked into the atlas.
 The demo scene is a 3×3 stone/grass plane. Animated block textures
 (`.png.mcmeta`) play once the pack loads; the atlas updates at 20 Hz, or 40 Hz
 for sprites with `interpolate: true`.

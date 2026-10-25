@@ -95,11 +95,11 @@ save_out.parent.mkdir(parents=True, exist_ok=True)
 make_smoke_save(save_out)
 with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
     archive.writestr(
-        "pack.mcmeta",
-        '{"pack":{"description":"MCRE browser smoke pack","min_format":[100,1],"max_format":[100,1]}}',
+        "pack/pack.mcmeta",
+        '{"pack":{"description":"MCRE browser smoke pack","min_format":[100,2],"max_format":[100,2]}}',
     )
     archive.writestr(
-        "assets/minecraft/textures/block/stone.png.mcmeta",
+        "pack/assets/minecraft/textures/block/stone.png.mcmeta",
         '{"animation":{"frametime":1,"frames":[0,0]}}',
     )
     files = [
@@ -127,4 +127,4 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     )
     for name in files:
         file = assets / name
-        archive.write(file, (pathlib.Path("assets/minecraft") / name).as_posix())
+        archive.write(file, (pathlib.Path("pack/assets/minecraft") / name).as_posix())
