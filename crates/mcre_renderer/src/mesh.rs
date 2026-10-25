@@ -527,6 +527,23 @@ fn mesh_chest<A: BlockAccess + ?Sized>(
 }
 
 type ModelBoxFace = (Direction, [[f32; 3]; 4], [[f32; 2]; 4]);
+type EntityUvOverride = fn(Direction, [[f32; 2]; 4]) -> Option<[[f32; 2]; 4]>;
+
+fn parrot_leg_uv_override(direction: Direction, _: [[f32; 2]; 4]) -> Option<[[f32; 2]; 4]> {
+    Some(match direction {
+        Direction::Down => [[18.0, 19.0], [17.0, 19.0], [17.0, 20.0], [18.0, 20.0]],
+        Direction::Up => [[18.0, 20.0], [17.0, 20.0], [17.0, 19.0], [18.0, 19.0]],
+        _ => [[18.0, 19.0], [17.0, 19.0], [17.0, 21.0], [18.0, 21.0]],
+    })
+}
+
+fn enderman_head_uv_override(direction: Direction, _: [[f32; 2]; 4]) -> Option<[[f32; 2]; 4]> {
+    if direction == Direction::Up {
+        Some([[16.0, 0.0], [8.0, 0.0], [8.0, 8.0], [16.0, 8.0]])
+    } else {
+        None
+    }
+}
 
 /// Vanilla `ModelPart.Cube` face layout: vertices and texture coordinates
 /// for a box `[min_x, min_y, min_z, width, height, depth]` at `texture_origin`.
@@ -2356,9 +2373,16 @@ fn emit_entity_cube(
     scale: f32,
     depth_offset: f32,
     yaw: f32,
+    uv_override: Option<EntityUvOverride>,
 ) {
     let y_offset = ENTITY_SCALE_PIVOT_Y * (1.0 - scale);
-    for (_, vertices, uvs) in model_box_faces(cube, texture_origin, mirror, growth) {
+    for (direction, vertices, mut uvs) in model_box_faces(cube, texture_origin, mirror, growth) {
+        if let Some(override_uvs) = uv_override {
+            let Some(overridden) = override_uvs(direction, uvs) else {
+                continue;
+            };
+            uvs = overridden;
+        }
         let base = mesh.vertices.len() as u32;
         let mut positions = [[0.0; 3]; 4];
         for (index, vertex) in vertices.iter().enumerate() {
@@ -2514,6 +2538,7 @@ fn emit_entity_model(
             model.scale,
             depth_offset,
             yaw,
+            None,
         );
     }
     for cube in model.rotated_cubes {
@@ -2536,8 +2561,59 @@ fn emit_entity_model(
             model.scale,
             depth_offset,
             yaw,
+            None,
         );
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_entity_cube_uv_overlay(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    light: [f32; 2],
+    yaw: f32,
+    texture_id: u32,
+    texture_prefix: &str,
+    model: &EntityModel,
+    cube: &EntityCube,
+    uv_override: EntityUvOverride,
+) {
+    let Some(path) = data.texture_table.get(texture_id as usize) else {
+        return;
+    };
+    if !path.starts_with(texture_prefix) {
+        return;
+    }
+    let region = atlas.region(texture_id);
+    let pass = if atlas.region_has_alpha(texture_id) {
+        TerrainPass::Cutout
+    } else {
+        TerrainPass::Solid
+    };
+    emit_entity_cube(
+        atlas,
+        mesh,
+        position,
+        block_pos,
+        region,
+        pass,
+        light,
+        model.texture_size,
+        [1.0; 3],
+        cube.offset,
+        [cube.rotation_x, 0.0, 0.0],
+        cube.texture_origin,
+        cube.cube,
+        cube.growth,
+        cube.mirror,
+        model.scale,
+        ENTITY_OVERLAY_DEPTH_OFFSET,
+        yaw,
+        Some(uv_override),
+    );
 }
 
 fn minecart_model_position(model: [f32; 3], position: [f64; 3], yaw: f32) -> [f32; 3] {
@@ -3116,6 +3192,22 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     &PARROT_MODEL,
                     white,
                 );
+                for cube in &PARROT_CUBES[9..11] {
+                    emit_entity_cube_uv_overlay(
+                        data,
+                        atlas,
+                        mesh,
+                        position,
+                        block_pos,
+                        light,
+                        yaw,
+                        texture_id,
+                        "minecraft:entity/parrot/",
+                        &PARROT_MODEL,
+                        cube,
+                        parrot_leg_uv_override,
+                    );
+                }
             }
             "minecraft:bat" => {
                 emit_entity_layer(
@@ -3160,6 +3252,20 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     "minecraft:entity/enderman/",
                     &ENDERMAN_MODEL,
                     white,
+                );
+                emit_entity_cube_uv_overlay(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.enderman,
+                    "minecraft:entity/enderman/",
+                    &ENDERMAN_MODEL,
+                    &ENDERMAN_CUBES[0],
+                    enderman_head_uv_override,
                 );
             }
             "minecraft:squid" => {
@@ -5632,6 +5738,32 @@ mod tests {
         atlas
     }
 
+    fn enderman_atlas() -> Atlas {
+        let mut atlas = test_atlas();
+        atlas.width = 64;
+        atlas.height = 32;
+        atlas.pixels = vec![0; 64 * 32 * 4];
+        for y in 0..8 {
+            for x in 8..16 {
+                atlas.pixels[(y * 64 + x) * 4 + 3] = 255;
+            }
+        }
+        atlas.regions = vec![AtlasRegion {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 32,
+        }];
+        atlas.has_alpha = vec![true];
+        atlas
+    }
+
+    fn alpha_at_pixel(atlas: &Atlas, pixel: [f32; 2]) -> u8 {
+        let x = pixel[0].floor() as usize;
+        let y = pixel[1].floor() as usize;
+        atlas.pixels[(y * atlas.width as usize + x) * 4 + 3]
+    }
+
     fn horse_atlas() -> Atlas {
         let mut atlas = test_atlas();
         atlas.width = 64;
@@ -6092,17 +6224,40 @@ mod tests {
     }
 
     #[test]
+    fn parrot_leg_overlays_sample_opaque_feather_pixels() {
+        let mut atlas = parrot_atlas();
+        atlas.pixels.fill(0);
+        for y in 19..=20 {
+            atlas.pixels[(y * atlas.width as usize + 17) * 4 + 3] = 255;
+        }
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(parrot_entity(0)));
+
+        let mesh = mesh_entity_with_atlas(&parrot_data(), &atlas, &chunk);
+        let overlay_vertices = &mesh.vertices[66 * 4..];
+        assert_eq!(overlay_vertices.len(), 12 * 4);
+        for quad in overlay_vertices.as_chunks::<4>().0 {
+            let center = quad.iter().fold([0.0; 2], |mut center, vertex| {
+                center[0] += vertex.uv[0] * atlas.width as f32 / 4.0;
+                center[1] += vertex.uv[1] * atlas.height as f32 / 4.0;
+                center
+            });
+            assert_eq!(alpha_at_pixel(&atlas, center), 255);
+        }
+    }
+
+    #[test]
     fn parrot_entity_bakes_model_into_chunk_mesh() {
         let mut chunk = Chunk::new();
         assert!(chunk.set_entity(parrot_entity(0)));
 
         let mesh = mesh_entity(&parrot_data(), &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 66);
-        assert_eq!(mesh.indices.len(), 66 * 6);
+        assert_eq!(mesh.opaque_meta.len(), 78);
+        assert_eq!(mesh.indices.len(), 78 * 6);
         let (min, max) = mesh_bounds(&mesh);
         assert!((min[0] - 7.875).abs() < 1e-4);
         assert!((max[0] - 8.125).abs() < 1e-4);
-        assert!((min[1] - 64.00012).abs() < 1e-4);
+        assert!((min[1] - 63.999123).abs() < 1e-4);
         assert!((max[1] - 64.9261).abs() < 1e-4);
         assert!((min[2] - 7.76822).abs() < 1e-4);
         assert!((max[2] - 8.44518).abs() < 1e-4);
@@ -6122,7 +6277,7 @@ mod tests {
         assert!(chunk.set_entity(parrot_entity(3)));
 
         let mesh = mesh_entity_with_atlas(&data, &parrot_atlas(), &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 66);
+        assert_eq!(mesh.opaque_meta.len(), 78);
         assert!(
             mesh.vertices
                 .iter()
@@ -6169,9 +6324,24 @@ mod tests {
         let mut chunk = Chunk::new();
         assert!(chunk.set_entity(entity("minecraft:enderman", 0.0, "minecraft:temperate")));
 
-        let mesh = mesh_entity(&enderman_data(), &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 36);
-        assert_eq!(mesh.indices.len(), 36 * 6);
+        let atlas = enderman_atlas();
+        let mesh = mesh_entity_with_atlas(&enderman_data(), &atlas, &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 37);
+        assert_eq!(mesh.indices.len(), 37 * 6);
+        let old_bottom = &mesh.vertices[4..8];
+        let old_bottom_center = old_bottom.iter().fold([0.0; 2], |mut center, vertex| {
+            center[0] += vertex.uv[0] * atlas.width as f32 / 4.0;
+            center[1] += vertex.uv[1] * atlas.height as f32 / 4.0;
+            center
+        });
+        assert_eq!(alpha_at_pixel(&atlas, old_bottom_center), 0);
+        let covered_bottom = &mesh.vertices[mesh.vertices.len() - 4..];
+        let covered_center = covered_bottom.iter().fold([0.0; 2], |mut center, vertex| {
+            center[0] += vertex.uv[0] * atlas.width as f32 / 4.0;
+            center[1] += vertex.uv[1] * atlas.height as f32 / 4.0;
+            center
+        });
+        assert_eq!(alpha_at_pixel(&atlas, covered_center), 255);
         let (min, max) = mesh_bounds(&mesh);
         assert!((min[0] - 7.625).abs() < 1e-4);
         assert!((max[0] - 8.375).abs() < 1e-4);
