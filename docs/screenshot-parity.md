@@ -55,6 +55,12 @@ chunk ring has streamed, MCRE recomputes light across it and remeshes the ring;
 its Overworld lightmap also uses the dimension's `#0a0a0a` ambient-light color.
 Current MAEs are `0.6158`, `0.8930`, `0.4474`, `0.4534`, and `0.7880`.
 
+The flat seam regression scene is generated with `just flat-seam-world`; it
+contains a 17×17-chunk stone plane with the camera at `[136.5, 2.0, 136.5]`.
+`just flat-seam-shots` captures it facing south, west, north, and east. These
+views put multiple chunk boundaries across a low horizon, making pinholes that
+show sky through block edges easy to spot.
+
 ## Spec format
 
 `docs/shots/noon.json`:

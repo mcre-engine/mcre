@@ -84,6 +84,16 @@ data-gen:
 gen-world seed="0" radius="512" *args:
   cargo run -r -p gen_world -- --seed {{seed}} --radius {{radius}} {{args}}
 
+flat-seam-world:
+  python3 tasks/gen_world/flat_seam.py
+
+flat-seam-shots: flat-seam-world
+  #!/usr/bin/env bash
+  set -euo pipefail
+  for spec in docs/shots/flat-seam-*.json; do
+    cargo run -r -p mcre_renderer --example viewer -- --shot "$spec"
+  done
+
 # Decompile Minecraft client jar to Java source code (output in target/mc-src/)
 [unix]
 src version=`cat mc-version`:

@@ -374,13 +374,28 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                 };
 
                 let base = mesh.vertices.len() as u32;
+                let bounds = face_bounds(&quad.vertices);
+                let expand_face = state.collision_full()
+                    && !atlas.region_has_alpha(quad.texture_id)
+                    && quad
+                        .cullface
+                        .is_some_and(|direction| !face_partial(direction, &bounds));
                 for i in 0..4 {
                     let v = &quad.vertices[i];
                     let uv = &quad.uvs[i];
+                    let mut local = [v[0] / 16.0, v[1] / 16.0, v[2] / 16.0];
+                    if expand_face {
+                        local = overlap_shared_full_face_edges(
+                            local,
+                            quad.cullface.expect("expanded face has cullface"),
+                            block_pos,
+                            access,
+                        );
+                    }
                     let position = [
-                        origin[0] as f32 + local_x as f32 + v[0] / 16.0,
-                        y as f32 + v[1] / 16.0,
-                        origin[1] as f32 + local_z as f32 + v[2] / 16.0,
+                        origin[0] as f32 + local_x as f32 + local[0],
+                        y as f32 + local[1],
+                        origin[1] as f32 + local_z as f32 + local[2],
                     ];
                     mesh.vertices.push(Vertex {
                         position,
@@ -773,6 +788,39 @@ const SIGN_TEXT_WALL_OFFSET: [f32; 3] = [0.0, -0.3125, -0.4375];
 const SIGN_TEXT_DEPTH_OFFSET: f32 = 0.001;
 const ENTITY_OVERLAY_DEPTH_OFFSET: f32 = 0.001;
 const ENTITY_SCALE_PIVOT_Y: f32 = 24.016;
+const FULL_BLOCK_FACE_OVERLAP: f32 = 0.004;
+
+fn overlap_shared_full_face_edges<A: BlockAccess + ?Sized>(
+    mut local: [f32; 3],
+    direction: Direction,
+    block_pos: [i32; 3],
+    access: &A,
+) -> [f32; 3] {
+    let normal_axis = match direction {
+        Direction::Down | Direction::Up => 1,
+        Direction::North | Direction::South => 2,
+        Direction::West | Direction::East => 0,
+    };
+    for (axis, coordinate) in local.iter_mut().enumerate() {
+        if axis == normal_axis {
+            continue;
+        }
+        let delta = if *coordinate <= 1e-4 {
+            -1
+        } else if *coordinate >= 0.9999 {
+            1
+        } else {
+            continue;
+        };
+        let mut neighbor = block_pos;
+        neighbor[axis] += delta;
+        let neighbor_state = access.block_at(neighbor[0], neighbor[1], neighbor[2]);
+        if neighbor_state.collision_full() && neighbor_state.solid_render() {
+            *coordinate += FULL_BLOCK_FACE_OVERLAP * delta as f32;
+        }
+    }
+    local
+}
 
 /// Vanilla standing/wall sign text (`AbstractSignRenderer` +
 /// `StandingSignRenderer`): four centred lines of ASCII glyphs from
@@ -6594,6 +6642,27 @@ mod tests {
         assert!((grown[4].1[0][0] - 8.5).abs() < 1e-6);
         assert!((grown[0].1[0][1] + 0.5).abs() < 1e-6);
         assert!((grown[1].1[0][1] - 8.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn full_block_face_overlap_expands_only_shared_edges() {
+        let mut world = World::new(1);
+        let mut chunk = Chunk::new_at(mcre_world::ChunkPos::new(0, 0));
+        chunk.set_block(1, 0, 0, Block::STONE.default_state());
+        world.replace_chunk(chunk);
+
+        assert_eq!(
+            overlap_shared_full_face_edges([1.0, 1.0, 0.5], Direction::Up, [0, 0, 0], &world),
+            [1.0 + FULL_BLOCK_FACE_OVERLAP, 1.0, 0.5]
+        );
+        assert_eq!(
+            overlap_shared_full_face_edges([0.0, 1.0, 0.5], Direction::Up, [0, 0, 0], &world),
+            [0.0, 1.0, 0.5]
+        );
+        assert_eq!(
+            overlap_shared_full_face_edges([0.5, 0.5, 0.5], Direction::Up, [0, 0, 0], &world),
+            [0.5, 0.5, 0.5]
+        );
     }
 
     #[test]

@@ -8,7 +8,7 @@ use mcre_world::{Block, BlockState, Chunk, ChunkPos, World};
 
 const COLUMN_X: f32 = 5.0;
 const COLUMN_Z: f32 = 5.0;
-const EPS: f32 = 1e-4;
+const EPS: f32 = 0.005;
 
 fn pack_data() -> &'static ResourcePackData {
     static DATA: OnceLock<ResourcePackData> = OnceLock::new();
