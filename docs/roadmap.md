@@ -335,11 +335,11 @@ open.
 - [x] Bake static adult temperate/warm pigs, temperate cows, temperate/warm
       chickens, creepers, adult sheep (base plus tinted wool overlay),
       zombies, drowned/husks, skeletons, wild wolves (all nine coat variants),
-      parrots (all five variants), bats, bees, and endermen into chunk meshes
-      from entity NBT, including yaw, variant, age, entity atlas textures, and
-      block light. (Undercoat, collar/angry overlays, parrot/bat/bee pose/flap
-      animation, angry/nectar bee textures, carried blocks/glowing eyes, and
-      sitting poses deferred.)
+      parrots (all five variants), bats, bees, endermen, and squids into chunk
+      meshes from entity NBT, including yaw, variant, age, entity atlas
+      textures, and block light. (Undercoat, collar/angry overlays,
+      parrot/bat/bee pose/flap animation, angry/nectar bee textures, carried
+      blocks/glowing eyes, tentacle rotation, and sitting poses deferred.)
 - [ ] Decode entity-specific data and render the remaining models, animation,
       movement, shadows, and picking; define lifecycle behavior for edits and
       streaming.

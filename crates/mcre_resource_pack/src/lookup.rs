@@ -148,6 +148,8 @@ pub struct EntityTextureIds {
     pub bat: u32,
     pub bee: u32,
     pub enderman: u32,
+    pub squid: u32,
+    pub glow_squid: u32,
 }
 
 impl EntityTextureIds {
@@ -182,6 +184,8 @@ impl EntityTextureIds {
             bat: interner.intern("minecraft:entity/bat/bat"),
             bee: interner.intern("minecraft:entity/bee/bee"),
             enderman: interner.intern("minecraft:entity/enderman/enderman"),
+            squid: interner.intern("minecraft:entity/squid/squid"),
+            glow_squid: interner.intern("minecraft:entity/squid/glow_squid"),
         }
     }
 }

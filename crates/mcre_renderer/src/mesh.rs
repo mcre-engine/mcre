@@ -1805,6 +1805,81 @@ const ENDERMAN_CUBES: &[EntityCube] = &[
     },
 ];
 
+const SQUID_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 8.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-6.0, -8.0, -6.0, 12.0, 16.0, 12.0],
+        growth: 0.02,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [5.0, 15.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 18.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [3.5355, 15.0, 3.5355],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 18.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 15.0, 5.0],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 18.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-3.5355, 15.0, 3.5355],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 18.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-5.0, 15.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 18.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-3.5355, 15.0, -3.5355],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 18.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 15.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 18.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [3.5355, 15.0, -3.5355],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 18.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
@@ -1868,6 +1943,11 @@ const BEE_MODEL: EntityModel = EntityModel {
 const ENDERMAN_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: ENDERMAN_CUBES,
+};
+
+const SQUID_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 32.0],
+    cubes: SQUID_CUBES,
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -2265,6 +2345,36 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     data.entity_textures.enderman,
                     "minecraft:entity/enderman/",
                     &ENDERMAN_MODEL,
+                    white,
+                );
+            }
+            "minecraft:squid" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.squid,
+                    "minecraft:entity/squid/",
+                    &SQUID_MODEL,
+                    white,
+                );
+            }
+            "minecraft:glow_squid" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.glow_squid,
+                    "minecraft:entity/squid/",
+                    &SQUID_MODEL,
                     white,
                 );
             }
@@ -4371,6 +4481,13 @@ mod tests {
         data
     }
 
+    fn squid_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/squid/squid".into()];
+        data.entity_textures.squid = 0;
+        data
+    }
+
     fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
             ("id".into(), Tag::String("minecraft:parrot".into())),
@@ -4972,6 +5089,45 @@ mod tests {
         assert!((max[1] - 66.8135).abs() < 1e-4);
         assert!((min[2] - 7.75).abs() < 1e-4);
         assert!((max[2] - 8.25).abs() < 1e-4);
+    }
+
+    #[test]
+    fn squid_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:squid", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&squid_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 54);
+        assert_eq!(mesh.indices.len(), 54 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.62375).abs() < 1e-4);
+        assert!((max[0] - 8.37625).abs() < 1e-4);
+        assert!((min[1] - 63.4385).abs() < 1e-4);
+        assert!((max[1] - 65.50225).abs() < 1e-4);
+        assert!((min[2] - 7.62375).abs() < 1e-4);
+        assert!((max[2] - 8.37625).abs() < 1e-4);
+    }
+
+    #[test]
+    fn glow_squid_entity_uses_glow_texture() {
+        let mut data = empty_data();
+        data.texture_table = vec![
+            "minecraft:entity/squid/squid".into(),
+            "minecraft:entity/squid/glow_squid".into(),
+        ];
+        data.entity_textures.squid = 0;
+        data.entity_textures.glow_squid = 1;
+
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:glow_squid", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity_with_atlas(&data, &wolf_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 54);
+        assert!(
+            mesh.vertices
+                .iter()
+                .all(|vertex| vertex.uv[1] >= 0.5 - 1e-6)
+        );
     }
 
     #[test]

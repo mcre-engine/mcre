@@ -331,6 +331,14 @@ mod tests {
             path(data.entity_textures.enderman),
             "minecraft:entity/enderman/enderman"
         );
+        assert_eq!(
+            path(data.entity_textures.squid),
+            "minecraft:entity/squid/squid"
+        );
+        assert_eq!(
+            path(data.entity_textures.glow_squid),
+            "minecraft:entity/squid/glow_squid"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

@@ -42,7 +42,8 @@ sign text and inventory summaries. Chests render their single and double-half
 models from the entity chest textures, standing/wall signs render ASCII text,
 and adult temperate/warm pigs, temperate cows, temperate/warm chickens,
 creepers, adult sheep, zombies, drowned/husks, skeletons, wild wolves,
-parrots, bats, bees, and endermen render from the entity textures. Hanging sign
+parrots, bats, bees, endermen, and squids render from the entity textures.
+Hanging sign
 text, non-ASCII glyphs, other entity models, animation, shadows, and picking
 are not yet rendered. The current pack supplies the blockstates, models, and
 textures, so load a pack first.
