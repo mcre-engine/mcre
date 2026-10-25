@@ -147,6 +147,15 @@ try {
   assert.equal(download.suggestedFilename(), "world.zip");
   assert.equal(await download.failure(), null);
 
+  await canvas.click({ position: { x: 480, y: 270 } });
+  await page.waitForTimeout(200);
+  if (await page.evaluate(() => document.pointerLockElement !== null)) {
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.pointerLockElement === null, null, {
+      timeout: 2_000,
+    });
+  }
+
   assert.deepEqual(errors, [], `browser errors: ${errors.join("\n")}`);
   console.log(
     `wasm viewer smoke passed; ${changed} pixels changed after OPFS pack load, ${saveChanged} after save import`,

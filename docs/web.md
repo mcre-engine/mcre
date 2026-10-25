@@ -59,8 +59,9 @@ parses region files.
 
 ## Controls
 
-Drag with the left mouse button to look. `W`/`A`/`S`/`D` move, `Space`/`Shift`
-move up/down, and `Ctrl` boosts speed.
+Click the canvas to capture the mouse; press `Escape` to release it. If pointer
+capture is unavailable, drag with the left mouse button to look. `W`/`A`/`S`/`D`
+move, `Space`/`Shift` move up/down, and `Ctrl` boosts speed.
 
 ## Smoke test
 

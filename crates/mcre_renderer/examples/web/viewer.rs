@@ -22,11 +22,18 @@ use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
     event::{ElementState, MouseButton, WindowEvent},
-    event_loop::{ActiveEventLoop, EventLoop},
+    event_loop::{ActiveEventLoop, DeviceEvents, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    platform::web::{EventLoopExtWebSys as _, WindowAttributesExtWebSys as _},
-    window::{Window, WindowAttributes},
+    platform::web::{
+        EventLoopExtWebSys as _, WindowAttributesExtWebSys as _, WindowExtWebSys as _,
+    },
+    window::{CursorGrabMode, Window, WindowAttributes},
 };
+
+#[wasm_bindgen::prelude::wasm_bindgen(inline_js = "export function request_pointer_lock(canvas) { try { const pending = canvas.requestPointerLock(); if (pending && typeof pending.catch === 'function') pending.catch(() => document.dispatchEvent(new Event('pointerlockerror'))); } catch (_) { document.dispatchEvent(new Event('pointerlockerror')); } }")]
+extern "C" {
+    fn request_pointer_lock(canvas: &web_sys::HtmlCanvasElement);
+}
 
 struct WebState {
     data: Arc<ResourcePackData>,
@@ -46,6 +53,8 @@ struct WebState {
     initializing: bool,
     keys: std::collections::HashSet<winit::keyboard::KeyCode>,
     dragging: bool,
+    pointer_locked: bool,
+    pointer_lock_pending: bool,
     last_cursor: Option<(f64, f64)>,
     last_frame_ms: f64,
 }
@@ -87,6 +96,8 @@ pub fn start() {
             initializing: false,
             keys: std::collections::HashSet::new(),
             dragging: false,
+            pointer_locked: false,
+            pointer_lock_pending: false,
             last_cursor: None,
             last_frame_ms: 0.0,
         }));
@@ -660,6 +671,7 @@ impl ApplicationHandler for WebViewer {
         if self.state.borrow().initializing {
             return;
         }
+        event_loop.listen_device_events(DeviceEvents::Always);
         let window = Arc::new(
             event_loop
                 .create_window(
@@ -676,6 +688,73 @@ impl ApplicationHandler for WebViewer {
             state.window = Some(window.clone());
             state.initializing = true;
         }
+        let canvas = window.canvas().expect("browser canvas");
+        let state_for_pointer = self.state.clone();
+        let canvas_for_pointer = canvas.clone();
+        let pointer_down =
+            Closure::<dyn FnMut(web_sys::PointerEvent)>::new(move |event: web_sys::PointerEvent| {
+            if event.button() != 0 {
+                return;
+            }
+            let mut state = state_for_pointer.borrow_mut();
+            if state.pointer_locked || state.pointer_lock_pending {
+                return;
+            }
+            state.pointer_lock_pending = true;
+            state.dragging = true;
+            state.last_cursor = None;
+            drop(state);
+            request_pointer_lock(&canvas_for_pointer);
+            });
+        canvas
+            .add_event_listener_with_callback("pointerdown", pointer_down.as_ref().unchecked_ref())
+            .expect("listen for pointer capture");
+        pointer_down.forget();
+
+        let document = web_sys::window()
+            .expect("window")
+            .document()
+            .expect("document");
+        let state_for_change = self.state.clone();
+        let document_for_change = document.clone();
+        let pointer_lock_change = Closure::<dyn FnMut(Event)>::new(move |_| {
+            let locked = document_for_change.pointer_lock_element().is_some();
+            let mut state = state_for_change.borrow_mut();
+            state.pointer_locked = locked;
+            state.pointer_lock_pending = false;
+            state.dragging = false;
+            if let Some(window) = state.window.as_ref() {
+                window.set_cursor_visible(!locked);
+            }
+        });
+        document
+            .add_event_listener_with_callback(
+                "pointerlockchange",
+                pointer_lock_change.as_ref().unchecked_ref(),
+            )
+            .expect("listen for pointer lock changes");
+        pointer_lock_change.forget();
+
+        let document = web_sys::window()
+            .expect("window")
+            .document()
+            .expect("document");
+        let state_for_error = self.state.clone();
+        let pointer_lock_error = Closure::<dyn FnMut(Event)>::new(move |_| {
+            let mut state = state_for_error.borrow_mut();
+            state.pointer_locked = false;
+            state.pointer_lock_pending = false;
+            if let Some(window) = state.window.as_ref() {
+                window.set_cursor_visible(true);
+            }
+        });
+        document
+            .add_event_listener_with_callback(
+                "pointerlockerror",
+                pointer_lock_error.as_ref().unchecked_ref(),
+            )
+            .expect("listen for pointer lock errors");
+        pointer_lock_error.forget();
         let state = self.state.clone();
         let window_for_renderer = window.clone();
         spawn_local(async move {
@@ -716,17 +795,26 @@ impl ApplicationHandler for WebViewer {
             }
             WindowEvent::MouseInput {
                 state,
-                button: MouseButton::Left,
+                button,
                 ..
             } => {
-                let pressed = state == ElementState::Pressed;
-                let mut state = self.state.borrow_mut();
-                state.dragging = pressed;
-                state.last_cursor = None;
+                if button == MouseButton::Left && state == ElementState::Pressed {
+                    let mut state = self.state.borrow_mut();
+                    if !state.pointer_locked && !state.pointer_lock_pending {
+                        state.dragging = true;
+                        state.last_cursor = None;
+                    }
+                } else if button == MouseButton::Left && state == ElementState::Released {
+                    let mut state = self.state.borrow_mut();
+                    if !state.pointer_locked {
+                        state.dragging = false;
+                        state.last_cursor = None;
+                    }
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let mut state = self.state.borrow_mut();
-                if state.dragging {
+                if state.dragging && !state.pointer_locked {
                     if let Some((last_x, last_y)) = state.last_cursor {
                         let dx = position.x - last_x;
                         let dy = position.y - last_y;
@@ -740,6 +828,10 @@ impl ApplicationHandler for WebViewer {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    if event.state == ElementState::Pressed && code == KeyCode::Escape {
+                        self.release_pointer();
+                        return;
+                    }
                     let mut state = self.state.borrow_mut();
                     if event.state == ElementState::Pressed {
                         state.keys.insert(code);
@@ -748,8 +840,27 @@ impl ApplicationHandler for WebViewer {
                     }
                 }
             }
+            WindowEvent::Focused(false) => self.release_pointer(),
             WindowEvent::RedrawRequested => self.render(),
             _ => {}
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        if let winit::event::DeviceEvent::MouseMotion { delta } = event {
+            let mut state = self.state.borrow_mut();
+            if state.pointer_locked {
+                let sensitivity = state.camera.sensitivity;
+                state.camera.rotate(
+                    delta.0 as f32 * sensitivity,
+                    -(delta.1 as f32) * sensitivity,
+                );
+            }
         }
     }
 
@@ -806,6 +917,21 @@ impl ApplicationHandler for WebViewer {
 }
 
 impl WebViewer {
+    fn release_pointer(&mut self) {
+        let mut state = self.state.borrow_mut();
+        if !state.pointer_locked && !state.pointer_lock_pending && !state.dragging {
+            return;
+        }
+        if let Some(window) = state.window.as_ref() {
+            let _ = window.set_cursor_grab(CursorGrabMode::None);
+            window.set_cursor_visible(true);
+        }
+        state.pointer_locked = false;
+        state.pointer_lock_pending = false;
+        state.dragging = false;
+        state.last_cursor = None;
+    }
+
     fn render(&mut self) {
         let mut state = self.state.borrow_mut();
         let Some(window) = state.window.as_ref() else {
