@@ -274,6 +274,19 @@ def make_smoke_save(path):
             ],
         )
     )
+    spider = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:spider")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 12.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 14.5),
+            ],
+        )
+    )
     entity_chunk = nbt_compound(
         "",
         nbt_int_array("Position", [0, 0])
@@ -296,6 +309,7 @@ def make_smoke_save(path):
                 enderman,
                 squid,
                 glow_squid,
+                spider,
             ],
         ),
     )
@@ -365,6 +379,7 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     files.append("textures/entity/enderman/enderman.png")
     files.append("textures/entity/squid/squid.png")
     files.append("textures/entity/squid/glow_squid.png")
+    files.append("textures/entity/spider/spider.png")
     for name in files:
         file = assets / name
         archive.write(file, (pathlib.Path("pack/assets/minecraft") / name).as_posix())

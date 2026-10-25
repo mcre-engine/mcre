@@ -1891,6 +1891,116 @@ const SQUID_CUBES: &[EntityCube] = &[
     },
 ];
 
+const SPIDER_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 15.0, -3.0],
+        rotation_x: 0.0,
+        texture_origin: [32.0, 4.0],
+        cube: [-4.0, -4.0, -8.0, 8.0, 8.0, 8.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 15.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-3.0, -3.0, -3.0, 6.0, 6.0, 6.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 15.0, 9.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 12.0],
+        cube: [-5.0, -4.0, -6.0, 10.0, 8.0, 12.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
+const SPIDER_LEG_CUBES: &[EntityCubeRot] = &[
+    EntityCubeRot {
+        offset: [-4.0, 15.0, 2.0],
+        rotation: [
+            0.0,
+            std::f32::consts::FRAC_PI_4,
+            -std::f32::consts::FRAC_PI_4,
+        ],
+        texture_origin: [18.0, 0.0],
+        cube: [-15.0, -1.0, -1.0, 16.0, 2.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCubeRot {
+        offset: [4.0, 15.0, 2.0],
+        rotation: [
+            0.0,
+            -std::f32::consts::FRAC_PI_4,
+            std::f32::consts::FRAC_PI_4,
+        ],
+        texture_origin: [18.0, 0.0],
+        cube: [-1.0, -1.0, -1.0, 16.0, 2.0, 2.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCubeRot {
+        offset: [-4.0, 15.0, 1.0],
+        rotation: [0.0, std::f32::consts::FRAC_PI_8, -0.5811946],
+        texture_origin: [18.0, 0.0],
+        cube: [-15.0, -1.0, -1.0, 16.0, 2.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCubeRot {
+        offset: [4.0, 15.0, 1.0],
+        rotation: [0.0, -std::f32::consts::FRAC_PI_8, 0.5811946],
+        texture_origin: [18.0, 0.0],
+        cube: [-1.0, -1.0, -1.0, 16.0, 2.0, 2.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCubeRot {
+        offset: [-4.0, 15.0, 0.0],
+        rotation: [0.0, -std::f32::consts::FRAC_PI_8, -0.5811946],
+        texture_origin: [18.0, 0.0],
+        cube: [-15.0, -1.0, -1.0, 16.0, 2.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCubeRot {
+        offset: [4.0, 15.0, 0.0],
+        rotation: [0.0, std::f32::consts::FRAC_PI_8, 0.5811946],
+        texture_origin: [18.0, 0.0],
+        cube: [-1.0, -1.0, -1.0, 16.0, 2.0, 2.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCubeRot {
+        offset: [-4.0, 15.0, -1.0],
+        rotation: [
+            0.0,
+            -std::f32::consts::FRAC_PI_4,
+            -std::f32::consts::FRAC_PI_4,
+        ],
+        texture_origin: [18.0, 0.0],
+        cube: [-15.0, -1.0, -1.0, 16.0, 2.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCubeRot {
+        offset: [4.0, 15.0, -1.0],
+        rotation: [
+            0.0,
+            std::f32::consts::FRAC_PI_4,
+            std::f32::consts::FRAC_PI_4,
+        ],
+        texture_origin: [18.0, 0.0],
+        cube: [-1.0, -1.0, -1.0, 16.0, 2.0, 2.0],
+        growth: 0.0,
+        mirror: true,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
@@ -1973,6 +2083,12 @@ const SQUID_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SQUID_CUBES,
     rotated_cubes: &[],
+};
+
+const SPIDER_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 32.0],
+    cubes: SPIDER_CUBES,
+    rotated_cubes: SPIDER_LEG_CUBES,
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -2432,6 +2548,21 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     data.entity_textures.glow_squid,
                     "minecraft:entity/squid/",
                     &SQUID_MODEL,
+                    white,
+                );
+            }
+            "minecraft:spider" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.spider,
+                    "minecraft:entity/spider/",
+                    &SPIDER_MODEL,
                     white,
                 );
             }
@@ -4545,6 +4676,13 @@ mod tests {
         data
     }
 
+    fn spider_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/spider/spider".into()];
+        data.entity_textures.spider = 0;
+        data
+    }
+
     fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
             ("id".into(), Tag::String("minecraft:parrot".into())),
@@ -5185,6 +5323,23 @@ mod tests {
                 .iter()
                 .all(|vertex| vertex.uv[1] >= 0.5 - 1e-6)
         );
+    }
+
+    #[test]
+    fn spider_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:spider", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&spider_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 66);
+        assert_eq!(mesh.indices.len(), 66 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 6.971772).abs() < 1e-4);
+        assert!((max[0] - 9.028228).abs() < 1e-4);
+        assert!((min[1] - 64.01931).abs() < 1e-4);
+        assert!((max[1] - 64.8135).abs() < 1e-4);
+        assert!((min[2] - 7.0625).abs() < 1e-4);
+        assert!((max[2] - 8.769607).abs() < 1e-4);
     }
 
     #[test]

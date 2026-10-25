@@ -150,6 +150,7 @@ pub struct EntityTextureIds {
     pub enderman: u32,
     pub squid: u32,
     pub glow_squid: u32,
+    pub spider: u32,
 }
 
 impl EntityTextureIds {
@@ -186,6 +187,7 @@ impl EntityTextureIds {
             enderman: interner.intern("minecraft:entity/enderman/enderman"),
             squid: interner.intern("minecraft:entity/squid/squid"),
             glow_squid: interner.intern("minecraft:entity/squid/glow_squid"),
+            spider: interner.intern("minecraft:entity/spider/spider"),
         }
     }
 }
