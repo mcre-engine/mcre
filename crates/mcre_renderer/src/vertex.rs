@@ -71,6 +71,7 @@ pub struct FormatFlags {
     pub normal: bool,
     pub mid_uv: bool,
     pub mid_block: bool,
+    pub uv_bounds: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,6 +80,7 @@ pub struct AttributeOffsets {
     pub normal: u32,
     pub mid_uv: u32,
     pub mid_block: u32,
+    pub uv_bounds: u32,
     pub stride: u32,
 }
 
@@ -90,6 +92,7 @@ impl FormatFlags {
         normal: false,
         mid_uv: false,
         mid_block: false,
+        uv_bounds: false,
     };
 
     pub const FULL: Self = Self {
@@ -97,6 +100,7 @@ impl FormatFlags {
         normal: true,
         mid_uv: true,
         mid_block: true,
+        uv_bounds: true,
     };
 
     pub fn offsets(self) -> AttributeOffsets {
@@ -114,11 +118,19 @@ impl FormatFlags {
         let normal = next(self.normal);
         let mid_uv = next(self.mid_uv);
         let mid_block = next(self.mid_block);
+        let uv_bounds = if self.uv_bounds {
+            let at = offset;
+            offset += 8;
+            at
+        } else {
+            0
+        };
         AttributeOffsets {
             block_id,
             normal,
             mid_uv,
             mid_block,
+            uv_bounds,
             stride: offset,
         }
     }
@@ -135,6 +147,7 @@ pub struct TerrainVertex {
     pub normal_tangent: u32,
     pub mid_uv: [u16; 2],
     pub mid_block: [u8; 4],
+    pub uv_bounds: [u16; 4],
 }
 
 pub fn quantize_position(position: f32) -> u32 {
@@ -394,6 +407,29 @@ pub fn encode_quad(input: &QuadEncodeInput) -> [TerrainVertex; 4] {
     ];
     let normal_tangent = encode_normal_tangent(&input.positions, &input.uvs);
     let block_id = pack_block_id(input.state_id, input.translucent);
+    let bounds = [
+        input
+            .uvs
+            .iter()
+            .map(|uv| uv[0])
+            .fold(f32::INFINITY, f32::min),
+        input
+            .uvs
+            .iter()
+            .map(|uv| uv[1])
+            .fold(f32::INFINITY, f32::min),
+        input
+            .uvs
+            .iter()
+            .map(|uv| uv[0])
+            .fold(f32::NEG_INFINITY, f32::max),
+        input
+            .uvs
+            .iter()
+            .map(|uv| uv[1])
+            .fold(f32::NEG_INFINITY, f32::max),
+    ];
+    let uv_bounds = bounds.map(|coord| (coord.clamp(0.0, 1.0) * 65535.0).round() as u16);
 
     let mut vertices = [TerrainVertex::zeroed(); 4];
     for (i, vertex) in vertices.iter_mut().enumerate() {
@@ -426,6 +462,7 @@ pub fn encode_quad(input: &QuadEncodeInput) -> [TerrainVertex; 4] {
             normal_tangent,
             mid_uv,
             mid_block: [mid[0], mid[1], mid[2], input.emission],
+            uv_bounds,
         };
     }
     vertices
@@ -607,12 +644,14 @@ mod tests {
                 normal: 24,
                 mid_uv: 28,
                 mid_block: 32,
-                stride: 36,
+                uv_bounds: 36,
+                stride: 44,
             }
         );
         let none = FormatFlags::NONE.offsets();
         assert_eq!(none.stride, 20);
         assert_eq!(none.block_id, 0);
+        assert_eq!(none.uv_bounds, 0);
     }
 
     #[test]
@@ -652,6 +691,7 @@ mod tests {
             assert_eq!(v.light_data, [248, 8, 0, 9]);
             assert_eq!(v.block_id, pack_block_id(7, true));
             assert_eq!(v.mid_uv, [16384, 16384]);
+            assert_eq!(v.uv_bounds, [16384, 16384, 49151, 49151]);
             assert_eq!(v.mid_block[3], 3);
             assert_eq!(v.normal_tangent, vertices[0].normal_tangent);
         }

@@ -74,6 +74,15 @@ def main():
         print(f"{direction}: {len(leaks)} sky pixels below the floor horizon")
         if leaks:
             raise ValueError(f"floor pinholes in {path}: {leaks[:10]}")
+        warm = [
+            (x, y)
+            for y in range(height // 2 + 4, height)
+            for x in range(width)
+            if rows[y][x * 4] > rows[y][x * 4 + 2] + 10
+        ]
+        print(f"{direction}: {len(warm)} off-sprite pixels on the stone floor")
+        if warm:
+            raise ValueError(f"texture atlas seams in {path}: {warm[:10]}")
 
 
 if __name__ == "__main__":

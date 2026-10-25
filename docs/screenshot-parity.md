@@ -59,7 +59,7 @@ The flat seam regression scene is generated with `just flat-seam-world`; it
 contains a 17×17-chunk stone plane with the camera at `[136.5, 2.0, 136.5]`.
 `just flat-seam-shots` captures it facing south, west, north, and east. These
 views put multiple chunk boundaries across a low horizon; the recipe checks
-for sky-colored pixels below the floor horizon in each capture.
+for sky-colored pinholes and off-sprite colors on the stone floor in each capture.
 
 ## Spec format
 

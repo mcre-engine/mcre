@@ -2019,7 +2019,7 @@ fn create_cloud_buffer(device: &wgpu::Device, vertices: &[CloudVertex]) -> Optio
     )
 }
 
-fn terrain_vertex_layout(offsets: FormatFlags) -> [wgpu::VertexAttribute; 8] {
+fn terrain_vertex_layout(offsets: FormatFlags) -> [wgpu::VertexAttribute; 9] {
     let offsets = offsets.offsets();
     [
         wgpu::VertexAttribute {
@@ -2061,6 +2061,11 @@ fn terrain_vertex_layout(offsets: FormatFlags) -> [wgpu::VertexAttribute; 8] {
             format: wgpu::VertexFormat::Sint8x4,
             offset: offsets.mid_block as u64,
             shader_location: 7,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Uint16x4,
+            offset: offsets.uv_bounds as u64,
+            shader_location: 8,
         },
     ]
 }
@@ -2311,16 +2316,18 @@ mod tests {
     #[test]
     fn terrain_layout_matches_full_xhfp_offsets() {
         let offsets = FormatFlags::FULL.offsets();
-        assert_eq!(offsets.stride, 36);
+        assert_eq!(offsets.stride, 44);
         assert_eq!(offsets.block_id, 20);
         assert_eq!(offsets.normal, 24);
         assert_eq!(offsets.mid_uv, 28);
         assert_eq!(offsets.mid_block, 32);
+        assert_eq!(offsets.uv_bounds, 36);
         let attributes = terrain_vertex_layout(FormatFlags::FULL);
         assert_eq!(attributes[4].offset, 20);
         assert_eq!(attributes[5].offset, 24);
         assert_eq!(attributes[6].offset, 28);
         assert_eq!(attributes[7].offset, 32);
+        assert_eq!(attributes[8].offset, 36);
     }
 
     #[test]
