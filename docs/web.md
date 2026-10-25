@@ -33,8 +33,8 @@ and other origins cannot read it.
 ## Saves
 
 After loading a pack, select a zipped Java world with the second file picker.
-The zip is extracted to `saves/upload/` in OPFS, then the viewer loads the 3×3
-chunks around the spawn point (modern
+The zip is extracted to `saves/upload/` in OPFS, then the viewer loads a 9×9
+chunk area around the spawn point (modern
 `dimensions/<namespace>/<path>/region/` layout or legacy `region/`). Chunks
 missing from the zip are air. The current pack supplies the blockstates,
 models, and textures, so load a pack first.
@@ -61,7 +61,11 @@ parses region files.
 
 Click the canvas to capture the mouse; press `Escape` to release it. If pointer
 capture is unavailable, drag with the left mouse button to look. `W`/`A`/`S`/`D`
-move, `Space`/`Shift` move up/down, and `Ctrl` boosts speed.
+move, `Space`/`Shift` move up/down, and `Ctrl` boosts speed. Press `F1` or use
+the Debug button for render-distance, fog, lighting, geometry, and chunk-border
+controls. Save worlds currently load a fixed 9×9 area; render distance only
+changes visibility within that area, and camera-centered streaming is not
+implemented yet.
 
 ## Smoke test
 
@@ -76,7 +80,9 @@ runs `web/smoke.mjs` in headless Chromium with SwiftShader. The test:
    pixels over 16,
 5. uploads `target/web/smoke-save.zip`, waits for the save load, and asserts
    the frame changed,
-6. clicks "Download world zip" and checks the download.
+6. clicks "Download world zip" and checks the download,
+7. exercises the debug panel and render-distance control, then checks pointer
+   capture/release when supported by headless Chromium.
 
 Regenerate the native reference after intentional visual changes:
 

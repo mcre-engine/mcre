@@ -61,6 +61,7 @@ try {
     for (const input of document.querySelectorAll('input[type="file"]')) {
       input.style.display = "none";
     }
+    document.querySelector("#debug-toggle").style.visibility = "hidden";
   });
   await page.waitForTimeout(1000);
   const before = PNG.sync.read(await canvas.screenshot());
@@ -117,6 +118,9 @@ try {
   const overFraction = over16 / pixels;
   assert(mae < 1.2, `web demo MAE vs native reference is ${mae.toFixed(3)}`);
   assert(overFraction < 0.025, `web demo has ${(overFraction * 100).toFixed(2)}% pixels over 16`);
+  await page.evaluate(() => {
+    document.querySelector("#debug-toggle").style.visibility = "visible";
+  });
 
   await page.locator("#world-input").setInputFiles(save);
   await page.waitForFunction(() => document.body.dataset.saveLoaded === "true", null, {
@@ -146,6 +150,39 @@ try {
   const download = await downloadPromise;
   assert.equal(download.suggestedFilename(), "world.zip");
   assert.equal(await download.failure(), null);
+
+  await page.locator("#debug-toggle").click();
+  await page.waitForFunction(() => !document.querySelector("#debug-menu").hidden);
+  await page.waitForFunction(() =>
+    document.querySelector("#debug-info").textContent.includes("Chunks:"),
+  );
+  await page.locator("#render-distance").evaluate((input) => {
+    input.value = "2";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  assert.equal(await page.locator("#render-distance-value").textContent(), "2 chunks");
+  const chunksAtTwoText = await page.locator("#debug-info").textContent();
+  const chunksAtTwo = Number(chunksAtTwoText.match(/Chunks: (\d+)/)?.[1]);
+  assert(Number.isFinite(chunksAtTwo), `debug info did not report chunks: ${chunksAtTwoText}`);
+  await page.locator("#render-distance").evaluate((input) => {
+    input.value = "1";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.waitForFunction((previous) => {
+    const count = Number(
+      document.querySelector("#debug-info").textContent.match(/Chunks: (\d+)/)?.[1],
+    );
+    return count < previous;
+  }, chunksAtTwo);
+  await page.locator("#unlit-enabled").check();
+  await page.locator("#unlit-enabled").uncheck();
+  await page.locator("#fog-enabled").uncheck();
+  await page.locator("#fog-enabled").check();
+  await page.keyboard.press("F1");
+  await page.waitForFunction(() => document.querySelector("#debug-menu").hidden);
+  await page.keyboard.press("F1");
+  await page.waitForFunction(() => !document.querySelector("#debug-menu").hidden);
+  await page.locator("#debug-toggle").click();
 
   await canvas.click({ position: { x: 480, y: 270 } });
   await page.waitForTimeout(200);

@@ -8,9 +8,29 @@
       html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #111; }
       canvas { display: block; width: 100vw !important; height: 100vh !important; }
       input[type=file] { position: fixed; z-index: 2; top: 12px; left: 12px; max-width: 360px; }
+      #debug-toggle { position: fixed; z-index: 3; top: 12px; right: 12px; }
+      #debug-menu { position: fixed; z-index: 3; top: 48px; right: 12px; width: 280px; padding: 12px; color: #eee; background: #181818eF; font: 14px system-ui, sans-serif; }
+      #debug-menu[hidden] { display: none; }
+      #debug-menu h2 { margin: 0 0 10px; font-size: 16px; }
+      #debug-menu label { display: flex; align-items: center; gap: 8px; margin: 7px 0; }
+      #debug-menu input[type=range] { flex: 1; min-width: 0; }
+      #debug-menu p { margin: 10px 0 0; white-space: pre-line; font: 12px ui-monospace, monospace; }
     </style>
   </head>
   <body>
+    <button id="debug-toggle" type="button" aria-expanded="false">Debug (F1)</button>
+    <section id="debug-menu" hidden>
+      <h2>Debug</h2>
+      <label for="render-distance">Render distance: <span id="render-distance-value">1 chunks</span></label>
+      <input id="render-distance" type="range" min="1" max="4" step="1" value="1" />
+      <label><input id="fog-enabled" type="checkbox" checked /> Fog</label>
+      <label><input id="unlit-enabled" type="checkbox" /> Unlit</label>
+      <label><input id="heatmap-enabled" type="checkbox" /> Heatmap</label>
+      <label><input id="wireframe-enabled" type="checkbox" /> Wireframe</label>
+      <label><input id="backface-cull-enabled" type="checkbox" checked /> Backface culling</label>
+      <label><input id="chunk-borders-enabled" type="checkbox" /> Chunk borders</label>
+      <p id="debug-info"></p>
+    </section>
     <script type="module">
       import init from "./viewer.js";
       await init();

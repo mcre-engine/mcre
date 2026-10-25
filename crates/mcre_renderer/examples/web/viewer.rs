@@ -9,8 +9,9 @@ use std::{
 use mcre_anvil::{BiomeResolver, BlockResolver, ImportStats, RegionFile, Spawn};
 use mcre_fs::{Fs as _, FsPath, web::OpfsFs};
 use mcre_renderer::{
-    Atlas, AtlasAnimator, CloudStatus, CloudTexture, LightMode, MeshOptions, RenderChunk, Renderer,
-    SectionMesh, build_atlas_square, demo, mesh_chunk, pack_chunk_sections, vanilla_fog,
+    Atlas, AtlasAnimator, CloudStatus, CloudTexture, DebugFlags, Fog, LightMode, MeshOptions,
+    RenderChunk, Renderer, SectionMesh, build_atlas_square, demo, mesh_chunk, pack_chunk_sections,
+    vanilla_fog,
 };
 use mcre_renderer::lightmap::DEFAULT_BRIGHTNESS;
 use mcre_resource_pack::{Colormaps, ResourcePackData, ResourcePackSet, discover};
@@ -29,6 +30,8 @@ use winit::{
     },
     window::{CursorGrabMode, Window, WindowAttributes},
 };
+
+const SAVE_CHUNK_RADIUS: i32 = 4;
 
 #[wasm_bindgen::prelude::wasm_bindgen(inline_js = "export function request_pointer_lock(canvas) { try { const pending = canvas.requestPointerLock(); if (pending && typeof pending.catch === 'function') pending.catch(() => document.dispatchEvent(new Event('pointerlockerror'))); } catch (_) { document.dispatchEvent(new Event('pointerlockerror')); } }")]
 extern "C" {
@@ -57,6 +60,14 @@ struct WebState {
     pointer_lock_pending: bool,
     last_cursor: Option<(f64, f64)>,
     last_frame_ms: f64,
+    render_distance: u32,
+    debug_visible: bool,
+    fog_enabled: bool,
+    unlit: bool,
+    heatmap: bool,
+    wireframe: bool,
+    backface_cull: bool,
+    chunk_borders: bool,
 }
 
 struct WebViewer {
@@ -100,10 +111,19 @@ pub fn start() {
             pointer_lock_pending: false,
             last_cursor: None,
             last_frame_ms: 0.0,
+            render_distance: 1,
+            debug_visible: false,
+            fog_enabled: true,
+            unlit: false,
+            heatmap: false,
+            wireframe: false,
+            backface_cull: true,
+            chunk_borders: false,
         }));
         install_pack_input(fs.clone(), state.clone());
         install_save_input(fs.clone(), state.clone());
         install_save_download(fs);
+        install_debug_controls(state.clone());
 
         let event_loop = EventLoop::new().expect("event loop");
         event_loop.spawn_app(WebViewer { state });
@@ -248,6 +268,153 @@ fn install_save_download(fs: Rc<OpfsFs>) {
     callback.forget();
 }
 
+#[derive(Clone, Copy)]
+enum DebugToggle {
+    Fog,
+    Unlit,
+    Heatmap,
+    Wireframe,
+    BackfaceCull,
+    ChunkBorders,
+}
+
+fn install_debug_controls(state: Rc<RefCell<WebState>>) {
+    let document = web_sys::window()
+        .expect("window")
+        .document()
+        .expect("document");
+    let button: HtmlButtonElement = document
+        .get_element_by_id("debug-toggle")
+        .expect("debug toggle")
+        .dyn_into()
+        .expect("debug toggle button");
+    let toggle_state = state.clone();
+    let callback = Closure::<dyn FnMut(Event)>::new(move |_| toggle_debug_menu(&toggle_state));
+    button
+        .add_event_listener_with_callback("click", callback.as_ref().unchecked_ref())
+        .expect("listen for debug toggle");
+    callback.forget();
+
+    let key_state = state.clone();
+    let callback = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(
+        move |event: web_sys::KeyboardEvent| {
+            if event.key() == "F1" && !event.repeat() {
+                event.prevent_default();
+                release_pointer_state(&key_state);
+                toggle_debug_menu(&key_state);
+            }
+        },
+    );
+    document
+        .add_event_listener_with_callback("keydown", callback.as_ref().unchecked_ref())
+        .expect("listen for debug key");
+    callback.forget();
+
+    let distance: HtmlInputElement = document
+        .get_element_by_id("render-distance")
+        .expect("render distance control")
+        .dyn_into()
+        .expect("render distance input");
+    let distance_for_event = distance.clone();
+    let distance_state = state.clone();
+    let callback = Closure::<dyn FnMut(Event)>::new(move |_| {
+        let value = distance_for_event.value_as_number().round() as u32;
+        let value = value.clamp(1, SAVE_CHUNK_RADIUS as u32);
+        distance_state.borrow_mut().render_distance = value;
+        set_render_distance_label(value);
+    });
+    distance
+        .add_event_listener_with_callback("input", callback.as_ref().unchecked_ref())
+        .expect("listen for render distance changes");
+    callback.forget();
+
+    for (id, toggle) in [
+        ("fog-enabled", DebugToggle::Fog),
+        ("unlit-enabled", DebugToggle::Unlit),
+        ("heatmap-enabled", DebugToggle::Heatmap),
+        ("wireframe-enabled", DebugToggle::Wireframe),
+        ("backface-cull-enabled", DebugToggle::BackfaceCull),
+        ("chunk-borders-enabled", DebugToggle::ChunkBorders),
+    ] {
+        let input: HtmlInputElement = document
+            .get_element_by_id(id)
+            .expect("debug option")
+            .dyn_into()
+            .expect("debug checkbox");
+        let input_for_event = input.clone();
+        let toggle_state = state.clone();
+        let callback = Closure::<dyn FnMut(Event)>::new(move |_| {
+            set_debug_toggle(&mut toggle_state.borrow_mut(), toggle, input_for_event.checked());
+        });
+        input
+            .add_event_listener_with_callback("change", callback.as_ref().unchecked_ref())
+            .expect("listen for debug option");
+        callback.forget();
+    }
+}
+
+fn set_debug_toggle(state: &mut WebState, toggle: DebugToggle, enabled: bool) {
+    match toggle {
+        DebugToggle::Fog => state.fog_enabled = enabled,
+        DebugToggle::Unlit => state.unlit = enabled,
+        DebugToggle::Heatmap => state.heatmap = enabled,
+        DebugToggle::Wireframe => state.wireframe = enabled,
+        DebugToggle::BackfaceCull => state.backface_cull = enabled,
+        DebugToggle::ChunkBorders => state.chunk_borders = enabled,
+    }
+}
+
+fn toggle_debug_menu(state: &Rc<RefCell<WebState>>) {
+    let visible = {
+        let mut state = state.borrow_mut();
+        state.debug_visible = !state.debug_visible;
+        state.keys.clear();
+        state.debug_visible
+    };
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return;
+    };
+    if let Some(menu) = document.get_element_by_id("debug-menu") {
+        if visible {
+            let _ = menu.remove_attribute("hidden");
+        } else {
+            let _ = menu.set_attribute("hidden", "");
+        }
+    }
+    if let Some(button) = document.get_element_by_id("debug-toggle") {
+        let _ = button.set_attribute("aria-expanded", &visible.to_string());
+    }
+}
+
+fn release_pointer_state(state: &Rc<RefCell<WebState>>) {
+    let mut state = state.borrow_mut();
+    if !state.pointer_locked && !state.pointer_lock_pending && !state.dragging {
+        return;
+    }
+    if let Some(window) = state.window.as_ref() {
+        let _ = window.set_cursor_grab(CursorGrabMode::None);
+        window.set_cursor_visible(true);
+    }
+    state.pointer_locked = false;
+    state.pointer_lock_pending = false;
+    state.dragging = false;
+    state.last_cursor = None;
+}
+
+fn set_render_distance_label(distance: u32) {
+    if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+        if let Some(input) = document
+            .get_element_by_id("render-distance")
+            .and_then(|element| element.dyn_into::<HtmlInputElement>().ok())
+        {
+            input.set_value(&distance.to_string());
+        }
+        if let Some(label) = document.get_element_by_id("render-distance-value") {
+            label.set_text_content(Some(&format!("{distance} chunks")));
+        }
+    }
+}
+
 async fn load_uploaded_pack(
     fs: Rc<OpfsFs>,
     state: Rc<RefCell<WebState>>,
@@ -380,10 +547,13 @@ async fn load_uploaded_save(
     let mut state = state.borrow_mut();
     state.world = world;
     state.sections = sections;
+    state.render_distance = SAVE_CHUNK_RADIUS as u32;
     state.camera.position = camera_position;
     state.camera.yaw = camera_yaw;
     state.camera.pitch = camera_pitch;
     state.generation += 1;
+    drop(state);
+    set_render_distance_label(SAVE_CHUNK_RADIUS as u32);
     if let Some(body) = web_sys::window().and_then(|window| window.document()?.body()) {
         let _ = body.set_attribute("data-save-loaded", "true");
     }
@@ -554,11 +724,11 @@ async fn load_save_world(fs: &OpfsFs, save_root: &FsPath) -> Result<(World, Spaw
     let blocks = BlockResolver::new();
     let biomes = BiomeResolver::new();
     let mut stats = ImportStats::default();
-    let mut world = World::new(1);
+    let mut world = World::new(SAVE_CHUNK_RADIUS as u32);
     let mut regions: HashMap<(i32, i32), Option<RegionFile>> = HashMap::new();
     let spawn_chunk = (spawn.pos.0.div_euclid(16), spawn.pos.2.div_euclid(16));
-    for dz in -1..=1 {
-        for dx in -1..=1 {
+    for dz in -SAVE_CHUNK_RADIUS..=SAVE_CHUNK_RADIUS {
+        for dx in -SAVE_CHUNK_RADIUS..=SAVE_CHUNK_RADIUS {
             let chunk_x = spawn_chunk.0 + dx;
             let chunk_z = spawn_chunk.1 + dz;
             let region_x = chunk_x.div_euclid(32);
@@ -682,6 +852,7 @@ impl ApplicationHandler for WebViewer {
                 )
                 .expect("create browser canvas"),
         );
+        window.set_prevent_default(true);
         let atlas = self.state.borrow().atlas.clone();
         {
             let mut state = self.state.borrow_mut();
@@ -828,6 +999,9 @@ impl ApplicationHandler for WebViewer {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    if code == KeyCode::F1 {
+                        return;
+                    }
                     if event.state == ElementState::Pressed && code == KeyCode::Escape {
                         self.release_pointer();
                         return;
@@ -875,40 +1049,42 @@ impl ApplicationHandler for WebViewer {
         state.last_frame_ms = now;
         if dt > 0.0 {
             state.animation_ticks += f64::from(dt) * 20.0;
-            let mut forward = 0.0;
-            if state.keys.contains(&KeyCode::KeyW) {
-                forward += 1.0;
+            if !state.debug_visible {
+                let mut forward = 0.0;
+                if state.keys.contains(&KeyCode::KeyW) {
+                    forward += 1.0;
+                }
+                if state.keys.contains(&KeyCode::KeyS) {
+                    forward -= 1.0;
+                }
+                let mut strafe = 0.0;
+                if state.keys.contains(&KeyCode::KeyD) {
+                    strafe += 1.0;
+                }
+                if state.keys.contains(&KeyCode::KeyA) {
+                    strafe -= 1.0;
+                }
+                let mut vertical = 0.0;
+                if state.keys.contains(&KeyCode::Space) {
+                    vertical += 1.0;
+                }
+                if state.keys.contains(&KeyCode::ShiftLeft) {
+                    vertical -= 1.0;
+                }
+                let boost = if state.keys.contains(&KeyCode::ControlLeft) {
+                    3.0
+                } else {
+                    1.0
+                };
+                let speed = state.camera.speed * boost * dt;
+                let forward_vec = state.camera.forward();
+                let right_vec = state.camera.right();
+                for axis in 0..3 {
+                    state.camera.position[axis] +=
+                        (forward_vec[axis] * forward + right_vec[axis] * strafe) * speed;
+                }
+                state.camera.position[1] += vertical * speed;
             }
-            if state.keys.contains(&KeyCode::KeyS) {
-                forward -= 1.0;
-            }
-            let mut strafe = 0.0;
-            if state.keys.contains(&KeyCode::KeyD) {
-                strafe += 1.0;
-            }
-            if state.keys.contains(&KeyCode::KeyA) {
-                strafe -= 1.0;
-            }
-            let mut vertical = 0.0;
-            if state.keys.contains(&KeyCode::Space) {
-                vertical += 1.0;
-            }
-            if state.keys.contains(&KeyCode::ShiftLeft) {
-                vertical -= 1.0;
-            }
-            let boost = if state.keys.contains(&KeyCode::ControlLeft) {
-                3.0
-            } else {
-                1.0
-            };
-            let speed = state.camera.speed * boost * dt;
-            let forward_vec = state.camera.forward();
-            let right_vec = state.camera.right();
-            for axis in 0..3 {
-                state.camera.position[axis] +=
-                    (forward_vec[axis] * forward + right_vec[axis] * strafe) * speed;
-            }
-            state.camera.position[1] += vertical * speed;
         }
         if let Some(window) = state.window.as_ref() {
             window.request_redraw();
@@ -918,18 +1094,7 @@ impl ApplicationHandler for WebViewer {
 
 impl WebViewer {
     fn release_pointer(&mut self) {
-        let mut state = self.state.borrow_mut();
-        if !state.pointer_locked && !state.pointer_lock_pending && !state.dragging {
-            return;
-        }
-        if let Some(window) = state.window.as_ref() {
-            let _ = window.set_cursor_grab(CursorGrabMode::None);
-            window.set_cursor_visible(true);
-        }
-        state.pointer_locked = false;
-        state.pointer_lock_pending = false;
-        state.dragging = false;
-        state.last_cursor = None;
+        release_pointer_state(&self.state);
     }
 
     fn render(&mut self) {
@@ -957,9 +1122,43 @@ impl WebViewer {
                 let _ = body.set_attribute("data-animation-tick", &ticks.to_string());
             }
         }
+        renderer.set_fog(if state.fog_enabled {
+            vanilla_fog(state.render_distance, 6000.0, None, 0.0)
+        } else {
+            Fog::none()
+        });
+        renderer.set_debug_flags(DebugFlags {
+            unlit: state.unlit,
+            heatmap: state.heatmap,
+            fog_off: !state.fog_enabled,
+        });
+        renderer.set_wireframe(state.wireframe);
+        renderer.set_backface_culling(state.backface_cull);
+        renderer.set_chunk_borders(state.chunk_borders);
+
+        let max_distance = state.render_distance as f32 * 16.0;
         let chunks: Vec<_> = state
             .sections
             .iter()
+            .filter(|(origin, _)| {
+                let min_x = origin[0] as f32;
+                let min_z = origin[1] as f32;
+                let dx = if camera_position[0] < min_x {
+                    min_x - camera_position[0]
+                } else if camera_position[0] > min_x + 16.0 {
+                    camera_position[0] - min_x - 16.0
+                } else {
+                    0.0
+                };
+                let dz = if camera_position[2] < min_z {
+                    min_z - camera_position[2]
+                } else if camera_position[2] > min_z + 16.0 {
+                    camera_position[2] - min_z - 16.0
+                } else {
+                    0.0
+                };
+                dx * dx + dz * dz <= max_distance * max_distance
+            })
             .map(|(origin, sections)| RenderChunk {
                 origin: *origin,
                 version: state.generation,
@@ -968,6 +1167,30 @@ impl WebViewer {
             })
             .collect();
         renderer.render(view_projection, camera_position, &chunks, None);
+        if state.debug_visible {
+            let stats = renderer.frame_stats();
+            let chunk_x = (camera_position[0].floor() as i32).div_euclid(16);
+            let chunk_z = (camera_position[2].floor() as i32).div_euclid(16);
+            let text = format!(
+                "Camera: {:.1}, {:.1}, {:.1}\nChunk: {}, {}\nChunks: {} in range / {} loaded\nSections: {}\nDraws: {} opaque + {} translucent",
+                camera_position[0],
+                camera_position[1],
+                camera_position[2],
+                chunk_x,
+                chunk_z,
+                chunks.len(),
+                state.sections.len(),
+                stats.sections,
+                stats.opaque_draws,
+                stats.translucent_draws,
+            );
+            if let Some(info) = web_sys::window()
+                .and_then(|window| window.document())
+                .and_then(|document| document.get_element_by_id("debug-info"))
+            {
+                info.set_text_content(Some(&text));
+            }
+        }
         state.renderer = Some(renderer);
     }
 }
