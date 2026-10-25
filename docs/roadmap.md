@@ -319,8 +319,10 @@ open.
 - [x] Import modern `block_entities` and legacy `TileEntities` compounds from
       Anvil, retain their raw NBT, normalize IDs, and skip malformed or
       out-of-chunk entries with import statistics.
-- [ ] Decode typed payloads and render signs, chests, and other block-entity
-      models; define update/removal behavior for interactive edits.
+- [x] Decode front/back sign lines and style plus modern/legacy inventory
+      slot, item ID, and count; expose summaries in the native block inspector.
+- [ ] Render sign/chest geometry and text, resolve translated components, and
+      define update behavior for interactive edits.
 
 ### M13 — Entities (in progress)
 - [x] Load modern separate entity-region chunks and legacy inline entity lists;

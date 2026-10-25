@@ -1,8 +1,12 @@
+pub mod block_entity;
 pub mod chunk;
 pub mod nbt;
 pub mod region;
 pub mod resolve;
 
+pub use block_entity::{
+    BlockEntityPayload, InventoryItem, SignData, SignText, decode_block_entity_payload,
+};
 pub use chunk::{
     ImportRect, ImportStats, import_area, import_chunk, load_chunk, load_chunk_from_nbt,
     load_entities_from_nbt,

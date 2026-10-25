@@ -172,7 +172,9 @@ Storage decisions (locked):
 - [x] Preserve raw block-entity NBT in chunk/world storage; load modern and
       legacy Anvil lists, expose world lookup, and remove stale data on block
       replacement.
-- [ ] Decode and render sign/chest payloads; wire edits and interaction.
+- [x] Decode sign lines/style and inventory slot/item/count summaries; show
+      them in the native block inspector.
+- [ ] Render sign/chest geometry and text; wire edits and interaction.
 
 ## M13 — Entities (in progress)
 

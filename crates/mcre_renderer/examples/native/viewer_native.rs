@@ -1665,6 +1665,39 @@ impl Viewer {
                                         ui.label(format!(
                                             "Light: block {block_light} sky {sky_light}"
                                         ));
+                                        if let Some(block_entity) =
+                                            self.world.block_entity_at((pos[0], pos[1], pos[2]))
+                                        {
+                                            ui.separator();
+                                            ui.label(format!("Block entity: {}", block_entity.id()));
+                                            match mcre_anvil::decode_block_entity_payload(block_entity) {
+                                                Some(mcre_anvil::BlockEntityPayload::Sign(sign)) => {
+                                                    ui.label(format!(
+                                                        "Front: {}",
+                                                        sign.front.lines.join(" | ")
+                                                    ));
+                                                    ui.label(format!(
+                                                        "Back: {}",
+                                                        sign.back.lines.join(" | ")
+                                                    ));
+                                                    ui.label(format!(
+                                                        "Text: {}{}",
+                                                        sign.front.color,
+                                                        if sign.front.glowing { " (glowing)" } else { "" }
+                                                    ));
+                                                }
+                                                Some(mcre_anvil::BlockEntityPayload::Inventory(items)) => {
+                                                    ui.label(format!("Inventory stacks: {}", items.len()));
+                                                    for item in items.iter().take(5) {
+                                                        ui.label(format!(
+                                                            "Slot {}: {} ×{}",
+                                                            item.slot, item.id, item.count
+                                                        ));
+                                                    }
+                                                }
+                                                None => {}
+                                            }
+                                        }
                                         ui.label(format!("self_skip: {}", state.self_skip()));
                                         ui.label(format!(
                                             "fluid: {}",

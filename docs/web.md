@@ -37,9 +37,10 @@ The zip is extracted to `saves/upload/` in OPFS, then the viewer loads a 9×9
 chunk area around the spawn point (modern
 `dimensions/<namespace>/<path>/region/` layout or legacy `region/`). Chunks
 missing from the zip are air. Matching block entities and separate entity
-region files are imported as read-only raw NBT; block/entity models are not yet
-rendered. The current pack supplies the blockstates, models, and textures, so
-load a pack first.
+region files are imported as read-only raw NBT. The native inspector decodes
+sign text and inventory summaries; block/entity models are not yet rendered.
+The current pack supplies the blockstates, models, and textures, so load a pack
+first.
 
 "Download world zip" re-zips `saves/upload/` and downloads it as `world.zip`.
 Region write-back (saving edits) is still out of scope; `mcre_anvil` only

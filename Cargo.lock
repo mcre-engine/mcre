@@ -1600,6 +1600,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "mcre_world",
+ "serde_json",
  "thiserror 2.0.21",
 ]
 
