@@ -937,9 +937,20 @@ struct EntityCube {
     mirror: bool,
 }
 
+#[derive(Clone, Copy)]
+struct EntityCubeRot {
+    offset: [f32; 3],
+    rotation: [f32; 3],
+    texture_origin: [f32; 2],
+    cube: [f32; 6],
+    growth: f32,
+    mirror: bool,
+}
+
 struct EntityModel {
     texture_size: [f32; 2],
     cubes: &'static [EntityCube],
+    rotated_cubes: &'static [EntityCubeRot],
 }
 
 const PIG_CUBES: &[EntityCube] = &[
@@ -1883,71 +1894,85 @@ const SQUID_CUBES: &[EntityCube] = &[
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
+    rotated_cubes: &[],
 };
 
 const COW_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: COW_CUBES,
+    rotated_cubes: &[],
 };
 
 const CHICKEN_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: CHICKEN_CUBES,
+    rotated_cubes: &[],
 };
 
 const CREEPER_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: CREEPER_CUBES,
+    rotated_cubes: &[],
 };
 
 const SHEEP_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SHEEP_CUBES,
+    rotated_cubes: &[],
 };
 
 const SHEEP_WOOL_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SHEEP_WOOL_CUBES,
+    rotated_cubes: &[],
 };
 
 const ZOMBIE_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: ZOMBIE_CUBES,
+    rotated_cubes: &[],
 };
 
 const SKELETON_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SKELETON_CUBES,
+    rotated_cubes: &[],
 };
 
 const WOLF_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: WOLF_CUBES,
+    rotated_cubes: &[],
 };
 
 const PARROT_MODEL: EntityModel = EntityModel {
     texture_size: [32.0, 32.0],
     cubes: PARROT_CUBES,
+    rotated_cubes: &[],
 };
 
 const BAT_MODEL: EntityModel = EntityModel {
     texture_size: [32.0, 32.0],
     cubes: BAT_CUBES,
+    rotated_cubes: &[],
 };
 
 const BEE_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: BEE_CUBES,
+    rotated_cubes: &[],
 };
 
 const ENDERMAN_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: ENDERMAN_CUBES,
+    rotated_cubes: &[],
 };
 
 const SQUID_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SQUID_CUBES,
+    rotated_cubes: &[],
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -1984,13 +2009,17 @@ fn entity_model_position(model: [f32; 3], position: [f64; 3], yaw: f32) -> [f32;
     ]
 }
 
-fn entity_part_vertex(vertex: [f32; 3], cube: &EntityCube) -> [f32; 3] {
-    let (sin, cos) = cube.rotation_x.sin_cos();
-    [
-        cube.offset[0] + vertex[0],
-        cube.offset[1] + vertex[1] * cos - vertex[2] * sin,
-        cube.offset[2] + vertex[1] * sin + vertex[2] * cos,
-    ]
+fn entity_part_vertex(vertex: [f32; 3], offset: [f32; 3], rotation: [f32; 3]) -> [f32; 3] {
+    let (sin_x, cos_x) = rotation[0].sin_cos();
+    let (sin_y, cos_y) = rotation[1].sin_cos();
+    let (sin_z, cos_z) = rotation[2].sin_cos();
+    let y = vertex[1] * cos_x - vertex[2] * sin_x;
+    let z = vertex[1] * sin_x + vertex[2] * cos_x;
+    let x = vertex[0] * cos_y + z * sin_y;
+    let z = -vertex[0] * sin_y + z * cos_y;
+    let x_rot = x * cos_z - y * sin_z;
+    let y_rot = x * sin_z + y * cos_z;
+    [offset[0] + x_rot, offset[1] + y_rot, offset[2] + z]
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2004,15 +2033,18 @@ fn emit_entity_cube(
     light: [f32; 2],
     texture_size: [f32; 2],
     tint: [f32; 3],
-    cube: &EntityCube,
+    offset: [f32; 3],
+    rotation: [f32; 3],
+    texture_origin: [f32; 2],
+    cube: [f32; 6],
+    growth: f32,
+    mirror: bool,
     yaw: f32,
 ) {
-    for (_, vertices, uvs) in
-        model_box_faces(cube.cube, cube.texture_origin, cube.mirror, cube.growth)
-    {
+    for (_, vertices, uvs) in model_box_faces(cube, texture_origin, mirror, growth) {
         let base = mesh.vertices.len() as u32;
         for (index, vertex) in vertices.iter().enumerate() {
-            let model = entity_part_vertex(*vertex, cube);
+            let model = entity_part_vertex(*vertex, offset, rotation);
             mesh.vertices.push(Vertex {
                 position: entity_model_position(model, position, yaw),
                 uv: atlas_uv_dimensions(region, atlas, &uvs[index], texture_size),
@@ -2068,7 +2100,32 @@ fn emit_entity_layer(
             light,
             model.texture_size,
             tint,
-            cube,
+            cube.offset,
+            [cube.rotation_x, 0.0, 0.0],
+            cube.texture_origin,
+            cube.cube,
+            cube.growth,
+            cube.mirror,
+            yaw,
+        );
+    }
+    for cube in model.rotated_cubes {
+        emit_entity_cube(
+            atlas,
+            mesh,
+            position,
+            block_pos,
+            region,
+            pass,
+            light,
+            model.texture_size,
+            tint,
+            cube.offset,
+            cube.rotation,
+            cube.texture_origin,
+            cube.cube,
+            cube.growth,
+            cube.mirror,
             yaw,
         );
     }
@@ -5128,6 +5185,22 @@ mod tests {
                 .iter()
                 .all(|vertex| vertex.uv[1] >= 0.5 - 1e-6)
         );
+    }
+
+    #[test]
+    fn entity_part_vertex_applies_y_then_z_rotation() {
+        let vertex = entity_part_vertex(
+            [-15.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [
+                0.0,
+                std::f32::consts::FRAC_PI_4,
+                -std::f32::consts::FRAC_PI_4,
+            ],
+        );
+        assert!((vertex[0] - -7.5).abs() < 1e-4);
+        assert!((vertex[1] - 7.5).abs() < 1e-4);
+        assert!((vertex[2] - 10.6066).abs() < 1e-4);
     }
 
     #[test]
