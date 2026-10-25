@@ -31,7 +31,8 @@ struct VertexOutput {
 @vertex
 fn vs_particle(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    output.clip_position = params.view_proj * vec4<f32>(input.position, 1.0);
+    let relative = input.position - params.camera_pos.xyz;
+    output.clip_position = params.view_proj * vec4<f32>(relative, 1.0);
     output.uv = input.uv;
     let light_uv = (input.light * 16.0 + vec2<f32>(8.0)) / 256.0;
     var light = textureSampleLevel(lightmap_texture, lightmap_sampler, light_uv, 0.0).rgb;
@@ -39,7 +40,6 @@ fn vs_particle(input: VertexInput) -> VertexOutput {
         light = vec3<f32>(1.0);
     }
     output.color = vec4<f32>(input.color.rgb * light, input.color.a);
-    let relative = input.position - params.camera_pos.xyz;
     output.distance = vec2<f32>(length(relative), max(length(relative.xz), abs(relative.y)));
     return output;
 }

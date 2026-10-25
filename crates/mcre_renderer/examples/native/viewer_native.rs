@@ -1397,16 +1397,27 @@ impl Viewer {
             self.shot_animation_applied = true;
         }
         let view_proj = self.camera.view_projection(aspect);
+        let camera_relative_view_proj = self.camera.camera_relative_view_projection(aspect);
         let camera_pos = self.camera.position;
 
         if self.shot.is_some() {
             self.push_shot_settings();
-            self.shot_frame(view_proj.0, camera_pos, (width, height));
+            self.shot_frame(
+                view_proj.0,
+                camera_relative_view_proj.0,
+                camera_pos,
+                (width, height),
+            );
             return;
         }
 
         if self.egui_ctx.is_none() || self.egui_state.is_none() {
-            self.render_visible(view_proj.0, camera_pos, None);
+            self.render_visible(
+                view_proj.0,
+                camera_relative_view_proj.0,
+                camera_pos,
+                None,
+            );
             return;
         }
 
@@ -1836,6 +1847,7 @@ impl Viewer {
         renderer.set_cloud_color(cloud_color_for(self.sky_factor));
         self.render_visible(
             view_proj.0,
+            camera_relative_view_proj.0,
             camera_pos,
             Some(EguiFrame {
                 paint_jobs: &paint_jobs,
@@ -1877,7 +1889,13 @@ impl Viewer {
     /// Deterministic capture path: render normal frames until the stream and
     /// mesh queue have been idle for [`SHOT_QUIET_FRAMES`] frames, then
     /// capture offscreen and exit.
-    fn shot_frame(&mut self, view_proj: [f32; 16], camera_pos: [f32; 3], size: (u32, u32)) {
+    fn shot_frame(
+        &mut self,
+        view_proj: [f32; 16],
+        camera_relative_view_proj: [f32; 16],
+        camera_pos: [f32; 3],
+        size: (u32, u32),
+    ) {
         let masks = self.visible_masks(view_proj, camera_pos);
         let particle_vertices = self.particles.vertices(
             camera_pos,
@@ -1916,12 +1934,12 @@ impl Viewer {
             .collect();
 
         if shot.quiet_frames < SHOT_QUIET_FRAMES {
-            renderer.render(view_proj, camera_pos, &chunks, None);
+            renderer.render(camera_relative_view_proj, camera_pos, &chunks, None);
             return;
         }
 
         let out = shot.out.clone();
-        match renderer.capture(size.0, size.1, view_proj, camera_pos, &chunks) {
+        match renderer.capture(size.0, size.1, camera_relative_view_proj, camera_pos, &chunks) {
             Ok(pixels) => {
                 if let Err(err) = write_png(&out, &pixels, size.0, size.1) {
                     eprintln!("viewer: {err}");
@@ -2090,6 +2108,7 @@ impl Viewer {
     fn render_visible(
         &mut self,
         view_proj: [f32; 16],
+        camera_relative_view_proj: [f32; 16],
         camera_pos: [f32; 3],
         egui: Option<EguiFrame<'_>>,
     ) {
@@ -2118,7 +2137,7 @@ impl Viewer {
                 }
             })
             .collect();
-        renderer.render(view_proj, camera_pos, &chunks, egui);
+        renderer.render(camera_relative_view_proj, camera_pos, &chunks, egui);
     }
 
     fn submit_job(

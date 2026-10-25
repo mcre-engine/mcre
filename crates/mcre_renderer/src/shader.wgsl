@@ -65,8 +65,8 @@ fn fog_value(in: VertexOutput) -> f32 {
 fn vs_main(in: VertexInput, @builtin(instance_index) instance: u32) -> VertexOutput {
     var out: VertexOutput;
     let section_origin = section_table[instance].xyz;
-    let world_pos = decode_position(in.position) + section_origin;
-    out.clip_position = params.view_proj * vec4<f32>(world_pos, 1.0);
+    let relative_pos = decode_position(in.position) + section_origin;
+    out.clip_position = params.view_proj * vec4<f32>(relative_pos, 1.0);
     out.uv = decode_texcoord(in.tex) + decode_texcoord_bias(in.tex) * params.fog_misc.x;
     let light_uv = decode_lightmap_uv(in.light_data.xy);
     var light = textureSampleLevel(lightmap_texture, lightmap_sampler, light_uv, 0.0).rgb;
@@ -76,8 +76,10 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instance: u32) -> VertexOut
     // Vanilla `terrain.vsh`: the lightmap multiplies the vertex color before
     // interpolation, so the product (not each factor) is interpolated.
     out.color = in.color.rgb * light;
-    let relative = world_pos - params.camera_pos.xyz;
-    out.distance = vec2<f32>(length(relative), max(length(relative.xz), abs(relative.y)));
+    out.distance = vec2<f32>(
+        length(relative_pos),
+        max(length(relative_pos.xz), abs(relative_pos.y)),
+    );
     out.raw_light = light_uv;
     return out;
 }
@@ -191,7 +193,7 @@ struct LineOutput {
 @vertex
 fn vs_line(@location(0) position: vec3<f32>) -> LineOutput {
     var out: LineOutput;
-    out.clip_position = params.view_proj * vec4<f32>(position, 1.0);
+    out.clip_position = params.view_proj * vec4<f32>(position - params.camera_pos.xyz, 1.0);
     return out;
 }
 

@@ -887,7 +887,13 @@ impl Renderer {
                         break 'chunks;
                     }
                     let table_index = section_table.len() as u32;
-                    section_table.push([origin[0] as f32, origin[1] as f32, origin[2] as f32, 0.0]);
+                    let relative_origin = camera_relative_section_origin(origin, camera_pos);
+                    section_table.push([
+                        relative_origin[0],
+                        relative_origin[1],
+                        relative_origin[2],
+                        0.0,
+                    ]);
                     if pass_index == TerrainPass::Translucent.index() {
                         translucent.push(TranslucentSectionDraw {
                             key,
@@ -2126,6 +2132,10 @@ fn build_main_pipeline(
     })
 }
 
+fn camera_relative_section_origin(origin: [i32; 3], camera_pos: [f32; 3]) -> [f32; 3] {
+    core::array::from_fn(|axis| (f64::from(origin[axis]) - f64::from(camera_pos[axis])) as f32)
+}
+
 fn center_distance_sq(center: [f32; 3], camera_pos: [f32; 3]) -> f32 {
     let dx = center[0] - camera_pos[0];
     let dy = center[1] - camera_pos[1];
@@ -2256,6 +2266,21 @@ mod tests {
         assert_eq!(size_of::<Uniforms>(), 160);
         assert_eq!(size_of::<Uniforms>() % 16, 0);
         assert_eq!(std::mem::offset_of!(Uniforms, flags), 112);
+    }
+
+    #[test]
+    fn section_origins_are_camera_relative_without_world_float_conversion() {
+        assert_eq!(
+            camera_relative_section_origin(
+                [100_000_000, -100_000_000, 100_000_000],
+                [100_000_000.0, -100_000_000.0, 99_999_968.0],
+            ),
+            [0.0, 0.0, 32.0]
+        );
+        assert_eq!(
+            camera_relative_section_origin([64, -64, 128], [63.75, -65.5, 129.25]),
+            [0.25, 1.5, -1.25]
+        );
     }
 
     #[test]

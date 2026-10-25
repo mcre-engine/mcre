@@ -1209,7 +1209,7 @@ impl WebViewer {
         }
         let view_projection = state
             .camera
-            .view_projection(size.width as f32 / size.height as f32)
+            .camera_relative_view_projection(size.width as f32 / size.height as f32)
             .0;
         let camera_position = state.camera.position;
         let Some(mut renderer) = state.renderer.take() else {
