@@ -327,6 +327,10 @@ mod tests {
         );
         assert_eq!(path(data.entity_textures.bat), "minecraft:entity/bat/bat");
         assert_eq!(path(data.entity_textures.bee), "minecraft:entity/bee/bee");
+        assert_eq!(
+            path(data.entity_textures.enderman),
+            "minecraft:entity/enderman/enderman"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

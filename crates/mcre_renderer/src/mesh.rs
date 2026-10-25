@@ -1754,6 +1754,57 @@ const BEE_CUBES: &[EntityCube] = &[
     },
 ];
 
+const ENDERMAN_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, -13.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-4.0, -8.0, -4.0, 8.0, 8.0, 8.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, -14.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [32.0, 16.0],
+        cube: [-4.0, 0.0, -2.0, 8.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-5.0, -12.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [56.0, 0.0],
+        cube: [-1.0, -2.0, -1.0, 2.0, 30.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [5.0, -12.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [56.0, 0.0],
+        cube: [-1.0, -2.0, -1.0, 2.0, 30.0, 2.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCube {
+        offset: [-2.0, -5.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [56.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 30.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [2.0, -5.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [56.0, 0.0],
+        cube: [-1.0, 0.0, -1.0, 2.0, 30.0, 2.0],
+        growth: 0.0,
+        mirror: true,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
@@ -1812,6 +1863,11 @@ const BAT_MODEL: EntityModel = EntityModel {
 const BEE_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: BEE_CUBES,
+};
+
+const ENDERMAN_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 32.0],
+    cubes: ENDERMAN_CUBES,
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -2194,6 +2250,21 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     data.entity_textures.bee,
                     "minecraft:entity/bee/",
                     &BEE_MODEL,
+                    white,
+                );
+            }
+            "minecraft:enderman" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.enderman,
+                    "minecraft:entity/enderman/",
+                    &ENDERMAN_MODEL,
                     white,
                 );
             }
@@ -4293,6 +4364,13 @@ mod tests {
         data
     }
 
+    fn enderman_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/enderman/enderman".into()];
+        data.entity_textures.enderman = 0;
+        data
+    }
+
     fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
             ("id".into(), Tag::String("minecraft:parrot".into())),
@@ -4877,6 +4955,23 @@ mod tests {
         assert!((max[1] - 64.56356).abs() < 1e-4);
         assert!((min[2] - 7.5625).abs() < 1e-4);
         assert!((max[2] - 8.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn enderman_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:enderman", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&enderman_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 36);
+        assert_eq!(mesh.indices.len(), 36 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.625).abs() < 1e-4);
+        assert!((max[0] - 8.375).abs() < 1e-4);
+        assert!((min[1] - 63.9385).abs() < 1e-4);
+        assert!((max[1] - 66.8135).abs() < 1e-4);
+        assert!((min[2] - 7.75).abs() < 1e-4);
+        assert!((max[2] - 8.25).abs() < 1e-4);
     }
 
     #[test]
