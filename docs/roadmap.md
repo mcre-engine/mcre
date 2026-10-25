@@ -333,9 +333,10 @@ open.
       retain raw NBT, expose namespaced IDs/positions in chunk/world storage,
       and translate entity/passenger positions when importing a recentered area.
 - [x] Bake static adult temperate/warm pigs, temperate cows, temperate/warm
-      chickens, creepers, adult sheep (base plus tinted wool overlay), and
-      zombies into chunk meshes from entity NBT, including yaw, variant, age,
-      entity atlas textures, and block light. (Undercoat deferred.)
+      chickens, creepers, adult sheep (base plus tinted wool overlay),
+      zombies, and skeletons into chunk meshes from entity NBT, including
+      yaw, variant, age, entity atlas textures, and block light. (Undercoat
+      deferred.)
 - [ ] Decode entity-specific data and render the remaining models, animation,
       movement, shadows, and picking; define lifecycle behavior for edits and
       streaming.

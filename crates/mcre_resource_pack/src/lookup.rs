@@ -128,6 +128,7 @@ pub struct EntityTextureIds {
     pub sheep: u32,
     pub sheep_wool: u32,
     pub zombie: u32,
+    pub skeleton: u32,
 }
 
 impl EntityTextureIds {
@@ -142,6 +143,7 @@ impl EntityTextureIds {
             sheep: interner.intern("minecraft:entity/sheep/sheep"),
             sheep_wool: interner.intern("minecraft:entity/sheep/sheep_wool"),
             zombie: interner.intern("minecraft:entity/zombie/zombie"),
+            skeleton: interner.intern("minecraft:entity/skeleton/skeleton"),
         }
     }
 }
