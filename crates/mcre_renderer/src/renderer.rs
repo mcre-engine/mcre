@@ -2133,7 +2133,7 @@ fn build_main_pipeline(
 }
 
 fn camera_relative_section_origin(origin: [i32; 3], camera_pos: [f32; 3]) -> [f32; 3] {
-    core::array::from_fn(|axis| (f64::from(origin[axis]) - f64::from(camera_pos[axis])) as f32)
+    core::array::from_fn(|axis| (i64::from(origin[axis]) - camera_pos[axis].floor() as i64) as f32)
 }
 
 fn center_distance_sq(center: [f32; 3], camera_pos: [f32; 3]) -> f32 {
@@ -2279,8 +2279,12 @@ mod tests {
         );
         assert_eq!(
             camera_relative_section_origin([64, -64, 128], [63.75, -65.5, 129.25]),
-            [0.25, 1.5, -1.25]
+            [1.0, 2.0, -1.0]
         );
+        let camera = [384.25, -48.5, -672.75];
+        let left = camera_relative_section_origin([0, 0, -688], camera);
+        let right = camera_relative_section_origin([16, 0, -688], camera);
+        assert_eq!(left[0] + 16.0, right[0]);
     }
 
     #[test]

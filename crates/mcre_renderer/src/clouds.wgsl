@@ -77,13 +77,14 @@ fn vs_clouds(in: CloudInput) -> CloudOutput {
     let face_vertex = corner_vertex(direction * 4u + corner);
     let pos = (face_vertex + vec3<f32>(in.cell.x, 0.0, in.cell.y)) * cloud_info.cell_size.xyz
         + cloud_info.offset.xyz;
-    let relative = pos - params.camera_pos.xyz;
+    let relative = pos - floor(params.camera_pos.xyz);
+    let camera_relative = relative - (params.camera_pos.xyz - floor(params.camera_pos.xyz));
     let face_color = select(FACE_COLORS[direction], FACE_COLORS[1], use_top_color);
 
     var out: CloudOutput;
     out.clip_position = params.view_proj * vec4<f32>(relative, 1.0);
     out.color = face_color * cloud_info.color;
-    out.distance = length(relative);
+    out.distance = length(camera_relative);
     return out;
 }
 

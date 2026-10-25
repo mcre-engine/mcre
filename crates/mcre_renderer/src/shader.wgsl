@@ -76,9 +76,11 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instance: u32) -> VertexOut
     // Vanilla `terrain.vsh`: the lightmap multiplies the vertex color before
     // interpolation, so the product (not each factor) is interpolated.
     out.color = in.color.rgb * light;
+    let camera_fraction = params.camera_pos.xyz - floor(params.camera_pos.xyz);
+    let camera_relative_pos = relative_pos - camera_fraction;
     out.distance = vec2<f32>(
-        length(relative_pos),
-        max(length(relative_pos.xz), abs(relative_pos.y)),
+        length(camera_relative_pos),
+        max(length(camera_relative_pos.xz), abs(camera_relative_pos.y)),
     );
     out.raw_light = light_uv;
     return out;
@@ -193,7 +195,8 @@ struct LineOutput {
 @vertex
 fn vs_line(@location(0) position: vec3<f32>) -> LineOutput {
     var out: LineOutput;
-    out.clip_position = params.view_proj * vec4<f32>(position - params.camera_pos.xyz, 1.0);
+    let relative = position - floor(params.camera_pos.xyz);
+    out.clip_position = params.view_proj * vec4<f32>(relative, 1.0);
     return out;
 }
 

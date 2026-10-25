@@ -59,8 +59,16 @@ impl FlyCamera {
     }
 
     pub fn camera_relative_view_projection(&self, aspect: f32) -> Mat4 {
-        let target = self.forward();
-        self.projection_matrix(aspect) * Mat4::look_at([0.0; 3], target, [0.0, 1.0, 0.0])
+        let eye = self
+            .position
+            .map(|coordinate| coordinate - coordinate.floor());
+        let forward = self.forward();
+        let target = [
+            eye[0] + forward[0],
+            eye[1] + forward[1],
+            eye[2] + forward[2],
+        ];
+        self.projection_matrix(aspect) * Mat4::look_at(eye, target, [0.0, 1.0, 0.0])
     }
 }
 
@@ -106,7 +114,7 @@ mod tests {
 
     #[test]
     fn relative_view_projection_matches_absolute_projection_near_camera() {
-        let mut camera = FlyCamera::new([384.0, -48.0, 672.0]);
+        let mut camera = FlyCamera::new([384.25, -48.5, 672.75]);
         camera.yaw = 0.7;
         camera.pitch = -0.2;
         let aspect = 16.0 / 9.0;
@@ -118,9 +126,9 @@ mod tests {
             camera.position[2] - 27.0,
         ];
         let relative_position = [
-            world[0] - camera.position[0],
-            world[1] - camera.position[1],
-            world[2] - camera.position[2],
+            world[0] - camera.position[0].floor(),
+            world[1] - camera.position[1].floor(),
+            world[2] - camera.position[2].floor(),
         ];
         let absolute_clip = absolute.transform_point(world);
         let relative_clip = relative.transform_point(relative_position);
