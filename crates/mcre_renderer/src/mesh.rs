@@ -1679,6 +1679,81 @@ const BAT_CUBES: &[EntityCube] = &[
     },
 ];
 
+const BEE_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 19.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-3.5, -4.0, -5.0, 7.0, 7.0, 10.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 19.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [26.0, 7.0],
+        cube: [0.0, -1.0, 5.0, 0.0, 1.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 17.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [2.0, 0.0],
+        cube: [1.5, -2.0, -3.0, 1.0, 2.0, 3.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 17.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [2.0, 3.0],
+        cube: [-2.5, -2.0, -3.0, 1.0, 2.0, 3.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.5, 15.0, -3.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 18.0],
+        cube: [-9.0, 0.0, 0.0, 9.0, 0.0, 6.0],
+        growth: 0.001,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [1.5, 15.0, -3.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 18.0],
+        cube: [0.0, 0.0, 0.0, 9.0, 0.0, 6.0],
+        growth: 0.001,
+        mirror: true,
+    },
+    EntityCube {
+        offset: [1.5, 22.0, -2.0],
+        rotation_x: 0.0,
+        texture_origin: [26.0, 1.0],
+        cube: [-5.0, 0.0, 0.0, 7.0, 2.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [1.5, 22.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [26.0, 3.0],
+        cube: [-5.0, 0.0, 0.0, 7.0, 2.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [1.5, 22.0, 2.0],
+        rotation_x: 0.0,
+        texture_origin: [26.0, 5.0],
+        cube: [-5.0, 0.0, 0.0, 7.0, 2.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
@@ -1732,6 +1807,11 @@ const PARROT_MODEL: EntityModel = EntityModel {
 const BAT_MODEL: EntityModel = EntityModel {
     texture_size: [32.0, 32.0],
     cubes: BAT_CUBES,
+};
+
+const BEE_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 64.0],
+    cubes: BEE_CUBES,
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -2099,6 +2179,21 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     data.entity_textures.bat,
                     "minecraft:entity/bat/",
                     &BAT_MODEL,
+                    white,
+                );
+            }
+            "minecraft:bee" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.bee,
+                    "minecraft:entity/bee/",
+                    &BEE_MODEL,
                     white,
                 );
             }
@@ -4191,6 +4286,13 @@ mod tests {
         data
     }
 
+    fn bee_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/bee/bee".into()];
+        data.entity_textures.bee = 0;
+        data
+    }
+
     fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
             ("id".into(), Tag::String("minecraft:parrot".into())),
@@ -4758,6 +4860,23 @@ mod tests {
         assert!((max[1] - 64.8135).abs() < 1e-4);
         assert!((min[2] - 7.9375).abs() < 1e-4);
         assert!((max[2] - 8.0625).abs() < 1e-4);
+    }
+
+    #[test]
+    fn bee_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:bee", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&bee_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 54);
+        assert_eq!(mesh.indices.len(), 54 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.343688).abs() < 1e-4);
+        assert!((max[0] - 8.656312).abs() < 1e-4);
+        assert!((min[1] - 64.001).abs() < 1e-4);
+        assert!((max[1] - 64.56356).abs() < 1e-4);
+        assert!((min[2] - 7.5625).abs() < 1e-4);
+        assert!((max[2] - 8.5).abs() < 1e-4);
     }
 
     #[test]
