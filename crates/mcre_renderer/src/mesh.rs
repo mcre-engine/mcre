@@ -15,8 +15,8 @@ use mcre_world::{
 use crate::atlas::{Atlas, AtlasRegion};
 use crate::occlusion::{FULL_VISIBILITY, SectionVisibility, compute_section_visibility};
 use crate::vertex::{
-    FACING_COUNT, QuadEncodeInput, TerrainPass, TerrainVertex, encode_quad, facing_of,
-    facing_of_cullface, opposite_facing, pack_local_section_index,
+    FACING_COUNT, FACING_UNASSIGNED, QuadEncodeInput, TerrainPass, TerrainVertex, encode_quad,
+    facing_of, facing_of_cullface, opposite_facing, pack_local_section_index,
 };
 
 const TINT_BLEND_RADIUS: i32 = 2;
@@ -323,6 +323,7 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
             );
         }
         mesh_chest(data, atlas, access, &mut mesh, block_pos, state);
+        mesh_sign_text(data, atlas, chunk, access, &mut mesh, block_pos, state);
         let Some(entry) = data.entries.get(u16::from(state) as usize) else {
             continue;
         };
@@ -649,6 +650,271 @@ fn rotate_chest_direction(direction: Direction, facing: Direction) -> Direction 
         };
     }
     direction
+}
+
+const SIGN_TEXT_LINE_HEIGHT: f32 = 10.0;
+const SIGN_TEXT_MAX_LINES: usize = 4;
+const SIGN_TEXT_SCALE: f32 = 1.0 / 96.0;
+const SIGN_TEXT_OFFSET: [f32; 3] = [0.0, 0.333_333_34, 0.046_666_667];
+const SIGN_TEXT_WALL_OFFSET: [f32; 3] = [0.0, -0.3125, -0.4375];
+const SIGN_TEXT_DEPTH_OFFSET: f32 = 0.001;
+
+/// Vanilla standing/wall sign text (`AbstractSignRenderer` +
+/// `StandingSignRenderer`): four centred lines of ASCII glyphs from
+/// `font/ascii.png`, transformed into the sign's front or back plane.
+fn mesh_sign_text<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    chunk: &Chunk,
+    access: &A,
+    mesh: &mut Mesh,
+    block_pos: [i32; 3],
+    state: BlockState,
+) {
+    let name = state.block().name();
+    if !name.ends_with("_sign") || name.contains("hanging_sign") {
+        return;
+    }
+    let Some(block_entity) = chunk.block_entity_at((block_pos[0], block_pos[1], block_pos[2]))
+    else {
+        return;
+    };
+    let Some(mcre_anvil::BlockEntityPayload::Sign(sign)) =
+        mcre_anvil::decode_block_entity_payload(block_entity)
+    else {
+        return;
+    };
+    let wall = name.ends_with("_wall_sign");
+    let angle = if wall {
+        direction_y_rotation(state.facing())
+    } else {
+        f32::from(state.rotation()) * 22.5
+    };
+    let font_id = data.font_textures.ascii;
+    let Some(path) = data.texture_table.get(font_id as usize) else {
+        return;
+    };
+    if !path.starts_with("minecraft:font/") {
+        return;
+    }
+    let region = atlas.region(font_id);
+    let (block_light, sky_light) = sample_light(access, block_pos);
+    let block_light = [f32::from(block_light), f32::from(sky_light)];
+
+    for (text, back) in [(&sign.front, false), (&sign.back, true)] {
+        if text.lines.iter().all(|line| line.is_empty()) {
+            continue;
+        }
+        let light = if text.glowing {
+            [15.0, 15.0]
+        } else {
+            block_light
+        };
+        let color = sign_text_color(&text.color, text.glowing);
+        for (line_index, line) in text.lines.iter().take(SIGN_TEXT_MAX_LINES).enumerate() {
+            emit_sign_line(
+                atlas, mesh, block_pos, state, angle, wall, back, region, line_index, line, color,
+                light,
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_sign_line(
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    block_pos: [i32; 3],
+    state: BlockState,
+    angle: f32,
+    wall: bool,
+    back: bool,
+    region: AtlasRegion,
+    line_index: usize,
+    line: &str,
+    color: [f32; 3],
+    light: [f32; 2],
+) {
+    let transform = sign_text_transform(angle, wall, back);
+    let width: f32 = visible_sign_chars(line)
+        .map(|character| sign_glyph(atlas, region, character).map_or(0.0, |(_, advance)| advance))
+        .sum();
+    let mut x = -width / 2.0;
+    let y = line_index as f32 * SIGN_TEXT_LINE_HEIGHT - 2.0 * SIGN_TEXT_LINE_HEIGHT;
+    for character in visible_sign_chars(line) {
+        let Some((uvs, advance)) = sign_glyph(atlas, region, character) else {
+            continue;
+        };
+        if !character.is_whitespace() {
+            let corners = [[x, y], [x, y + 8.0], [x + 8.0, y + 8.0], [x + 8.0, y]];
+            let base = mesh.vertices.len() as u32;
+            for (index, corner) in corners.iter().enumerate() {
+                let position = transform(*corner);
+                mesh.vertices.push(Vertex {
+                    position: [
+                        block_pos[0] as f32 + position[0],
+                        block_pos[1] as f32 + position[1],
+                        block_pos[2] as f32 + position[2],
+                    ],
+                    uv: uvs[index],
+                    color,
+                    light,
+                });
+            }
+            mesh.translucent_indices.extend_from_slice(&[
+                base,
+                base + 1,
+                base + 2,
+                base,
+                base + 2,
+                base + 3,
+            ]);
+            mesh.translucent_meta.push(QuadMeta {
+                facing: FACING_UNASSIGNED,
+                pass: TerrainPass::Translucent,
+                block_pos,
+                state,
+            });
+        }
+        x += advance;
+    }
+}
+
+/// Glyph UV quad (top-left, bottom-left, bottom-right, top-right) and advance
+/// for one ASCII character, derived from `font/ascii.png` the way vanilla's
+/// `BitmapProvider` measures the rightmost opaque column.
+fn sign_glyph(atlas: &Atlas, region: AtlasRegion, character: char) -> Option<([[f32; 2]; 4], f32)> {
+    let mut code = u32::from(character);
+    if !(0x20..=0xFF).contains(&code) {
+        code = u32::from('?');
+    }
+    let index = code - 0x20;
+    let columns = 16;
+    let rows = 16;
+    let cell_width = region.width / columns;
+    let cell_height = region.height / rows;
+    if cell_width == 0 || cell_height == 0 {
+        return None;
+    }
+    let column = index % columns;
+    let row = 2 + index / columns;
+    if row >= rows {
+        return None;
+    }
+    let x0 = region.x + column * cell_width;
+    let y0 = region.y + row * cell_height;
+    let mut actual_width = 0;
+    for width in (0..cell_width).rev() {
+        let mut opaque = false;
+        for y in 0..cell_height {
+            let pixel = ((y0 + y) * atlas.width + x0 + width) as usize * 4;
+            if atlas.pixels.get(pixel + 3).is_some_and(|alpha| *alpha != 0) {
+                opaque = true;
+                break;
+            }
+        }
+        if opaque {
+            actual_width = width + 1;
+            break;
+        }
+    }
+    let scale = 8.0 / cell_height as f32;
+    let advance = if character == ' ' {
+        4.0
+    } else {
+        ((0.5 + actual_width as f32 * scale) as u32 + 1) as f32
+    };
+    let size = [region.width as f32, region.height as f32];
+    let local_x = column * cell_width;
+    let local_y = row * cell_height;
+    let uv = |x: u32, y: u32| atlas_uv_dimensions(region, atlas, &[x as f32, y as f32], size);
+    let uvs = [
+        uv(local_x, local_y),
+        uv(local_x, local_y + cell_height),
+        uv(local_x + cell_width, local_y + cell_height),
+        uv(local_x + cell_width, local_y),
+    ];
+    Some((uvs, advance))
+}
+
+/// `StandingSignRenderer.textTransformation`: block centre, yaw, optional
+/// wall offset, optional 180° back flip, then text offset and 1/96 scale.
+fn sign_text_transform(angle: f32, wall: bool, back: bool) -> impl Fn([f32; 2]) -> [f32; 3] {
+    let (sin, cos) = angle.to_radians().sin_cos();
+    let wall_offset = if wall {
+        SIGN_TEXT_WALL_OFFSET
+    } else {
+        [0.0; 3]
+    };
+    let normal = if back { -1.0 } else { 1.0 };
+    let normal_x = -normal * sin;
+    let normal_z = normal * cos;
+    move |corner| {
+        let mut point = [
+            corner[0] * SIGN_TEXT_SCALE + SIGN_TEXT_OFFSET[0] + wall_offset[0],
+            -corner[1] * SIGN_TEXT_SCALE + SIGN_TEXT_OFFSET[1] + wall_offset[1],
+            SIGN_TEXT_OFFSET[2] + wall_offset[2],
+        ];
+        if back {
+            point[0] = -point[0];
+            point[2] = -point[2];
+        }
+        let x = point[0] * cos - point[2] * sin;
+        let z = point[0] * sin + point[2] * cos;
+        [
+            0.5 + x + normal_x * SIGN_TEXT_DEPTH_OFFSET,
+            0.5 + point[1],
+            0.5 + z + normal_z * SIGN_TEXT_DEPTH_OFFSET,
+        ]
+    }
+}
+
+/// Yields printable characters, dropping vanilla `§` formatting codes.
+fn visible_sign_chars(line: &str) -> impl Iterator<Item = char> + '_ {
+    let mut chars = line.chars();
+    std::iter::from_fn(move || {
+        loop {
+            let character = chars.next()?;
+            if character == '§' {
+                chars.next();
+                continue;
+            }
+            return Some(character);
+        }
+    })
+}
+
+fn direction_y_rotation(direction: Direction) -> f32 {
+    match direction {
+        Direction::South => 0.0,
+        Direction::West => 90.0,
+        Direction::North => 180.0,
+        Direction::East => 270.0,
+        Direction::Down | Direction::Up => 0.0,
+    }
+}
+
+fn sign_text_color(name: &str, glowing: bool) -> [f32; 3] {
+    let rgb = match name {
+        "white" => [255, 255, 255],
+        "orange" => [255, 104, 31],
+        "magenta" => [255, 0, 255],
+        "light_blue" => [154, 192, 205],
+        "yellow" => [255, 255, 0],
+        "lime" => [191, 255, 0],
+        "pink" => [255, 105, 180],
+        "gray" => [128, 128, 128],
+        "light_gray" => [211, 211, 211],
+        "cyan" => [0, 255, 255],
+        "purple" => [160, 32, 240],
+        "blue" => [0, 0, 255],
+        "brown" => [139, 69, 19],
+        "green" => [0, 255, 0],
+        "red" => [255, 0, 0],
+        _ => [0, 0, 0],
+    };
+    let scale = if glowing { 1.0 } else { 0.4 };
+    rgb.map(|component| ((component as f32 * scale) as u8) as f32 / 255.0)
 }
 
 /// Vanilla `Block.getShadeBrightness`: collision-full cells darken
@@ -1601,6 +1867,7 @@ mod tests {
         ResourcePackData {
             fluid_textures: Default::default(),
             chest_textures: Default::default(),
+            font_textures: Default::default(),
             entries,
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -1617,6 +1884,7 @@ mod tests {
         ResourcePackData {
             fluid_textures: Default::default(),
             chest_textures: Default::default(),
+            font_textures: Default::default(),
             entries: vec![],
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -1643,6 +1911,7 @@ mod tests {
         ResourcePackData {
             fluid_textures: Default::default(),
             chest_textures: Default::default(),
+            font_textures: Default::default(),
             entries,
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -1669,6 +1938,7 @@ mod tests {
         ResourcePackData {
             fluid_textures: Default::default(),
             chest_textures: Default::default(),
+            font_textures: Default::default(),
             entries,
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -2486,6 +2756,218 @@ mod tests {
             MeshOptions::default(),
         );
         assert!(mesh.is_empty());
+    }
+
+    fn sign_entity(
+        front: &[&str],
+        back: &[&str],
+        color: &str,
+        glowing: bool,
+    ) -> mcre_world::BlockEntity {
+        use mcre_anvil::nbt::Tag;
+        let side = |lines: &[&str]| {
+            Tag::Compound(vec![
+                (
+                    "messages".into(),
+                    Tag::List(
+                        lines
+                            .iter()
+                            .map(|line| Tag::String((*line).into()))
+                            .collect(),
+                    ),
+                ),
+                ("color".into(), Tag::String(color.into())),
+                (
+                    "has_glowing_text".into(),
+                    Tag::Byte(if glowing { 1 } else { 0 }),
+                ),
+            ])
+        };
+        let root = Tag::Compound(vec![
+            ("front_text".into(), side(front)),
+            ("back_text".into(), side(back)),
+        ]);
+        mcre_world::BlockEntity::new(
+            "minecraft:sign".into(),
+            (0, 0, 0),
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
+    fn sign_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:font/ascii".into()];
+        data.font_textures.ascii = 0;
+        data
+    }
+
+    fn sign_atlas() -> Atlas {
+        let mut atlas = test_atlas();
+        atlas.width = 160;
+        atlas.height = 160;
+        atlas.pixels = vec![0; 160 * 160 * 4];
+        let cell_x = 16 + 8;
+        let cell_y = 16 + 32;
+        for y in 0..8 {
+            for x in 0..6 {
+                let offset = ((cell_y + y) * 160 + cell_x + x) * 4;
+                atlas.pixels[offset..offset + 4].copy_from_slice(&[255, 255, 255, 255]);
+            }
+        }
+        atlas.regions = vec![AtlasRegion {
+            x: 16,
+            y: 16,
+            width: 128,
+            height: 128,
+        }];
+        atlas.has_alpha = vec![true];
+        atlas
+    }
+
+    fn sign_state(rotation: u8) -> BlockState {
+        Block::OAK_SIGN
+            .state(&[mcre_world::PropVal::Rotation(rotation)])
+            .expect("sign rotation")
+    }
+
+    fn mesh_sign(data: &ResourcePackData, atlas: &Atlas, chunk: &Chunk) -> Mesh {
+        mesh_chunk(
+            data,
+            atlas,
+            chunk,
+            &World::new(0),
+            [0, 0],
+            LightMode::Flat,
+            MeshOptions::default(),
+        )
+    }
+
+    #[test]
+    fn sign_text_centers_ascii_glyphs_on_the_front() {
+        let mut chunk = Chunk::new();
+        chunk.set_block(0, 0, 0, sign_state(0));
+        assert!(chunk.set_block_entity(sign_entity(&["A"], &[], "black", false)));
+
+        let mesh = mesh_sign(&sign_data(), &sign_atlas(), &chunk);
+        assert_eq!(mesh.translucent_indices.len(), 6);
+        assert_eq!(mesh.translucent_meta.len(), 1);
+        assert_eq!(mesh.translucent_meta[0].facing, FACING_UNASSIGNED);
+
+        let min_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - (0.5 - 3.5 / 96.0)).abs() < 1e-5);
+        assert!((max_x - (0.5 + 4.5 / 96.0)).abs() < 1e-5);
+        let z = mesh.vertices[0].position[2];
+        assert!((z - (0.5 + 0.046_666_667 + 0.001)).abs() < 1e-5);
+        assert!((mesh.vertices[0].uv[0] - 24.0 / 160.0).abs() < 1e-6);
+        assert!((mesh.vertices[0].uv[1] - 48.0 / 160.0).abs() < 1e-6);
+        assert_eq!(mesh.vertices[0].color, [0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn sign_text_back_is_flipped_to_the_rear_plane() {
+        let mut chunk = Chunk::new();
+        chunk.set_block(0, 0, 0, sign_state(0));
+        assert!(chunk.set_block_entity(sign_entity(&[], &["A"], "black", false)));
+
+        let mesh = mesh_sign(&sign_data(), &sign_atlas(), &chunk);
+        assert_eq!(mesh.translucent_indices.len(), 6);
+        let min_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - (0.5 - 4.5 / 96.0)).abs() < 1e-5);
+        assert!((max_x - (0.5 + 3.5 / 96.0)).abs() < 1e-5);
+        let z = mesh.vertices[0].position[2];
+        assert!((z - (0.5 - 0.046_666_667 - 0.001)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn wall_sign_text_uses_facing_and_wall_offset() {
+        let mut chunk = Chunk::new();
+        chunk.set_block(0, 0, 0, Block::OAK_WALL_SIGN.default_state());
+        assert!(chunk.set_block_entity(sign_entity(&["A"], &[], "black", false)));
+
+        let mesh = mesh_sign(&sign_data(), &sign_atlas(), &chunk);
+        assert_eq!(mesh.translucent_indices.len(), 6);
+        let z = mesh.vertices[0].position[2];
+        assert!((z - (0.5 + 0.4375 - 0.046_666_667 - 0.001)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn glowing_sign_text_uses_bright_color_and_full_light() {
+        let mut chunk = Chunk::new();
+        chunk.set_block(0, 0, 0, sign_state(0));
+        assert!(chunk.set_block_entity(sign_entity(&["A"], &[], "red", true)));
+
+        let mesh = mesh_sign(&sign_data(), &sign_atlas(), &chunk);
+        assert_eq!(mesh.vertices[0].color, [1.0, 0.0, 0.0]);
+        assert_eq!(mesh.vertices[0].light, [15.0, 15.0]);
+    }
+
+    #[test]
+    fn sign_text_dark_colors_match_vanilla_scale() {
+        let mut chunk = Chunk::new();
+        chunk.set_block(0, 0, 0, sign_state(0));
+        assert!(chunk.set_block_entity(sign_entity(&["A"], &[], "orange", false)));
+
+        let mesh = mesh_sign(&sign_data(), &sign_atlas(), &chunk);
+        let color = mesh.vertices[0].color;
+        assert!((color[0] - 102.0 / 255.0).abs() < 1e-6);
+        assert!((color[1] - 41.0 / 255.0).abs() < 1e-6);
+        assert!((color[2] - 12.0 / 255.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sign_text_strips_formatting_codes() {
+        let mut chunk = Chunk::new();
+        chunk.set_block(0, 0, 0, sign_state(0));
+        assert!(chunk.set_block_entity(sign_entity(&["§cA"], &[], "black", false)));
+
+        let mesh = mesh_sign(&sign_data(), &sign_atlas(), &chunk);
+        assert_eq!(mesh.translucent_indices.len(), 6);
+        let min_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        assert!((min_x - (0.5 - 3.5 / 96.0)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn sign_text_uses_vanilla_space_advance() {
+        let mut chunk = Chunk::new();
+        chunk.set_block(0, 0, 0, sign_state(0));
+        assert!(chunk.set_block_entity(sign_entity(&["A A"], &[], "black", false)));
+
+        let mesh = mesh_sign(&sign_data(), &sign_atlas(), &chunk);
+        assert_eq!(mesh.translucent_indices.len(), 12);
+        let min_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - (0.5 - 9.0 / 96.0)).abs() < 1e-5);
+        assert!((max_x - (0.5 + 10.0 / 96.0)).abs() < 1e-5);
     }
 
     #[test]

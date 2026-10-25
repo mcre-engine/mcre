@@ -176,7 +176,10 @@ Storage decisions (locked):
       them in the native block inspector.
 - [x] Render single and double chest halves (normal, trapped, ender, copper
       weathering) from the entity chest textures with facing rotation.
-- [ ] Render sign text; wire edits and interaction.
+- [x] Render standing/wall sign text from the built-in ASCII font, including
+      dye colours and glowing full-bright light.
+- [ ] Render hanging sign text, glowing text outlines, and non-ASCII glyphs.
+- [ ] Wire edits and interaction.
 
 ## M13 — Entities (in progress)
 

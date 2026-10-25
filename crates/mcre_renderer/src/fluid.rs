@@ -669,6 +669,7 @@ mod tests {
         ResourcePackData {
             fluid_textures: Default::default(),
             chest_textures: Default::default(),
+            font_textures: Default::default(),
             entries: vec![],
             particle_texture_ids: vec![],
             texture_table: vec![],

@@ -323,8 +323,10 @@ open.
       slot, item ID, and count; expose summaries in the native block inspector.
 - [x] Render single and double chests from the entity chest textures, including
       trapped, ender, and copper weathering materials.
-- [ ] Render sign text, resolve translated components, and define update
-      behavior for interactive edits.
+- [x] Render standing/wall sign text from the built-in ASCII font with dye
+      colours and glowing full-bright light.
+- [ ] Render hanging signs, glowing outlines, and non-ASCII glyphs, resolve
+      translated components, and define update behavior for interactive edits.
 
 ### M13 — Entities (in progress)
 - [x] Load modern separate entity-region chunks and legacy inline entity lists;

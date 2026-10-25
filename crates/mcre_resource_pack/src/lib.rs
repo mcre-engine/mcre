@@ -189,9 +189,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chest_texture_ids_resolve_all_materials() {
+    async fn builtin_texture_ids_resolve() {
         let root =
-            std::env::temp_dir().join(format!("mcre-pack-chest-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mcre-pack-builtin-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let fs = NativeFs::new_custom_path(root.clone()).await.unwrap();
         stage_pack(&root, "base", [255, 0, 0]);
@@ -220,6 +220,7 @@ mod tests {
             path(chests.copper_oxidized.right),
             "minecraft:entity/chest/copper_oxidized_right"
         );
+        assert_eq!(path(data.font_textures.ascii), "minecraft:font/ascii");
 
         std::fs::remove_dir_all(&root).unwrap();
     }

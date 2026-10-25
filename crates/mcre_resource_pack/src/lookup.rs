@@ -102,6 +102,20 @@ impl ChestTextures {
     }
 }
 
+/// Texture IDs backing the built-in font sheets.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FontTextureIds {
+    pub ascii: u32,
+}
+
+impl FontTextureIds {
+    fn intern(interner: &mut StringInterner) -> Self {
+        Self {
+            ascii: interner.intern("minecraft:font/ascii"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ChestTextureIds {
     pub normal: ChestTextures,
@@ -141,6 +155,7 @@ pub struct ResourcePackData {
     /// Texture IDs for the built-in fluid models; always present in the table.
     pub fluid_textures: FluidTextureIds,
     pub chest_textures: ChestTextureIds,
+    pub font_textures: FontTextureIds,
     /// Face-culling overrides keyed by block name (`"oak_leaves"`), merged
     /// across packs with last-pack-wins per block.
     pub culling: HashMap<String, CullingOverride>,
@@ -158,12 +173,14 @@ impl ResourcePackData {
     ) -> Self {
         let fluid_textures = FluidTextureIds::intern(&mut interner);
         let chest_textures = ChestTextureIds::intern(&mut interner);
+        let font_textures = FontTextureIds::intern(&mut interner);
         Self {
             entries,
             particle_texture_ids,
             texture_table: interner.into_strings(),
             fluid_textures,
             chest_textures,
+            font_textures,
             culling,
             colormaps,
         }
