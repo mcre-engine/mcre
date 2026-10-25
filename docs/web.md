@@ -36,8 +36,10 @@ After loading a pack, select a zipped Java world with the second file picker.
 The zip is extracted to `saves/upload/` in OPFS, then the viewer loads a 9×9
 chunk area around the spawn point (modern
 `dimensions/<namespace>/<path>/region/` layout or legacy `region/`). Chunks
-missing from the zip are air. The current pack supplies the blockstates,
-models, and textures, so load a pack first.
+missing from the zip are air. Matching block entities and separate entity
+region files are imported as read-only raw NBT; block/entity models are not yet
+rendered. The current pack supplies the blockstates, models, and textures, so
+load a pack first.
 
 "Download world zip" re-zips `saves/upload/` and downloads it as `world.zip`.
 Region write-back (saving edits) is still out of scope; `mcre_anvil` only
@@ -78,8 +80,8 @@ runs `web/smoke.mjs` in headless Chromium with SwiftShader. The test:
 4. asserts the render changed, the canvas is 960×540, and the frame matches
    `web/demo-reference.png` (native demo render) within MAE 1.2 and 2.5 % of
    pixels over 16,
-5. uploads `target/web/smoke-save.zip`, waits for the save load, and asserts
-   the frame changed,
+5. uploads `target/web/smoke-save.zip`, waits for the save load, checks that its
+   entity-region pig was imported, and asserts the frame changed,
 6. clicks "Download world zip" and checks the download,
 7. exercises the debug panel and render-distance control, then checks pointer
    capture/release when supported by headless Chromium.

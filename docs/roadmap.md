@@ -322,11 +322,18 @@ open.
 - [ ] Decode typed payloads and render signs, chests, and other block-entity
       models; define update/removal behavior for interactive edits.
 
+### M13 — Entities (in progress)
+- [x] Load modern separate entity-region chunks and legacy inline entity lists;
+      retain raw NBT, expose namespaced IDs/positions in chunk/world storage,
+      and translate entity/passenger positions when importing a recentered area.
+- [ ] Decode entity-specific data and render models, animation, movement, and
+      picking; define lifecycle behavior for edits and streaming.
+
 ## 5. Open decisions / risks
 - UI toolkit locked to `egui` (native + wasm). Revisit only if it fights
   `winit`/`wgpu` versions.
-- Anvil entity loading is still pending; block-entity import/storage has begun
-  and its visuals remain future work.
+- Entity payload rendering and block-entity payload/rendering remain future
+  work; imported records are currently read-only.
 - Wasm wgpu limits may force atlas-size caps or texture downscaling —
   measure during 2C, don't pre-design.
 - Execution order: 1A → 1B → 1C → 1D, then 2A → 2B → 2C (anvil gives the

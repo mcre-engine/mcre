@@ -45,6 +45,17 @@ def nbt_compound_payload(payload):
     return payload + b"\x00"
 
 
+def make_region(payload):
+    compressed = zlib.compress(payload)
+    sectors = (5 + len(compressed) + 4095) // 4096
+    region = bytearray(8192 + sectors * 4096)
+    region[0:4] = struct.pack(">I", (2 << 8) | sectors)
+    region[8192:8196] = struct.pack(">I", len(compressed) + 1)
+    region[8196] = 2
+    region[8197 : 8197 + len(compressed)] = compressed
+    return bytes(region)
+
+
 def make_smoke_save(path):
     spawn = nbt_compound(
         "spawn",
@@ -70,17 +81,24 @@ def make_smoke_save(path):
         + nbt_int("zPos", 0)
         + nbt_list("sections", 10, [section]),
     )
-    compressed = zlib.compress(chunk)
-    sectors = (5 + len(compressed) + 4095) // 4096
-    region = bytearray(8192 + sectors * 4096)
-    region[0:4] = struct.pack(">I", (2 << 8) | sectors)
-    region[8192:8196] = struct.pack(">I", len(compressed) + 1)
-    region[8196] = 2
-    region[8197 : 8197 + len(compressed)] = compressed
+    entity = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:pig")
+        + nbt_list(
+            "Pos",
+            6,
+            [struct.pack(">d", 8.5), struct.pack(">d", 20.0), struct.pack(">d", 8.5)],
+        )
+    )
+    entity_chunk = nbt_compound(
+        "",
+        nbt_int_array("Position", [0, 0]) + nbt_list("Entities", 10, [entity]),
+    )
 
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         archive.writestr("level.dat", gzip.compress(level, mtime=0))
-        archive.writestr("region/r.0.0.mca", bytes(region))
+        archive.writestr("region/r.0.0.mca", make_region(chunk))
+        archive.writestr("entities/r.0.0.mca", make_region(entity_chunk))
 
 
 version = pathlib.Path("mc-version").read_text().strip()

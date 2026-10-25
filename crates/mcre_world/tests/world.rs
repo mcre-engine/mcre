@@ -1,4 +1,6 @@
-use mcre_world::{Block, BlockEntity, BlockState, Chunk, ChunkPos, World, WorldStorage};
+use mcre_world::{
+    Block, BlockEntity, BlockState, Chunk, ChunkPos, World, WorldEntity, WorldStorage,
+};
 
 fn stone() -> BlockState {
     Block::STONE.default_state()
@@ -107,6 +109,20 @@ fn world_block_entity_lookup_tracks_block_replacement() {
     world.set_block(position, stone());
     assert_eq!(world.block_entity_at(position), None);
     assert_eq!(world.block_entities().count(), 0);
+}
+
+#[test]
+fn world_stores_entities_in_their_loaded_chunk() {
+    let mut world = World::new(1);
+    let entity = WorldEntity::new("minecraft:cow".into(), [-0.25, 64.0, 1.5], vec![1, 2, 3]);
+
+    assert!(world.add_entity(entity.clone()));
+    assert_eq!(world.entities().next(), Some(&entity));
+    assert!(!world.add_entity(WorldEntity::new(
+        "minecraft:cow".into(),
+        [32.25, 64.0, 0.0],
+        Vec::new(),
+    )));
 }
 
 #[test]

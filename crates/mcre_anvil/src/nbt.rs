@@ -61,12 +61,31 @@ impl Tag {
         }
     }
 
+    pub fn as_list_mut(&mut self) -> Option<&mut Vec<Tag>> {
+        match self {
+            Tag::List(items) => Some(items),
+            _ => None,
+        }
+    }
+
     pub fn as_i32(&self) -> Option<i32> {
         match self {
             Tag::Byte(value) => Some(*value as i32),
             Tag::Short(value) => Some(*value as i32),
             Tag::Int(value) => Some(*value),
             Tag::Long(value) => i32::try_from(*value).ok(),
+            _ => None,
+        }
+    }
+
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            Tag::Byte(value) => Some(*value as f64),
+            Tag::Short(value) => Some(*value as f64),
+            Tag::Int(value) => Some(*value as f64),
+            Tag::Long(value) => Some(*value as f64),
+            Tag::Float(value) => Some(*value as f64),
+            Tag::Double(value) => Some(*value),
             _ => None,
         }
     }

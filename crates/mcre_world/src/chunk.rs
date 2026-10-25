@@ -2,7 +2,7 @@ use alloc::{boxed::Box, vec::Vec};
 
 use crate::light::ChunkLight;
 use crate::section::Section;
-use crate::{Biome, Block, BlockEntity, BlockState};
+use crate::{Biome, Block, BlockEntity, BlockState, WorldEntity};
 
 pub const CHUNK_WIDTH: i32 = 16;
 pub const SECTION_WIDTH: usize = 16;
@@ -37,6 +37,7 @@ pub struct Chunk {
     stored_light: bool,
     emitters: Vec<(i32, i32, i32)>,
     block_entities: Vec<BlockEntity>,
+    entities: Vec<WorldEntity>,
 }
 
 impl Chunk {
@@ -53,6 +54,7 @@ impl Chunk {
             stored_light: false,
             emitters: Vec::new(),
             block_entities: Vec::new(),
+            entities: Vec::new(),
         }
     }
 
@@ -154,6 +156,18 @@ impl Chunk {
         self.block_entities
             .retain(|existing| existing.position() != position);
         self.block_entities.push(block_entity);
+        true
+    }
+
+    pub fn entities(&self) -> &[WorldEntity] {
+        &self.entities
+    }
+
+    pub fn set_entity(&mut self, entity: WorldEntity) -> bool {
+        if entity.chunk_pos() != self.pos {
+            return false;
+        }
+        self.entities.push(entity);
         true
     }
 

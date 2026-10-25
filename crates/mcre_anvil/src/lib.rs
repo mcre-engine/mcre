@@ -5,6 +5,7 @@ pub mod resolve;
 
 pub use chunk::{
     ImportRect, ImportStats, import_area, import_chunk, load_chunk, load_chunk_from_nbt,
+    load_entities_from_nbt,
 };
 pub use region::{RegionFile, chunk_nbt, chunk_present, chunk_status, region_file_path};
 pub use resolve::{BiomeResolver, BlockResolver};
@@ -79,6 +80,19 @@ impl SavePaths {
             return modern;
         }
         self.legacy_region_dir()
+    }
+
+    pub fn resolve_entity_dir(&self, dimension: &str) -> PathBuf {
+        let modern = self
+            .resolve_region_dir(dimension)
+            .parent()
+            .unwrap_or(&self.save_dir)
+            .join("entities");
+        if modern.is_dir() {
+            modern
+        } else {
+            self.save_dir.join("entities")
+        }
     }
 }
 

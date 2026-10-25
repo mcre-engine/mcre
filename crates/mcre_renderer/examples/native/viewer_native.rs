@@ -681,12 +681,14 @@ fn load_save_into(world: &mut World, save_dir: &str, radius: u32) -> SaveSetup {
         }
     }
     eprintln!(
-        "viewer: imported {} chunks, {} sections, {} blocks, {} block entities ({} skipped; {} unknown blocks, {} unknown biomes)",
+        "viewer: imported {} chunks, {} sections, {} blocks, {} block entities ({} skipped), {} entities ({} skipped; {} unknown blocks, {} unknown biomes)",
         stats.chunks,
         stats.sections,
         stats.blocks_set,
         stats.block_entities,
         stats.skipped_block_entities,
+        stats.entities,
+        stats.skipped_entities,
         stats.unknown_blocks.len(),
         stats.unknown_biomes.len(),
     );
@@ -1576,6 +1578,7 @@ impl Viewer {
                     });
                     ui.collapsing("Info", |ui| {
                         ui.label(format!("Block entities: {}", self.world.block_entities().count()));
+                        ui.label(format!("Entities: {}", self.world.entities().count()));
                         ui.label(format!(
                             "Chunks: {}/{}",
                             self.visible_chunks, self.total_chunks

@@ -1,5 +1,7 @@
 use mcre_world::light::SECTION_LIGHT_BYTES;
-use mcre_world::{Biome, BlockEntity, BlockState, Chunk, ChunkPos, WORLD_MIN_Y, World};
+use mcre_world::{
+    Biome, BlockEntity, BlockState, Chunk, ChunkPos, WORLD_MIN_Y, World, WorldEntity,
+};
 
 use crate::Error;
 use crate::nbt::Tag;
@@ -16,6 +18,8 @@ pub struct ImportStats {
     pub blocks_set: u64,
     pub block_entities: u32,
     pub skipped_block_entities: u32,
+    pub entities: u32,
+    pub skipped_entities: u32,
     pub skipped_sections: u32,
     pub skipped_chunks: u32,
     pub unknown_blocks: Vec<String>,
@@ -406,6 +410,110 @@ fn decode_block_entities(
     block_entities
 }
 
+fn read_entity_chunk(
+    entity_dir: &std::path::Path,
+    chunk_x: i32,
+    chunk_z: i32,
+    stats: &mut ImportStats,
+) -> Option<Tag> {
+    match region::chunk_nbt(entity_dir, chunk_x, chunk_z) {
+        Ok(root) => root,
+        Err(_) => {
+            stats.skipped_entities += 1;
+            None
+        }
+    }
+}
+
+fn translate_entity_positions(tag: &mut Tag, offset: (f64, f64)) -> Option<[f64; 3]> {
+    let position = tag
+        .get("Pos")
+        .and_then(Tag::as_list)
+        .filter(|position| position.len() == 3)
+        .map(|position| {
+            Some([
+                position[0].as_f64()?,
+                position[1].as_f64()?,
+                position[2].as_f64()?,
+            ])
+        })??;
+    let translated = [position[0] + offset.0, position[1], position[2] + offset.1];
+    tag.set(
+        "Pos",
+        Tag::List(vec![
+            Tag::Double(translated[0]),
+            Tag::Double(translated[1]),
+            Tag::Double(translated[2]),
+        ]),
+    );
+    if let Some(passengers) = tag.get_mut("Passengers").and_then(Tag::as_list_mut) {
+        for passenger in passengers {
+            translate_entity_positions(passenger, offset);
+        }
+    }
+    Some(translated)
+}
+
+pub fn load_entities_from_nbt(
+    root: &Tag,
+    source_chunk: (i32, i32),
+    origin_chunk: (i32, i32),
+    stats: &mut ImportStats,
+) -> Vec<WorldEntity> {
+    if let Some(Tag::IntArray(position)) = root.get("Position")
+        && position.as_slice() != [source_chunk.0, source_chunk.1]
+    {
+        if let Some(entries) = root
+            .get("Entities")
+            .or_else(|| root.get("entities"))
+            .and_then(Tag::as_list)
+        {
+            stats.skipped_entities += entries.len() as u32;
+        }
+        return Vec::new();
+    }
+    let Some(tag) = root.get("Entities").or_else(|| root.get("entities")) else {
+        return Vec::new();
+    };
+    let Some(entries) = tag.as_list() else {
+        stats.skipped_entities += 1;
+        return Vec::new();
+    };
+    let offset = (
+        -(origin_chunk.0 as f64) * 16.0,
+        -(origin_chunk.1 as f64) * 16.0,
+    );
+    let mut entities = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let Some(raw_id) = entry.get("id").and_then(Tag::as_str) else {
+            stats.skipped_entities += 1;
+            continue;
+        };
+        let mut stored = entry.clone();
+        let Some(position) = translate_entity_positions(&mut stored, offset) else {
+            stats.skipped_entities += 1;
+            continue;
+        };
+        if !position.iter().all(|coordinate| coordinate.is_finite()) {
+            stats.skipped_entities += 1;
+            continue;
+        }
+        let id = if raw_id.contains(':') {
+            raw_id.to_string()
+        } else {
+            format!("minecraft:{raw_id}")
+        };
+        stored.set("id", Tag::String(id.clone()));
+        entities.push(WorldEntity::new(
+            id,
+            position,
+            crate::nbt::write_named("", &stored),
+        ));
+        stats.entities += 1;
+    }
+    entities
+}
+
 pub fn import_chunk(
     world: &mut World,
     chunk_x: i32,
@@ -433,6 +541,11 @@ pub fn import_chunk(
     for block_entity in decode_block_entities(root, (chunk_x, chunk_z), (chunk_x, chunk_z), stats) {
         world.set_block_entity(block_entity);
     }
+    for entity in load_entities_from_nbt(root, (chunk_x, chunk_z), (0, 0), stats) {
+        if !world.add_entity(entity) {
+            stats.skipped_entities += 1;
+        }
+    }
     Ok(())
 }
 
@@ -459,7 +572,20 @@ pub fn load_chunk(
         stats.skipped_chunks += 1;
         return Ok(None);
     };
-    load_chunk_from_nbt(&root, chunk_x, chunk_z, blocks, biomes, stats)
+    let Some(mut chunk) = load_chunk_from_nbt(&root, chunk_x, chunk_z, blocks, biomes, stats)?
+    else {
+        return Ok(None);
+    };
+    if let Some(entity_dir) = region_dir.parent().map(|parent| parent.join("entities"))
+        && let Some(entity_root) = read_entity_chunk(&entity_dir, chunk_x, chunk_z, stats)
+    {
+        for entity in load_entities_from_nbt(&entity_root, (chunk_x, chunk_z), (0, 0), stats) {
+            if !chunk.set_entity(entity) {
+                stats.skipped_entities += 1;
+            }
+        }
+    }
+    Ok(Some(chunk))
 }
 
 /// Loads one chunk from an already-parsed chunk NBT root. The browser save
@@ -501,6 +627,11 @@ pub fn load_chunk_from_nbt(
     }
     for block_entity in decode_block_entities(root, (chunk_x, chunk_z), (chunk_x, chunk_z), stats) {
         chunk.set_block_entity(block_entity);
+    }
+    for entity in load_entities_from_nbt(root, (chunk_x, chunk_z), (0, 0), stats) {
+        if !chunk.set_entity(entity) {
+            stats.skipped_entities += 1;
+        }
     }
     if light_correct {
         import_chunk_light(&mut chunk, &sky_layers, &block_layers);
@@ -588,6 +719,27 @@ pub fn import_area(
                 stats,
             ) {
                 world.set_block_entity(block_entity);
+            }
+            for entity in
+                load_entities_from_nbt(&root, (chunk_x, chunk_z), rect.origin_chunk, stats)
+            {
+                if !world.add_entity(entity) {
+                    stats.skipped_entities += 1;
+                }
+            }
+            if let Some(entity_dir) = region_dir.parent().map(|parent| parent.join("entities"))
+                && let Some(entity_root) = read_entity_chunk(&entity_dir, chunk_x, chunk_z, stats)
+            {
+                for entity in load_entities_from_nbt(
+                    &entity_root,
+                    (chunk_x, chunk_z),
+                    rect.origin_chunk,
+                    stats,
+                ) {
+                    if !world.add_entity(entity) {
+                        stats.skipped_entities += 1;
+                    }
+                }
             }
         }
     }
@@ -677,6 +829,48 @@ mod tests {
                 .is_none()
         );
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_chunk_reads_the_separate_entity_region() {
+        let dir =
+            std::env::temp_dir().join(format!("mcre_anvil_entity_test_{}", std::process::id()));
+        let region_dir = dir.join("region");
+        let entity_dir = dir.join("entities");
+        std::fs::create_dir_all(&region_dir).unwrap();
+        std::fs::create_dir_all(&entity_dir).unwrap();
+        write_region(&region_dir, &chunk_payload());
+        let entity_root = Tag::Compound(vec![
+            ("Position".into(), Tag::IntArray(vec![5, -3])),
+            (
+                "Entities".into(),
+                Tag::List(vec![Tag::Compound(vec![
+                    ("id".into(), Tag::String("minecraft:villager".into())),
+                    (
+                        "Pos".into(),
+                        Tag::List(vec![
+                            Tag::Double(81.5),
+                            Tag::Double(65.0),
+                            Tag::Double(-40.5),
+                        ]),
+                    ),
+                ])]),
+            ),
+        ]);
+        write_region(&entity_dir, &crate::nbt::write_named("", &entity_root));
+
+        let blocks = BlockResolver::new();
+        let biomes = BiomeResolver::new();
+        let mut stats = ImportStats::default();
+        let chunk = load_chunk(&region_dir, 5, -3, &blocks, &biomes, &mut stats)
+            .expect("load")
+            .expect("present");
+
+        assert_eq!(stats.entities, 1);
+        assert_eq!(chunk.entities().len(), 1);
+        assert_eq!(chunk.entities()[0].id(), "minecraft:villager");
+        assert_eq!(chunk.entities()[0].position(), [81.5, 65.0, -40.5]);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -772,6 +966,77 @@ mod tests {
             chunk.block_entity_at((80, 5, -48)).map(BlockEntity::id),
             Some("minecraft:sign")
         );
+    }
+
+    #[test]
+    fn entity_import_translates_positions_and_keeps_passengers() {
+        let passenger = Tag::Compound(vec![
+            ("id".into(), Tag::String("cow".into())),
+            (
+                "Pos".into(),
+                Tag::List(vec![
+                    Tag::Double(82.0),
+                    Tag::Double(64.0),
+                    Tag::Double(-41.0),
+                ]),
+            ),
+        ]);
+        let root = Tag::Compound(vec![
+            ("Position".into(), Tag::IntArray(vec![5, -3])),
+            (
+                "Entities".into(),
+                Tag::List(vec![Tag::Compound(vec![
+                    ("id".into(), Tag::String("pig".into())),
+                    (
+                        "Pos".into(),
+                        Tag::List(vec![
+                            Tag::Double(82.5),
+                            Tag::Double(64.0),
+                            Tag::Double(-41.25),
+                        ]),
+                    ),
+                    ("Passengers".into(), Tag::List(vec![passenger])),
+                ])]),
+            ),
+        ]);
+        let mut stats = ImportStats::default();
+        let entities = load_entities_from_nbt(&root, (5, -3), (5, -3), &mut stats);
+
+        assert_eq!(stats.entities, 1);
+        assert_eq!(stats.skipped_entities, 0);
+        assert_eq!(entities[0].id(), "minecraft:pig");
+        assert_eq!(entities[0].position(), [2.5, 64.0, 6.75]);
+        let (_, stored) = crate::nbt::read_named(entities[0].nbt()).unwrap();
+        assert_eq!(
+            stored.get("id").and_then(Tag::as_str),
+            Some("minecraft:pig")
+        );
+        assert_eq!(
+            stored
+                .get("Passengers")
+                .and_then(Tag::as_list)
+                .and_then(|passengers| passengers.first())
+                .and_then(|passenger| passenger.get("Pos"))
+                .and_then(Tag::as_list)
+                .and_then(|position| position.first())
+                .and_then(Tag::as_f64),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn entity_import_rejects_misplaced_entity_chunks() {
+        let root = Tag::Compound(vec![
+            ("Position".into(), Tag::IntArray(vec![9, 9])),
+            (
+                "Entities".into(),
+                Tag::List(vec![Tag::Compound(Vec::new())]),
+            ),
+        ]);
+        let mut stats = ImportStats::default();
+
+        assert!(load_entities_from_nbt(&root, (5, -3), (0, 0), &mut stats).is_empty());
+        assert_eq!(stats.skipped_entities, 1);
     }
 
     #[test]

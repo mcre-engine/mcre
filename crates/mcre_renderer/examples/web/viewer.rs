@@ -770,12 +770,14 @@ async fn load_save_world(fs: &OpfsFs, save_root: &FsPath) -> Result<(World, Spaw
     let spawn =
         mcre_anvil::read_spawn_from_root(&level).map_err(|error| format!("read spawn: {error}"))?;
     let region_dir = resolve_region_dir(fs, save_root, &spawn.dimension).await;
+    let entity_dir = resolve_entity_dir(fs, save_root, &spawn.dimension).await;
 
     let blocks = BlockResolver::new();
     let biomes = BiomeResolver::new();
     let mut stats = ImportStats::default();
     let mut world = World::new(SAVE_CHUNK_RADIUS as u32);
     let mut regions: HashMap<(i32, i32), Option<RegionFile>> = HashMap::new();
+    let mut entity_regions: HashMap<(i32, i32), Option<RegionFile>> = HashMap::new();
     let spawn_chunk = (spawn.pos.0.div_euclid(16), spawn.pos.2.div_euclid(16));
     for dz in -SAVE_CHUNK_RADIUS..=SAVE_CHUNK_RADIUS {
         for dx in -SAVE_CHUNK_RADIUS..=SAVE_CHUNK_RADIUS {
@@ -809,20 +811,54 @@ async fn load_save_world(fs: &OpfsFs, save_root: &FsPath) -> Result<(World, Spaw
                 },
                 None => None,
             };
-            world.replace_chunk(
-                chunk.unwrap_or_else(|| Chunk::new_at(ChunkPos::new(chunk_x, chunk_z))),
-            );
+            let mut chunk = chunk.unwrap_or_else(|| Chunk::new_at(ChunkPos::new(chunk_x, chunk_z)));
+            let entity_root = match region_at(
+                fs,
+                &entity_dir,
+                &mut entity_regions,
+                region_x,
+                region_z,
+            )
+            .await
+            {
+                Some(region) => match region.chunk_nbt(chunk_x, chunk_z) {
+                    Ok(root) => root,
+                    Err(error) => {
+                        stats.skipped_entities += 1;
+                        web_sys::console::warn_1(&JsValue::from_str(&format!(
+                            "skipping unreadable entity chunk {chunk_x},{chunk_z}: {error}"
+                        )));
+                        None
+                    }
+                },
+                None => None,
+            };
+            if let Some(entity_root) = entity_root {
+                for entity in mcre_anvil::load_entities_from_nbt(
+                    &entity_root,
+                    (chunk_x, chunk_z),
+                    (0, 0),
+                    &mut stats,
+                ) {
+                    if !chunk.set_entity(entity) {
+                        stats.skipped_entities += 1;
+                    }
+                }
+            }
+            world.replace_chunk(chunk);
         }
     }
     world.adopt_stored_light();
     world.compute_light();
     web_sys::console::log_1(&JsValue::from_str(&format!(
-        "loaded save: {} chunks, {} sections, {} blocks, {} block entities ({} skipped; {} unknown blocks)",
+        "loaded save: {} chunks, {} sections, {} blocks, {} block entities ({} skipped), {} entities ({} skipped; {} unknown blocks)",
         stats.chunks,
         stats.sections,
         stats.blocks_set,
         stats.block_entities,
         stats.skipped_block_entities,
+        stats.entities,
+        stats.skipped_entities,
         stats.unknown_blocks.len()
     )));
     Ok((world, spawn))
@@ -863,6 +899,19 @@ async fn resolve_region_dir(fs: &OpfsFs, save_root: &FsPath, dimension: &str) ->
         modern
     } else {
         save_root.join("region")
+    }
+}
+
+async fn resolve_entity_dir(fs: &OpfsFs, save_root: &FsPath, dimension: &str) -> FsPath {
+    let region_dir = resolve_region_dir(fs, save_root, dimension).await;
+    let entity_dir = region_dir
+        .parent()
+        .unwrap_or_else(|| save_root.clone())
+        .join("entities");
+    if fs.exists(&entity_dir).await {
+        entity_dir
+    } else {
+        save_root.join("entities")
     }
 }
 
@@ -1226,7 +1275,7 @@ impl WebViewer {
             let chunk_x = (camera_position[0].floor() as i32).div_euclid(16);
             let chunk_z = (camera_position[2].floor() as i32).div_euclid(16);
             let text = format!(
-                "Camera: {:.1}, {:.1}, {:.1}\nChunk: {}, {}\nTime: {:.0}\nChunks: {} in range / {} loaded\nSections: {}\nBlock entities: {}\nDraws: {} opaque + {} translucent",
+                "Camera: {:.1}, {:.1}, {:.1}\nChunk: {}, {}\nTime: {:.0}\nChunks: {} in range / {} loaded\nSections: {}\nBlock entities: {}\nEntities: {}\nDraws: {} opaque + {} translucent",
                 camera_position[0],
                 camera_position[1],
                 camera_position[2],
@@ -1237,6 +1286,7 @@ impl WebViewer {
                 state.sections.len(),
                 stats.sections,
                 state.world.block_entities().count(),
+                state.world.entities().count(),
                 stats.opaque_draws,
                 stats.translucent_draws,
             );

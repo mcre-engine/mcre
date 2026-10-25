@@ -4,6 +4,7 @@ use alloc::{boxed::Box, vec, vec::Vec};
 use crate::light::{ALL_DIRECTIONS, ChunkLight, propagate};
 use crate::{
     Biome, Block, BlockEntity, BlockState, CHUNK_WIDTH, Chunk, ChunkPos, WORLD_HEIGHT, WORLD_MIN_Y,
+    WorldEntity,
 };
 
 const LIGHT_MARGIN: i32 = 16;
@@ -101,6 +102,20 @@ impl World {
             return false;
         }
         self.mark_chunk(chunk_pos);
+        true
+    }
+
+    pub fn entities(&self) -> impl Iterator<Item = &WorldEntity> {
+        self.chunks.iter().flat_map(|chunk| chunk.entities().iter())
+    }
+
+    pub fn add_entity(&mut self, entity: WorldEntity) -> bool {
+        let chunk_pos = entity.chunk_pos();
+        let chunk_idx = Self::chunk_idx(self.radius, (chunk_pos.x, chunk_pos.z));
+        let chunk = &mut self.chunks[chunk_idx];
+        if chunk.pos() != chunk_pos || !chunk.set_entity(entity) {
+            return false;
+        }
         true
     }
 
