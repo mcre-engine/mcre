@@ -62,10 +62,10 @@ parses region files.
 Click the canvas to capture the mouse; press `Escape` to release it. If pointer
 capture is unavailable, drag with the left mouse button to look. `W`/`A`/`S`/`D`
 move, `Space`/`Shift` move up/down, and `Ctrl` boosts speed. Press `F1` or use
-the Debug button for render-distance, fog, lighting, geometry, and chunk-border
-controls. Save worlds currently load a fixed 9×9 area; render distance only
-changes visibility within that area, and camera-centered streaming is not
-implemented yet.
+the Debug button for render distance, time, brightness, fog, lighting, geometry,
+and chunk-border controls. Save worlds currently load a fixed 9×9 area; render
+distance only changes visibility within that area, and camera-centered streaming
+is not implemented yet.
 
 ## Smoke test
 

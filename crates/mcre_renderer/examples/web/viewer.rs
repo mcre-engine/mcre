@@ -61,6 +61,8 @@ struct WebState {
     last_cursor: Option<(f64, f64)>,
     last_frame_ms: f64,
     render_distance: u32,
+    time_ticks: f32,
+    brightness: f32,
     debug_visible: bool,
     fog_enabled: bool,
     unlit: bool,
@@ -112,6 +114,8 @@ pub fn start() {
             last_cursor: None,
             last_frame_ms: 0.0,
             render_distance: 1,
+            time_ticks: 6000.0,
+            brightness: DEFAULT_BRIGHTNESS,
             debug_visible: false,
             fog_enabled: true,
             unlit: false,
@@ -328,6 +332,42 @@ fn install_debug_controls(state: Rc<RefCell<WebState>>) {
         .expect("listen for render distance changes");
     callback.forget();
 
+    let time: HtmlInputElement = document
+        .get_element_by_id("time-of-day")
+        .expect("time control")
+        .dyn_into()
+        .expect("time input");
+    let time_for_event = time.clone();
+    let time_state = state.clone();
+    let callback = Closure::<dyn FnMut(Event)>::new(move |_| {
+        let value = time_for_event.value_as_number().round().clamp(0.0, 24_000.0) as u32;
+        time_state.borrow_mut().time_ticks = value as f32;
+        let value_text = value.to_string();
+        let label_text = format!("{value} ticks");
+        set_slider_control("time-of-day", "time-value", &value_text, &label_text);
+    });
+    time.add_event_listener_with_callback("input", callback.as_ref().unchecked_ref())
+        .expect("listen for time changes");
+    callback.forget();
+
+    let brightness: HtmlInputElement = document
+        .get_element_by_id("brightness")
+        .expect("brightness control")
+        .dyn_into()
+        .expect("brightness input");
+    let brightness_for_event = brightness.clone();
+    let brightness_state = state.clone();
+    let callback = Closure::<dyn FnMut(Event)>::new(move |_| {
+        let value = brightness_for_event.value_as_number().clamp(0.0, 1.0) as f32;
+        brightness_state.borrow_mut().brightness = value;
+        let value_label = format!("{value:.2}");
+        set_slider_control("brightness", "brightness-value", &value_label, &value_label);
+    });
+    brightness
+        .add_event_listener_with_callback("input", callback.as_ref().unchecked_ref())
+        .expect("listen for brightness changes");
+    callback.forget();
+
     for (id, toggle) in [
         ("fog-enabled", DebugToggle::Fog),
         ("unlit-enabled", DebugToggle::Unlit),
@@ -402,15 +442,25 @@ fn release_pointer_state(state: &Rc<RefCell<WebState>>) {
 }
 
 fn set_render_distance_label(distance: u32) {
+    let value = distance.to_string();
+    set_slider_control(
+        "render-distance",
+        "render-distance-value",
+        &value,
+        &format!("{distance} chunks"),
+    );
+}
+
+fn set_slider_control(input_id: &str, label_id: &str, value: &str, label: &str) {
     if let Some(document) = web_sys::window().and_then(|window| window.document()) {
         if let Some(input) = document
-            .get_element_by_id("render-distance")
+            .get_element_by_id(input_id)
             .and_then(|element| element.dyn_into::<HtmlInputElement>().ok())
         {
-            input.set_value(&distance.to_string());
+            input.set_value(value);
         }
-        if let Some(label) = document.get_element_by_id("render-distance-value") {
-            label.set_text_content(Some(&format!("{distance} chunks")));
+        if let Some(label_element) = document.get_element_by_id(label_id) {
+            label_element.set_text_content(Some(label));
         }
     }
 }
@@ -1122,8 +1172,10 @@ impl WebViewer {
                 let _ = body.set_attribute("data-animation-tick", &ticks.to_string());
             }
         }
+        renderer.set_time(state.time_ticks);
+        renderer.set_brightness(state.brightness);
         renderer.set_fog(if state.fog_enabled {
-            vanilla_fog(state.render_distance, 6000.0, None, 0.0)
+            vanilla_fog(state.render_distance, state.time_ticks, None, 0.0)
         } else {
             Fog::none()
         });
@@ -1172,12 +1224,13 @@ impl WebViewer {
             let chunk_x = (camera_position[0].floor() as i32).div_euclid(16);
             let chunk_z = (camera_position[2].floor() as i32).div_euclid(16);
             let text = format!(
-                "Camera: {:.1}, {:.1}, {:.1}\nChunk: {}, {}\nChunks: {} in range / {} loaded\nSections: {}\nDraws: {} opaque + {} translucent",
+                "Camera: {:.1}, {:.1}, {:.1}\nChunk: {}, {}\nTime: {:.0}\nChunks: {} in range / {} loaded\nSections: {}\nDraws: {} opaque + {} translucent",
                 camera_position[0],
                 camera_position[1],
                 camera_position[2],
                 chunk_x,
                 chunk_z,
+                state.time_ticks,
                 chunks.len(),
                 state.sections.len(),
                 stats.sections,

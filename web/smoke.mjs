@@ -156,6 +156,19 @@ try {
   await page.waitForFunction(() =>
     document.querySelector("#debug-info").textContent.includes("Chunks:"),
   );
+  await page.locator("#time-of-day").evaluate((input) => {
+    input.value = "12000";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  assert.equal(await page.locator("#time-value").textContent(), "12000 ticks");
+  await page.waitForFunction(() =>
+    document.querySelector("#debug-info").textContent.includes("Time: 12000"),
+  );
+  await page.locator("#brightness").evaluate((input) => {
+    input.value = "0.75";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  assert.equal(await page.locator("#brightness-value").textContent(), "0.75");
   await page.locator("#render-distance").evaluate((input) => {
     input.value = "2";
     input.dispatchEvent(new Event("input", { bubbles: true }));
