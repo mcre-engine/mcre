@@ -1604,6 +1604,81 @@ const PARROT_CUBES: &[EntityCube] = &[
     },
 ];
 
+const BAT_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 17.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-1.5, 0.0, -1.0, 3.0, 5.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 17.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 7.0],
+        cube: [-2.0, -3.0, -1.0, 4.0, 3.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.5, 15.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [1.0, 15.0],
+        cube: [-2.5, -4.0, 0.0, 3.0, 5.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [1.1, 14.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [8.0, 15.0],
+        cube: [-0.1, -3.0, 0.0, 3.0, 5.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.5, 17.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [12.0, 0.0],
+        cube: [-2.0, -2.0, 0.0, 2.0, 7.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-3.5, 17.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [16.0, 0.0],
+        cube: [-6.0, -2.0, 0.0, 6.0, 8.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [1.5, 17.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [12.0, 7.0],
+        cube: [0.0, -2.0, 0.0, 2.0, 7.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [3.5, 17.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [16.0, 8.0],
+        cube: [0.0, -2.0, 0.0, 6.0, 8.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 22.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [16.0, 16.0],
+        cube: [-1.5, 0.0, 0.0, 3.0, 2.0, 0.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
@@ -1652,6 +1727,11 @@ const WOLF_MODEL: EntityModel = EntityModel {
 const PARROT_MODEL: EntityModel = EntityModel {
     texture_size: [32.0, 32.0],
     cubes: PARROT_CUBES,
+};
+
+const BAT_MODEL: EntityModel = EntityModel {
+    texture_size: [32.0, 32.0],
+    cubes: BAT_CUBES,
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -2004,6 +2084,21 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     texture_id,
                     "minecraft:entity/parrot/",
                     &PARROT_MODEL,
+                    white,
+                );
+            }
+            "minecraft:bat" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.bat,
+                    "minecraft:entity/bat/",
+                    &BAT_MODEL,
                     white,
                 );
             }
@@ -4089,6 +4184,13 @@ mod tests {
         data
     }
 
+    fn bat_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/bat/bat".into()];
+        data.entity_textures.bat = 0;
+        data
+    }
+
     fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
             ("id".into(), Tag::String("minecraft:parrot".into())),
@@ -4639,6 +4741,23 @@ mod tests {
                 .iter()
                 .all(|vertex| vertex.uv[1] >= 0.5 - 1e-6)
         );
+    }
+
+    #[test]
+    fn bat_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:bat", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&bat_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 54);
+        assert_eq!(mesh.indices.len(), 54 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.40625).abs() < 1e-4);
+        assert!((max[0] - 8.59375).abs() < 1e-4);
+        assert!((min[1] - 64.001).abs() < 1e-4);
+        assert!((max[1] - 64.8135).abs() < 1e-4);
+        assert!((min[2] - 7.9375).abs() < 1e-4);
+        assert!((max[2] - 8.0625).abs() < 1e-4);
     }
 
     #[test]

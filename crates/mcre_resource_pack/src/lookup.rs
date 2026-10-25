@@ -145,6 +145,7 @@ pub struct EntityTextureIds {
     pub parrot_green: u32,
     pub parrot_yellow_blue: u32,
     pub parrot_grey: u32,
+    pub bat: u32,
 }
 
 impl EntityTextureIds {
@@ -176,6 +177,7 @@ impl EntityTextureIds {
             parrot_green: interner.intern("minecraft:entity/parrot/parrot_green"),
             parrot_yellow_blue: interner.intern("minecraft:entity/parrot/parrot_yellow_blue"),
             parrot_grey: interner.intern("minecraft:entity/parrot/parrot_grey"),
+            bat: interner.intern("minecraft:entity/bat/bat"),
         }
     }
 }

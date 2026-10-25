@@ -209,6 +209,19 @@ def make_smoke_save(path):
             ],
         )
     )
+    bat = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:bat")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 10.5),
+                struct.pack(">d", 20.0),
+                struct.pack(">d", 14.5),
+            ],
+        )
+    )
     entity_chunk = nbt_compound(
         "",
         nbt_int_array("Position", [0, 0])
@@ -226,6 +239,7 @@ def make_smoke_save(path):
                 wolf,
                 drowned,
                 parrot,
+                bat,
             ],
         ),
     )
@@ -290,6 +304,7 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     files.append("textures/entity/wolf/wolf_woods.png")
     files.append("textures/entity/zombie/drowned.png")
     files.append("textures/entity/parrot/parrot_yellow_blue.png")
+    files.append("textures/entity/bat/bat.png")
     for name in files:
         file = assets / name
         archive.write(file, (pathlib.Path("pack/assets/minecraft") / name).as_posix())
