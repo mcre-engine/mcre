@@ -1818,6 +1818,36 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     white,
                 );
             }
+            "minecraft:drowned" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.drowned,
+                    "minecraft:entity/zombie/",
+                    &ZOMBIE_MODEL,
+                    white,
+                );
+            }
+            "minecraft:husk" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.husk,
+                    "minecraft:entity/zombie/",
+                    &ZOMBIE_MODEL,
+                    white,
+                );
+            }
             "minecraft:skeleton" => {
                 emit_entity_layer(
                     data,
@@ -3913,6 +3943,13 @@ mod tests {
         data
     }
 
+    fn drowned_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/zombie/drowned".into()];
+        data.entity_textures.drowned = 0;
+        data
+    }
+
     fn skeleton_data() -> ResourcePackData {
         let mut data = empty_data();
         data.texture_table = vec!["minecraft:entity/skeleton/skeleton".into()];
@@ -4317,6 +4354,23 @@ mod tests {
         assert!(chunk.set_entity(entity("minecraft:zombie", 0.0, "minecraft:temperate")));
 
         let mesh = mesh_entity(&zombie_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 42);
+        assert_eq!(mesh.indices.len(), 42 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.5).abs() < 1e-4);
+        assert!((max[0] - 8.5).abs() < 1e-4);
+        assert!((min[1] - 64.001).abs() < 1e-4);
+        assert!((max[1] - 66.03225).abs() < 1e-4);
+        assert!((min[2] - 7.71875).abs() < 1e-4);
+        assert!((max[2] - 8.637211).abs() < 1e-4);
+    }
+
+    #[test]
+    fn drowned_entity_bakes_zombie_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:drowned", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&drowned_data(), &chunk);
         assert_eq!(mesh.opaque_meta.len(), 42);
         assert_eq!(mesh.indices.len(), 42 * 6);
         let (min, max) = mesh_bounds(&mesh);

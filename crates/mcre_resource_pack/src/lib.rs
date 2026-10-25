@@ -258,6 +258,14 @@ mod tests {
             "minecraft:entity/zombie/zombie"
         );
         assert_eq!(
+            path(data.entity_textures.drowned),
+            "minecraft:entity/zombie/drowned"
+        );
+        assert_eq!(
+            path(data.entity_textures.husk),
+            "minecraft:entity/zombie/husk"
+        );
+        assert_eq!(
             path(data.entity_textures.skeleton),
             "minecraft:entity/skeleton/skeleton"
         );
