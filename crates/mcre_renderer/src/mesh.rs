@@ -1113,6 +1113,51 @@ const CHICKEN_CUBES: &[EntityCube] = &[
     },
 ];
 
+const CREEPER_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 6.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-4.0, -8.0, -4.0, 8.0, 8.0, 8.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 6.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [16.0, 16.0],
+        cube: [-4.0, 0.0, -2.0, 8.0, 12.0, 4.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-2.0, 18.0, 4.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [2.0, 18.0, 4.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-2.0, 18.0, -4.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [2.0, 18.0, -4.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        mirror: false,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
@@ -1126,6 +1171,11 @@ const COW_MODEL: EntityModel = EntityModel {
 const CHICKEN_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: CHICKEN_CUBES,
+};
+
+const CREEPER_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 32.0],
+    cubes: CREEPER_CUBES,
 };
 
 fn entity_model_position(model: [f32; 3], position: [f64; 3], yaw: f32) -> [f32; 3] {
@@ -1239,6 +1289,11 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                 };
                 (&CHICKEN_MODEL, texture_id, "minecraft:entity/chicken/")
             }
+            "minecraft:creeper" => (
+                &CREEPER_MODEL,
+                data.entity_textures.creeper,
+                "minecraft:entity/creeper/",
+            ),
             _ => continue,
         };
         let Some(path) = data.texture_table.get(texture_id as usize) else {
@@ -3273,6 +3328,13 @@ mod tests {
         data
     }
 
+    fn creeper_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/creeper/creeper".into()];
+        data.entity_textures.creeper = 0;
+        data
+    }
+
     fn entity_atlas() -> Atlas {
         let mut atlas = test_atlas();
         atlas.width = 64;
@@ -3526,6 +3588,23 @@ mod tests {
         assert!((max[1] - 64.9385).abs() < 1e-4);
         assert!((min[2] - 7.75).abs() < 1e-4);
         assert!((max[2] - 8.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn creeper_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:creeper", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&creeper_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 36);
+        assert_eq!(mesh.indices.len(), 36 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.75).abs() < 1e-4);
+        assert!((max[0] - 8.25).abs() < 1e-4);
+        assert!((min[1] - 64.001).abs() < 1e-4);
+        assert!((max[1] - 65.626).abs() < 1e-4);
+        assert!((min[2] - 7.625).abs() < 1e-4);
+        assert!((max[2] - 8.375).abs() < 1e-4);
     }
 
     #[test]

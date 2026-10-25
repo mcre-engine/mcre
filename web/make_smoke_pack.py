@@ -120,10 +120,19 @@ def make_smoke_save(path):
             ],
         )
     )
+    creeper = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:creeper")
+        + nbt_list(
+            "Pos",
+            6,
+            [struct.pack(">d", 6.5), struct.pack(">d", 17.0), struct.pack(">d", 8.5)],
+        )
+    )
     entity_chunk = nbt_compound(
         "",
         nbt_int_array("Position", [0, 0])
-        + nbt_list("Entities", 10, [pig, cow, chicken]),
+        + nbt_list("Entities", 10, [pig, cow, chicken, creeper]),
     )
 
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
@@ -177,6 +186,7 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     files.append("textures/entity/pig/pig_temperate.png")
     files.append("textures/entity/cow/cow_temperate.png")
     files.append("textures/entity/chicken/chicken_temperate.png")
+    files.append("textures/entity/creeper/creeper.png")
     for name in files:
         file = assets / name
         archive.write(file, (pathlib.Path("pack/assets/minecraft") / name).as_posix())

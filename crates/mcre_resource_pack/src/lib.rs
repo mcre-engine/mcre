@@ -241,6 +241,10 @@ mod tests {
             path(data.entity_textures.chicken_warm),
             "minecraft:entity/chicken/chicken_warm"
         );
+        assert_eq!(
+            path(data.entity_textures.creeper),
+            "minecraft:entity/creeper/creeper"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }
