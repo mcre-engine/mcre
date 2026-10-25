@@ -332,14 +332,17 @@ open.
 - [x] Load modern separate entity-region chunks and legacy inline entity lists;
       retain raw NBT, expose namespaced IDs/positions in chunk/world storage,
       and translate entity/passenger positions when importing a recentered area.
-- [ ] Decode entity-specific data and render models, animation, movement, and
-      picking; define lifecycle behavior for edits and streaming.
+- [x] Bake static adult temperate/warm pigs into chunk meshes from entity NBT,
+      including yaw, variant, age, entity atlas textures, and block light.
+- [ ] Decode entity-specific data and render the remaining models, animation,
+      movement, shadows, and picking; define lifecycle behavior for edits and
+      streaming.
 
 ## 5. Open decisions / risks
 - UI toolkit locked to `egui` (native + wasm). Revisit only if it fights
   `winit`/`wgpu` versions.
-- Entity payload rendering and block-entity payload/rendering remain future
-  work; imported records are currently read-only.
+- Remaining entity and block-entity payload rendering is read-only; animation,
+  movement, editing, and picking remain future work.
 - Wasm wgpu limits may force atlas-size caps or texture downscaling —
   measure during 2C, don't pre-design.
 - Execution order: 1A → 1B → 1C → 1D, then 2A → 2B → 2C (anvil gives the

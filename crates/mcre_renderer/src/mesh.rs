@@ -1,4 +1,5 @@
 use bytemuck::{Pod, Zeroable};
+use mcre_anvil::nbt::Tag;
 use mcre_core::{Axis, Direction, GrassColorModifier};
 use mcre_resource_pack::{
     Colormaps, ResourcePackData, TintSource,
@@ -429,6 +430,7 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
         });
     }
 
+    mesh_entities(data, atlas, access, &mut mesh, chunk);
     mesh.section_visibility = compute_section_visibility(chunk);
     mesh
 }
@@ -524,42 +526,38 @@ fn mesh_chest<A: BlockAccess + ?Sized>(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn emit_chest_box(
-    atlas: &Atlas,
-    mesh: &mut Mesh,
-    block_pos: [i32; 3],
-    state: BlockState,
-    facing: Direction,
-    hidden: Option<Direction>,
-    region: AtlasRegion,
-    pass: TerrainPass,
-    light: [f32; 2],
-    cube: [f32; 6],
-    texture_origin: [f32; 2],
-) {
+type ModelBoxFace = (Direction, [[f32; 3]; 4], [[f32; 2]; 4]);
+
+/// Vanilla `ModelPart.Cube` face layout: vertices and texture coordinates
+/// for a box `[min_x, min_y, min_z, width, height, depth]` at `texture_origin`.
+fn model_box_faces(cube: [f32; 6], texture_origin: [f32; 2], mirror: bool) -> [ModelBoxFace; 6] {
     let [x, y, z, width, height, depth] = cube;
     let [tex_u, tex_v] = texture_origin;
+    let (min_x, max_x) = if mirror {
+        (x + width, x)
+    } else {
+        (x, x + width)
+    };
     let points = [
-        [x, y, z],
-        [x + width, y, z],
-        [x + width, y + height, z],
-        [x, y + height, z],
-        [x, y, z + depth],
-        [x + width, y, z + depth],
-        [x + width, y + height, z + depth],
-        [x, y + height, z + depth],
+        [min_x, y, z],
+        [max_x, y, z],
+        [max_x, y + height, z],
+        [min_x, y + height, z],
+        [min_x, y, z + depth],
+        [max_x, y, z + depth],
+        [max_x, y + height, z + depth],
+        [min_x, y + height, z + depth],
     ];
     let u0 = tex_u;
     let u1 = u0 + depth;
     let u2 = u1 + width;
     let u22 = u2 + width;
-    let u3 = u22 + depth;
+    let u3 = u2 + depth;
     let u4 = u3 + width;
     let v0 = tex_v;
     let v1 = v0 + depth;
     let v2 = v1 + height;
-    let faces = [
+    let mut faces = [
         (
             Direction::Down,
             [points[5], points[4], points[0], points[1]],
@@ -591,7 +589,30 @@ fn emit_chest_box(
             [[u4, v1], [u3, v1], [u3, v2], [u4, v2]],
         ),
     ];
-    for (local_direction, local_vertices, uvs) in faces {
+    if mirror {
+        for (_, vertices, uvs) in &mut faces {
+            vertices.reverse();
+            uvs.reverse();
+        }
+    }
+    faces
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_chest_box(
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    block_pos: [i32; 3],
+    state: BlockState,
+    facing: Direction,
+    hidden: Option<Direction>,
+    region: AtlasRegion,
+    pass: TerrainPass,
+    light: [f32; 2],
+    cube: [f32; 6],
+    texture_origin: [f32; 2],
+) {
+    for (local_direction, local_vertices, uvs) in model_box_faces(cube, texture_origin, false) {
         if hidden == Some(local_direction) {
             continue;
         }
@@ -891,6 +912,196 @@ fn direction_y_rotation(direction: Direction) -> f32 {
         Direction::North => 180.0,
         Direction::East => 270.0,
         Direction::Down | Direction::Up => 0.0,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct EntityCube {
+    offset: [f32; 3],
+    rotation_x: f32,
+    texture_origin: [f32; 2],
+    cube: [f32; 6],
+    mirror: bool,
+}
+
+const PIG_TEXTURE_SIZE: f32 = 64.0;
+
+const PIG_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 12.0, -6.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-4.0, -4.0, -8.0, 8.0, 8.0, 8.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 12.0, -6.0],
+        rotation_x: 0.0,
+        texture_origin: [16.0, 16.0],
+        cube: [-2.0, 0.0, -9.0, 4.0, 3.0, 1.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 11.0, 2.0],
+        rotation_x: std::f32::consts::FRAC_PI_2,
+        texture_origin: [28.0, 8.0],
+        cube: [-5.0, -10.0, -7.0, 10.0, 16.0, 8.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-3.0, 18.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [3.0, 18.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        mirror: true,
+    },
+    EntityCube {
+        offset: [-3.0, 18.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [3.0, 18.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        mirror: true,
+    },
+];
+
+fn entity_model_position(model: [f32; 3], position: [f64; 3], yaw: f32) -> [f32; 3] {
+    let x = -model[0] / 16.0;
+    let y = 1.501 - model[1] / 16.0;
+    let z = model[2] / 16.0;
+    let (sin, cos) = (180.0 - yaw).to_radians().sin_cos();
+    [
+        position[0] as f32 + x * cos + z * sin,
+        position[1] as f32 + y,
+        position[2] as f32 - x * sin + z * cos,
+    ]
+}
+
+fn entity_part_vertex(vertex: [f32; 3], cube: &EntityCube) -> [f32; 3] {
+    let (sin, cos) = cube.rotation_x.sin_cos();
+    [
+        cube.offset[0] + vertex[0],
+        cube.offset[1] + vertex[1] * cos - vertex[2] * sin,
+        cube.offset[2] + vertex[1] * sin + vertex[2] * cos,
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_entity_cube(
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    region: AtlasRegion,
+    pass: TerrainPass,
+    light: [f32; 2],
+    cube: &EntityCube,
+    yaw: f32,
+) {
+    for (_, vertices, uvs) in model_box_faces(cube.cube, cube.texture_origin, cube.mirror) {
+        let base = mesh.vertices.len() as u32;
+        for (index, vertex) in vertices.iter().enumerate() {
+            let model = entity_part_vertex(*vertex, cube);
+            mesh.vertices.push(Vertex {
+                position: entity_model_position(model, position, yaw),
+                uv: atlas_uv_dimensions(
+                    region,
+                    atlas,
+                    &uvs[index],
+                    [PIG_TEXTURE_SIZE, PIG_TEXTURE_SIZE],
+                ),
+                color: [1.0, 1.0, 1.0],
+                light,
+            });
+        }
+        mesh.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        mesh.opaque_meta.push(QuadMeta {
+            facing: FACING_UNASSIGNED,
+            pass,
+            block_pos,
+            state: Block::AIR.default_state(),
+        });
+    }
+}
+
+fn mesh_entities<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    access: &A,
+    mesh: &mut Mesh,
+    chunk: &Chunk,
+) {
+    for entity in chunk.entities() {
+        if entity.id() != "minecraft:pig" {
+            continue;
+        }
+        let Ok((_, root)) = mcre_anvil::nbt::read_named(entity.nbt()) else {
+            continue;
+        };
+        if root
+            .get("Age")
+            .and_then(Tag::as_i32)
+            .is_some_and(|age| age < 0)
+        {
+            continue;
+        }
+        let variant = root
+            .get("variant")
+            .and_then(Tag::as_str)
+            .unwrap_or("minecraft:temperate");
+        if variant == "minecraft:cold" {
+            continue;
+        }
+        let texture_id = if variant == "minecraft:warm" {
+            data.entity_textures.pig_warm
+        } else {
+            data.entity_textures.pig_temperate
+        };
+        let Some(path) = data.texture_table.get(texture_id as usize) else {
+            continue;
+        };
+        if !path.starts_with("minecraft:entity/pig/") {
+            continue;
+        }
+        let position = entity.position();
+        let block_pos = [
+            position[0].floor() as i32,
+            position[1].floor() as i32,
+            position[2].floor() as i32,
+        ];
+        let (block_light, sky_light) = sample_light(access, block_pos);
+        let light = [f32::from(block_light), f32::from(sky_light)];
+        let yaw = root
+            .get("Rotation")
+            .and_then(Tag::as_list)
+            .and_then(|rotation| rotation.first())
+            .and_then(Tag::as_f64)
+            .unwrap_or(0.0) as f32;
+        let pass = if atlas.region_has_alpha(texture_id) {
+            TerrainPass::Cutout
+        } else {
+            TerrainPass::Solid
+        };
+        let region = atlas.region(texture_id);
+        for cube in PIG_CUBES {
+            emit_entity_cube(
+                atlas, mesh, position, block_pos, region, pass, light, cube, yaw,
+            );
+        }
     }
 }
 
@@ -1868,6 +2079,7 @@ mod tests {
             fluid_textures: Default::default(),
             chest_textures: Default::default(),
             font_textures: Default::default(),
+            entity_textures: Default::default(),
             entries,
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -1885,6 +2097,7 @@ mod tests {
             fluid_textures: Default::default(),
             chest_textures: Default::default(),
             font_textures: Default::default(),
+            entity_textures: Default::default(),
             entries: vec![],
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -1912,6 +2125,7 @@ mod tests {
             fluid_textures: Default::default(),
             chest_textures: Default::default(),
             font_textures: Default::default(),
+            entity_textures: Default::default(),
             entries,
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -1939,6 +2153,7 @@ mod tests {
             fluid_textures: Default::default(),
             chest_textures: Default::default(),
             font_textures: Default::default(),
+            entity_textures: Default::default(),
             entries,
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -2842,6 +3057,68 @@ mod tests {
         )
     }
 
+    fn pig_entity(yaw: f32, variant: &str) -> mcre_world::WorldEntity {
+        let root = Tag::Compound(vec![
+            ("id".into(), Tag::String("minecraft:pig".into())),
+            (
+                "Rotation".into(),
+                Tag::List(vec![Tag::Float(yaw), Tag::Float(0.0)]),
+            ),
+            ("variant".into(), Tag::String(variant.into())),
+        ]);
+        mcre_world::WorldEntity::new(
+            "minecraft:pig".into(),
+            [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
+    fn pig_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/pig/pig_temperate".into()];
+        data.entity_textures.pig_temperate = 0;
+        data
+    }
+
+    fn pig_atlas() -> Atlas {
+        let mut atlas = test_atlas();
+        atlas.width = 64;
+        atlas.height = 64;
+        atlas.pixels = vec![255; 64 * 64 * 4];
+        atlas.regions = vec![AtlasRegion {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 64,
+        }];
+        atlas.has_alpha = vec![true];
+        atlas
+    }
+
+    fn mesh_entity(chunk: &Chunk) -> Mesh {
+        mesh_chunk(
+            &pig_data(),
+            &pig_atlas(),
+            chunk,
+            &World::new(0),
+            [0, 0],
+            LightMode::Flat,
+            MeshOptions::default(),
+        )
+    }
+
+    fn mesh_bounds(mesh: &Mesh) -> ([f32; 3], [f32; 3]) {
+        let mut min = [f32::INFINITY; 3];
+        let mut max = [f32::NEG_INFINITY; 3];
+        for vertex in &mesh.vertices {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(vertex.position[axis]);
+                max[axis] = max[axis].max(vertex.position[axis]);
+            }
+        }
+        (min, max)
+    }
+
     #[test]
     fn sign_text_centers_ascii_glyphs_on_the_front() {
         let mut chunk = Chunk::new();
@@ -2968,6 +3245,92 @@ mod tests {
             .fold(f32::NEG_INFINITY, f32::max);
         assert!((min_x - (0.5 - 9.0 / 96.0)).abs() < 1e-5);
         assert!((max_x - (0.5 + 10.0 / 96.0)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn pig_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(pig_entity(0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&chunk);
+        assert_eq!(mesh.opaque_meta.len(), 42);
+        assert_eq!(mesh.indices.len(), 42 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.6875).abs() < 1e-4);
+        assert!((max[0] - 8.3125).abs() < 1e-4);
+        assert!((min[1] - 64.001).abs() < 1e-4);
+        assert!((max[1] - 65.001).abs() < 1e-4);
+        assert!((min[2] - 7.4375).abs() < 1e-4);
+        assert!((max[2] - 8.9375).abs() < 1e-4);
+    }
+
+    #[test]
+    fn pig_entity_yaw_rotates_the_model() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(pig_entity(90.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&chunk);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.0625).abs() < 1e-4);
+        assert!((max[0] - 8.5625).abs() < 1e-4);
+        assert!((min[2] - 7.6875).abs() < 1e-4);
+        assert!((max[2] - 8.3125).abs() < 1e-4);
+    }
+
+    #[test]
+    fn cold_pigs_and_unknown_entities_are_skipped() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(pig_entity(0.0, "minecraft:cold")));
+        assert!(mesh_entity(&chunk).is_empty());
+
+        let mut chunk = Chunk::new();
+        let root = Tag::Compound(vec![("id".into(), Tag::String("minecraft:cow".into()))]);
+        assert!(chunk.set_entity(mcre_world::WorldEntity::new(
+            "minecraft:cow".into(),
+            [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )));
+        assert!(mesh_entity(&chunk).is_empty());
+    }
+
+    #[test]
+    fn model_box_uvs_match_vanilla_layout() {
+        let faces = model_box_faces([0.0, 0.0, 0.0, 8.0, 8.0, 8.0], [0.0, 0.0], false);
+        let east = faces
+            .iter()
+            .find(|(direction, _, _)| *direction == Direction::East)
+            .unwrap();
+        assert_eq!(
+            east.2,
+            [[24.0, 8.0], [16.0, 8.0], [16.0, 16.0], [24.0, 16.0]]
+        );
+        let south = faces
+            .iter()
+            .find(|(direction, _, _)| *direction == Direction::South)
+            .unwrap();
+        assert_eq!(
+            south.2,
+            [[32.0, 8.0], [24.0, 8.0], [24.0, 16.0], [32.0, 16.0]]
+        );
+
+        let mirrored = model_box_faces([0.0, 0.0, 0.0, 8.0, 8.0, 8.0], [0.0, 0.0], true);
+        let north = mirrored
+            .iter()
+            .find(|(direction, _, _)| *direction == Direction::North)
+            .unwrap();
+        assert_eq!(
+            north.1,
+            [
+                [0.0, 8.0, 0.0],
+                [8.0, 8.0, 0.0],
+                [8.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0]
+            ]
+        );
+        assert_eq!(
+            north.2,
+            [[16.0, 16.0], [8.0, 16.0], [8.0, 8.0], [16.0, 8.0]]
+        );
     }
 
     #[test]

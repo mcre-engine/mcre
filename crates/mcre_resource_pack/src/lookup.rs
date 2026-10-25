@@ -116,6 +116,22 @@ impl FontTextureIds {
     }
 }
 
+/// Texture IDs backing the built-in entity models.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EntityTextureIds {
+    pub pig_temperate: u32,
+    pub pig_warm: u32,
+}
+
+impl EntityTextureIds {
+    fn intern(interner: &mut StringInterner) -> Self {
+        Self {
+            pig_temperate: interner.intern("minecraft:entity/pig/pig_temperate"),
+            pig_warm: interner.intern("minecraft:entity/pig/pig_warm"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ChestTextureIds {
     pub normal: ChestTextures,
@@ -156,6 +172,7 @@ pub struct ResourcePackData {
     pub fluid_textures: FluidTextureIds,
     pub chest_textures: ChestTextureIds,
     pub font_textures: FontTextureIds,
+    pub entity_textures: EntityTextureIds,
     /// Face-culling overrides keyed by block name (`"oak_leaves"`), merged
     /// across packs with last-pack-wins per block.
     pub culling: HashMap<String, CullingOverride>,
@@ -174,6 +191,7 @@ impl ResourcePackData {
         let fluid_textures = FluidTextureIds::intern(&mut interner);
         let chest_textures = ChestTextureIds::intern(&mut interner);
         let font_textures = FontTextureIds::intern(&mut interner);
+        let entity_textures = EntityTextureIds::intern(&mut interner);
         Self {
             entries,
             particle_texture_ids,
@@ -181,6 +199,7 @@ impl ResourcePackData {
             fluid_textures,
             chest_textures,
             font_textures,
+            entity_textures,
             culling,
             colormaps,
         }

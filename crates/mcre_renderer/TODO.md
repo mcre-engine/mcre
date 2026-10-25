@@ -185,11 +185,14 @@ Storage decisions (locked):
 
 - [x] Load separate entity-region chunks and legacy inline lists; preserve raw
       NBT and expose namespaced IDs/positions in chunk/world storage.
-- [ ] Decode and render entity models, animation, movement, and picking.
+- [x] Bake static adult temperate/warm pigs into chunk meshes from entity NBT
+      (yaw, variant, age) with the entity atlas textures and block light.
+- [ ] Decode and render the remaining entity models, animation, movement,
+      shadows, and picking.
 
 Order: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M9 → M8 → M10 → M11 → M12 → M13.
-Next: continue M12 block-entity payloads and rendering, then M13 entity visuals;
-M11 particle providers and shape-aware collision remain open.
+Next: continue M13 entity models and animation, finish M12 hanging signs and
+outlines, then M11 particle providers and shape-aware collision.
 Verify each milestone: `cargo ck`, `cargo lint -- -D warnings`,
 `cargo test --workspace --all-features`, `cargo fmt --check`, `typos`,
 25s viewer smoke (expect exit 124).

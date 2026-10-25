@@ -221,6 +221,14 @@ mod tests {
             "minecraft:entity/chest/copper_oxidized_right"
         );
         assert_eq!(path(data.font_textures.ascii), "minecraft:font/ascii");
+        assert_eq!(
+            path(data.entity_textures.pig_temperate),
+            "minecraft:entity/pig/pig_temperate"
+        );
+        assert_eq!(
+            path(data.entity_textures.pig_warm),
+            "minecraft:entity/pig/pig_warm"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

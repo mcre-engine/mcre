@@ -59,7 +59,7 @@ def make_region(payload):
 def make_smoke_save(path):
     spawn = nbt_compound(
         "spawn",
-        nbt_int_array("pos", [8, 20, -8])
+        nbt_int_array("pos", [8, 20, 8])
         + nbt_name(8, "dimension")
         + nbt_string_payload("minecraft:overworld"),
     )
@@ -87,7 +87,7 @@ def make_smoke_save(path):
         + nbt_list(
             "Pos",
             6,
-            [struct.pack(">d", 8.5), struct.pack(">d", 20.0), struct.pack(">d", 8.5)],
+            [struct.pack(">d", 8.5), struct.pack(">d", 17.0), struct.pack(">d", 8.5)],
         )
     )
     entity_chunk = nbt_compound(
@@ -143,6 +143,7 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
             "stone",
         )
     )
+    files.append("textures/entity/pig/pig_temperate.png")
     for name in files:
         file = assets / name
         archive.write(file, (pathlib.Path("pack/assets/minecraft") / name).as_posix())
