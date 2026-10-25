@@ -185,8 +185,9 @@ Storage decisions (locked):
 
 - [x] Load separate entity-region chunks and legacy inline lists; preserve raw
       NBT and expose namespaced IDs/positions in chunk/world storage.
-- [x] Bake static adult temperate/warm pigs into chunk meshes from entity NBT
-      (yaw, variant, age) with the entity atlas textures and block light.
+- [x] Bake static adult temperate/warm pigs and temperate cows into chunk
+      meshes from entity NBT (yaw, variant, age) with the entity atlas
+      textures and block light.
 - [ ] Decode and render the remaining entity models, animation, movement,
       shadows, and picking.
 

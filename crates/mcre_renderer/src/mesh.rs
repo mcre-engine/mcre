@@ -924,7 +924,10 @@ struct EntityCube {
     mirror: bool,
 }
 
-const PIG_TEXTURE_SIZE: f32 = 64.0;
+struct EntityModel {
+    texture_size: f32,
+    cubes: &'static [EntityCube],
+}
 
 const PIG_CUBES: &[EntityCube] = &[
     EntityCube {
@@ -978,6 +981,89 @@ const PIG_CUBES: &[EntityCube] = &[
     },
 ];
 
+const COW_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 4.0, -8.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-4.0, -4.0, -6.0, 8.0, 8.0, 6.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 4.0, -8.0],
+        rotation_x: 0.0,
+        texture_origin: [1.0, 33.0],
+        cube: [-3.0, 1.0, -7.0, 6.0, 3.0, 1.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 4.0, -8.0],
+        rotation_x: 0.0,
+        texture_origin: [22.0, 0.0],
+        cube: [-5.0, -5.0, -5.0, 1.0, 3.0, 1.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 4.0, -8.0],
+        rotation_x: 0.0,
+        texture_origin: [22.0, 0.0],
+        cube: [4.0, -5.0, -5.0, 1.0, 3.0, 1.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 5.0, 2.0],
+        rotation_x: std::f32::consts::FRAC_PI_2,
+        texture_origin: [18.0, 4.0],
+        cube: [-6.0, -10.0, -7.0, 12.0, 18.0, 10.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 5.0, 2.0],
+        rotation_x: std::f32::consts::FRAC_PI_2,
+        texture_origin: [52.0, 0.0],
+        cube: [-2.0, 2.0, -8.0, 4.0, 6.0, 1.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-4.0, 12.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [4.0, 12.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        mirror: true,
+    },
+    EntityCube {
+        offset: [-4.0, 12.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        mirror: false,
+    },
+    EntityCube {
+        offset: [4.0, 12.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        mirror: true,
+    },
+];
+
+const PIG_MODEL: EntityModel = EntityModel {
+    texture_size: 64.0,
+    cubes: PIG_CUBES,
+};
+
+const COW_MODEL: EntityModel = EntityModel {
+    texture_size: 64.0,
+    cubes: COW_CUBES,
+};
+
 fn entity_model_position(model: [f32; 3], position: [f64; 3], yaw: f32) -> [f32; 3] {
     let x = -model[0] / 16.0;
     let y = 1.501 - model[1] / 16.0;
@@ -1008,6 +1094,7 @@ fn emit_entity_cube(
     region: AtlasRegion,
     pass: TerrainPass,
     light: [f32; 2],
+    texture_size: f32,
     cube: &EntityCube,
     yaw: f32,
 ) {
@@ -1017,12 +1104,7 @@ fn emit_entity_cube(
             let model = entity_part_vertex(*vertex, cube);
             mesh.vertices.push(Vertex {
                 position: entity_model_position(model, position, yaw),
-                uv: atlas_uv_dimensions(
-                    region,
-                    atlas,
-                    &uvs[index],
-                    [PIG_TEXTURE_SIZE, PIG_TEXTURE_SIZE],
-                ),
+                uv: atlas_uv_dimensions(region, atlas, &uvs[index], [texture_size, texture_size]),
                 color: [1.0, 1.0, 1.0],
                 light,
             });
@@ -1046,9 +1128,6 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
     chunk: &Chunk,
 ) {
     for entity in chunk.entities() {
-        if entity.id() != "minecraft:pig" {
-            continue;
-        }
         let Ok((_, root)) = mcre_anvil::nbt::read_named(entity.nbt()) else {
             continue;
         };
@@ -1063,18 +1142,34 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
             .get("variant")
             .and_then(Tag::as_str)
             .unwrap_or("minecraft:temperate");
-        if variant == "minecraft:cold" {
-            continue;
-        }
-        let texture_id = if variant == "minecraft:warm" {
-            data.entity_textures.pig_warm
-        } else {
-            data.entity_textures.pig_temperate
+        let (model, texture_id, texture_prefix) = match entity.id() {
+            "minecraft:pig" => {
+                if variant == "minecraft:cold" {
+                    continue;
+                }
+                let texture_id = if variant == "minecraft:warm" {
+                    data.entity_textures.pig_warm
+                } else {
+                    data.entity_textures.pig_temperate
+                };
+                (&PIG_MODEL, texture_id, "minecraft:entity/pig/")
+            }
+            "minecraft:cow" => {
+                if variant != "minecraft:temperate" {
+                    continue;
+                }
+                (
+                    &COW_MODEL,
+                    data.entity_textures.cow_temperate,
+                    "minecraft:entity/cow/",
+                )
+            }
+            _ => continue,
         };
         let Some(path) = data.texture_table.get(texture_id as usize) else {
             continue;
         };
-        if !path.starts_with("minecraft:entity/pig/") {
+        if !path.starts_with(texture_prefix) {
             continue;
         }
         let position = entity.position();
@@ -1097,9 +1192,18 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
             TerrainPass::Solid
         };
         let region = atlas.region(texture_id);
-        for cube in PIG_CUBES {
+        for cube in model.cubes {
             emit_entity_cube(
-                atlas, mesh, position, block_pos, region, pass, light, cube, yaw,
+                atlas,
+                mesh,
+                position,
+                block_pos,
+                region,
+                pass,
+                light,
+                model.texture_size,
+                cube,
+                yaw,
             );
         }
     }
@@ -3057,9 +3161,9 @@ mod tests {
         )
     }
 
-    fn pig_entity(yaw: f32, variant: &str) -> mcre_world::WorldEntity {
+    fn entity(id: &str, yaw: f32, variant: &str) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
-            ("id".into(), Tag::String("minecraft:pig".into())),
+            ("id".into(), Tag::String(id.into())),
             (
                 "Rotation".into(),
                 Tag::List(vec![Tag::Float(yaw), Tag::Float(0.0)]),
@@ -3067,7 +3171,7 @@ mod tests {
             ("variant".into(), Tag::String(variant.into())),
         ]);
         mcre_world::WorldEntity::new(
-            "minecraft:pig".into(),
+            id.into(),
             [8.0, 64.0, 8.0],
             mcre_anvil::nbt::write_named("", &root),
         )
@@ -3080,7 +3184,14 @@ mod tests {
         data
     }
 
-    fn pig_atlas() -> Atlas {
+    fn cow_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/cow/cow_temperate".into()];
+        data.entity_textures.cow_temperate = 0;
+        data
+    }
+
+    fn entity_atlas() -> Atlas {
         let mut atlas = test_atlas();
         atlas.width = 64;
         atlas.height = 64;
@@ -3095,10 +3206,10 @@ mod tests {
         atlas
     }
 
-    fn mesh_entity(chunk: &Chunk) -> Mesh {
+    fn mesh_entity(data: &ResourcePackData, chunk: &Chunk) -> Mesh {
         mesh_chunk(
-            &pig_data(),
-            &pig_atlas(),
+            data,
+            &entity_atlas(),
             chunk,
             &World::new(0),
             [0, 0],
@@ -3250,9 +3361,9 @@ mod tests {
     #[test]
     fn pig_entity_bakes_model_into_chunk_mesh() {
         let mut chunk = Chunk::new();
-        assert!(chunk.set_entity(pig_entity(0.0, "minecraft:temperate")));
+        assert!(chunk.set_entity(entity("minecraft:pig", 0.0, "minecraft:temperate")));
 
-        let mesh = mesh_entity(&chunk);
+        let mesh = mesh_entity(&pig_data(), &chunk);
         assert_eq!(mesh.opaque_meta.len(), 42);
         assert_eq!(mesh.indices.len(), 42 * 6);
         let (min, max) = mesh_bounds(&mesh);
@@ -3267,9 +3378,9 @@ mod tests {
     #[test]
     fn pig_entity_yaw_rotates_the_model() {
         let mut chunk = Chunk::new();
-        assert!(chunk.set_entity(pig_entity(90.0, "minecraft:temperate")));
+        assert!(chunk.set_entity(entity("minecraft:pig", 90.0, "minecraft:temperate")));
 
-        let mesh = mesh_entity(&chunk);
+        let mesh = mesh_entity(&pig_data(), &chunk);
         let (min, max) = mesh_bounds(&mesh);
         assert!((min[0] - 7.0625).abs() < 1e-4);
         assert!((max[0] - 8.5625).abs() < 1e-4);
@@ -3278,19 +3389,56 @@ mod tests {
     }
 
     #[test]
-    fn cold_pigs_and_unknown_entities_are_skipped() {
+    fn cold_pigs_and_unsupported_entities_are_skipped() {
         let mut chunk = Chunk::new();
-        assert!(chunk.set_entity(pig_entity(0.0, "minecraft:cold")));
-        assert!(mesh_entity(&chunk).is_empty());
+        assert!(chunk.set_entity(entity("minecraft:pig", 0.0, "minecraft:cold")));
+        assert!(mesh_entity(&pig_data(), &chunk).is_empty());
 
         let mut chunk = Chunk::new();
-        let root = Tag::Compound(vec![("id".into(), Tag::String("minecraft:cow".into()))]);
+        assert!(chunk.set_entity(entity("minecraft:cow", 0.0, "minecraft:warm")));
+        assert!(mesh_entity(&cow_data(), &chunk).is_empty());
+
+        let mut chunk = Chunk::new();
+        let root = Tag::Compound(vec![("id".into(), Tag::String("minecraft:sheep".into()))]);
+        assert!(chunk.set_entity(mcre_world::WorldEntity::new(
+            "minecraft:sheep".into(),
+            [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )));
+        assert!(mesh_entity(&pig_data(), &chunk).is_empty());
+    }
+
+    #[test]
+    fn cow_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:cow", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&cow_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 60);
+        assert_eq!(mesh.indices.len(), 60 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.625).abs() < 1e-4);
+        assert!((max[0] - 8.375).abs() < 1e-4);
+        assert!((min[1] - 64.001).abs() < 1e-4);
+        assert!((max[1] - 65.5635).abs() < 1e-4);
+        assert!((min[2] - 7.375).abs() < 1e-4);
+        assert!((max[2] - 8.9375).abs() < 1e-4);
+    }
+
+    #[test]
+    fn baby_animals_are_skipped() {
+        let root = Tag::Compound(vec![
+            ("id".into(), Tag::String("minecraft:cow".into())),
+            ("Age".into(), Tag::Int(-1)),
+            ("variant".into(), Tag::String("minecraft:temperate".into())),
+        ]);
+        let mut chunk = Chunk::new();
         assert!(chunk.set_entity(mcre_world::WorldEntity::new(
             "minecraft:cow".into(),
             [8.0, 64.0, 8.0],
             mcre_anvil::nbt::write_named("", &root),
         )));
-        assert!(mesh_entity(&chunk).is_empty());
+        assert!(mesh_entity(&cow_data(), &chunk).is_empty());
     }
 
     #[test]

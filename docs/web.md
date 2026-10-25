@@ -40,7 +40,8 @@ missing from the zip are air. Matching block entities and separate entity
 region files are imported as read-only raw NBT. The native inspector decodes
 sign text and inventory summaries. Chests render their single and double-half
 models from the entity chest textures, standing/wall signs render ASCII text,
-and adult temperate/warm pigs render from the entity textures. Hanging sign
+and adult temperate/warm pigs plus temperate cows render from the entity
+textures. Hanging sign
 text, non-ASCII glyphs, other entity models, animation, shadows, and picking
 are not yet rendered. The current pack supplies the blockstates, models, and
 textures, so load a pack first.

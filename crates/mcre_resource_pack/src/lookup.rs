@@ -121,6 +121,7 @@ impl FontTextureIds {
 pub struct EntityTextureIds {
     pub pig_temperate: u32,
     pub pig_warm: u32,
+    pub cow_temperate: u32,
 }
 
 impl EntityTextureIds {
@@ -128,6 +129,7 @@ impl EntityTextureIds {
         Self {
             pig_temperate: interner.intern("minecraft:entity/pig/pig_temperate"),
             pig_warm: interner.intern("minecraft:entity/pig/pig_warm"),
+            cow_temperate: interner.intern("minecraft:entity/cow/cow_temperate"),
         }
     }
 }

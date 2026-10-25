@@ -332,8 +332,9 @@ open.
 - [x] Load modern separate entity-region chunks and legacy inline entity lists;
       retain raw NBT, expose namespaced IDs/positions in chunk/world storage,
       and translate entity/passenger positions when importing a recentered area.
-- [x] Bake static adult temperate/warm pigs into chunk meshes from entity NBT,
-      including yaw, variant, age, entity atlas textures, and block light.
+- [x] Bake static adult temperate/warm pigs and temperate cows into chunk
+      meshes from entity NBT, including yaw, variant, age, entity atlas
+      textures, and block light.
 - [ ] Decode entity-specific data and render the remaining models, animation,
       movement, shadows, and picking; define lifecycle behavior for edits and
       streaming.
