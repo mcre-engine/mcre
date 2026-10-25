@@ -122,6 +122,8 @@ pub struct EntityTextureIds {
     pub pig_temperate: u32,
     pub pig_warm: u32,
     pub cow_temperate: u32,
+    pub chicken_temperate: u32,
+    pub chicken_warm: u32,
 }
 
 impl EntityTextureIds {
@@ -130,6 +132,8 @@ impl EntityTextureIds {
             pig_temperate: interner.intern("minecraft:entity/pig/pig_temperate"),
             pig_warm: interner.intern("minecraft:entity/pig/pig_warm"),
             cow_temperate: interner.intern("minecraft:entity/cow/cow_temperate"),
+            chicken_temperate: interner.intern("minecraft:entity/chicken/chicken_temperate"),
+            chicken_warm: interner.intern("minecraft:entity/chicken/chicken_warm"),
         }
     }
 }

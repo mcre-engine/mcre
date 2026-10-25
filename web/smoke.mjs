@@ -154,7 +154,7 @@ try {
   await page.locator("#debug-toggle").click();
   await page.waitForFunction(() => !document.querySelector("#debug-menu").hidden);
   await page.waitForFunction(() =>
-    document.querySelector("#debug-info").textContent.includes("Entities: 2"),
+    document.querySelector("#debug-info").textContent.includes("Entities: 3"),
   );
   await page.locator("#time-of-day").evaluate((input) => {
     input.value = "12000";

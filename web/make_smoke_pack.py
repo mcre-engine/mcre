@@ -105,9 +105,25 @@ def make_smoke_save(path):
             ],
         )
     )
+    chicken = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:chicken")
+        + nbt_name(8, "variant")
+        + nbt_string_payload("minecraft:temperate")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 12.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 8.5),
+            ],
+        )
+    )
     entity_chunk = nbt_compound(
         "",
-        nbt_int_array("Position", [0, 0]) + nbt_list("Entities", 10, [pig, cow]),
+        nbt_int_array("Position", [0, 0])
+        + nbt_list("Entities", 10, [pig, cow, chicken]),
     )
 
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
@@ -160,6 +176,7 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     )
     files.append("textures/entity/pig/pig_temperate.png")
     files.append("textures/entity/cow/cow_temperate.png")
+    files.append("textures/entity/chicken/chicken_temperate.png")
     for name in files:
         file = assets / name
         archive.write(file, (pathlib.Path("pack/assets/minecraft") / name).as_posix())

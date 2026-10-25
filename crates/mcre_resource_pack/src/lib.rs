@@ -233,6 +233,14 @@ mod tests {
             path(data.entity_textures.cow_temperate),
             "minecraft:entity/cow/cow_temperate"
         );
+        assert_eq!(
+            path(data.entity_textures.chicken_temperate),
+            "minecraft:entity/chicken/chicken_temperate"
+        );
+        assert_eq!(
+            path(data.entity_textures.chicken_warm),
+            "minecraft:entity/chicken/chicken_warm"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }
