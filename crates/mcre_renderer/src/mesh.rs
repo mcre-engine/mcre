@@ -530,23 +530,34 @@ type ModelBoxFace = (Direction, [[f32; 3]; 4], [[f32; 2]; 4]);
 
 /// Vanilla `ModelPart.Cube` face layout: vertices and texture coordinates
 /// for a box `[min_x, min_y, min_z, width, height, depth]` at `texture_origin`.
-fn model_box_faces(cube: [f32; 6], texture_origin: [f32; 2], mirror: bool) -> [ModelBoxFace; 6] {
+/// `growth` expands the geometry on every side while the texture layout keeps
+/// using the original dimensions, matching `CubeDeformation`.
+fn model_box_faces(
+    cube: [f32; 6],
+    texture_origin: [f32; 2],
+    mirror: bool,
+    growth: f32,
+) -> [ModelBoxFace; 6] {
     let [x, y, z, width, height, depth] = cube;
     let [tex_u, tex_v] = texture_origin;
     let (min_x, max_x) = if mirror {
-        (x + width, x)
+        (x + width + growth, x - growth)
     } else {
-        (x, x + width)
+        (x - growth, x + width + growth)
     };
+    let min_y = y - growth;
+    let max_y = y + height + growth;
+    let min_z = z - growth;
+    let max_z = z + depth + growth;
     let points = [
-        [min_x, y, z],
-        [max_x, y, z],
-        [max_x, y + height, z],
-        [min_x, y + height, z],
-        [min_x, y, z + depth],
-        [max_x, y, z + depth],
-        [max_x, y + height, z + depth],
-        [min_x, y + height, z + depth],
+        [min_x, min_y, min_z],
+        [max_x, min_y, min_z],
+        [max_x, max_y, min_z],
+        [min_x, max_y, min_z],
+        [min_x, min_y, max_z],
+        [max_x, min_y, max_z],
+        [max_x, max_y, max_z],
+        [min_x, max_y, max_z],
     ];
     let u0 = tex_u;
     let u1 = u0 + depth;
@@ -612,7 +623,8 @@ fn emit_chest_box(
     cube: [f32; 6],
     texture_origin: [f32; 2],
 ) {
-    for (local_direction, local_vertices, uvs) in model_box_faces(cube, texture_origin, false) {
+    for (local_direction, local_vertices, uvs) in model_box_faces(cube, texture_origin, false, 0.0)
+    {
         if hidden == Some(local_direction) {
             continue;
         }
@@ -921,6 +933,7 @@ struct EntityCube {
     rotation_x: f32,
     texture_origin: [f32; 2],
     cube: [f32; 6],
+    growth: f32,
     mirror: bool,
 }
 
@@ -935,6 +948,7 @@ const PIG_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 0.0],
         cube: [-4.0, -4.0, -8.0, 8.0, 8.0, 8.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -942,6 +956,7 @@ const PIG_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [16.0, 16.0],
         cube: [-2.0, 0.0, -9.0, 4.0, 3.0, 1.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -949,6 +964,7 @@ const PIG_CUBES: &[EntityCube] = &[
         rotation_x: std::f32::consts::FRAC_PI_2,
         texture_origin: [28.0, 8.0],
         cube: [-5.0, -10.0, -7.0, 10.0, 16.0, 8.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -956,6 +972,7 @@ const PIG_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -963,6 +980,7 @@ const PIG_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.0,
         mirror: true,
     },
     EntityCube {
@@ -970,6 +988,7 @@ const PIG_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -977,6 +996,7 @@ const PIG_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.0,
         mirror: true,
     },
 ];
@@ -987,6 +1007,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 0.0],
         cube: [-4.0, -4.0, -6.0, 8.0, 8.0, 6.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -994,6 +1015,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [1.0, 33.0],
         cube: [-3.0, 1.0, -7.0, 6.0, 3.0, 1.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1001,6 +1023,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [22.0, 0.0],
         cube: [-5.0, -5.0, -5.0, 1.0, 3.0, 1.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1008,6 +1031,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [22.0, 0.0],
         cube: [4.0, -5.0, -5.0, 1.0, 3.0, 1.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1015,6 +1039,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: std::f32::consts::FRAC_PI_2,
         texture_origin: [18.0, 4.0],
         cube: [-6.0, -10.0, -7.0, 12.0, 18.0, 10.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1022,6 +1047,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: std::f32::consts::FRAC_PI_2,
         texture_origin: [52.0, 0.0],
         cube: [-2.0, 2.0, -8.0, 4.0, 6.0, 1.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1029,6 +1055,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1036,6 +1063,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
         mirror: true,
     },
     EntityCube {
@@ -1043,6 +1071,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1050,6 +1079,7 @@ const COW_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
         mirror: true,
     },
 ];
@@ -1060,6 +1090,7 @@ const CHICKEN_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 0.0],
         cube: [-2.0, -6.0, -2.0, 4.0, 6.0, 3.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1067,6 +1098,7 @@ const CHICKEN_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [14.0, 0.0],
         cube: [-2.0, -4.0, -4.0, 4.0, 2.0, 2.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1074,6 +1106,7 @@ const CHICKEN_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [14.0, 4.0],
         cube: [-1.0, -2.0, -3.0, 2.0, 2.0, 2.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1081,6 +1114,7 @@ const CHICKEN_CUBES: &[EntityCube] = &[
         rotation_x: std::f32::consts::FRAC_PI_2,
         texture_origin: [0.0, 9.0],
         cube: [-3.0, -4.0, -3.0, 6.0, 8.0, 6.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1088,6 +1122,7 @@ const CHICKEN_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [26.0, 0.0],
         cube: [-1.0, 0.0, -3.0, 3.0, 5.0, 3.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1095,6 +1130,7 @@ const CHICKEN_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [26.0, 0.0],
         cube: [-1.0, 0.0, -3.0, 3.0, 5.0, 3.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1102,6 +1138,7 @@ const CHICKEN_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [24.0, 13.0],
         cube: [0.0, 0.0, -3.0, 1.0, 4.0, 6.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1109,6 +1146,7 @@ const CHICKEN_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [24.0, 13.0],
         cube: [-1.0, 0.0, -3.0, 1.0, 4.0, 6.0],
+        growth: 0.0,
         mirror: false,
     },
 ];
@@ -1119,6 +1157,7 @@ const CREEPER_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 0.0],
         cube: [-4.0, -8.0, -4.0, 8.0, 8.0, 8.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1126,6 +1165,7 @@ const CREEPER_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [16.0, 16.0],
         cube: [-4.0, 0.0, -2.0, 8.0, 12.0, 4.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1133,6 +1173,7 @@ const CREEPER_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1140,6 +1181,7 @@ const CREEPER_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1147,6 +1189,7 @@ const CREEPER_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.0,
         mirror: false,
     },
     EntityCube {
@@ -1154,6 +1197,109 @@ const CREEPER_CUBES: &[EntityCube] = &[
         rotation_x: 0.0,
         texture_origin: [0.0, 16.0],
         cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
+const SHEEP_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 6.0, -8.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-3.0, -4.0, -6.0, 6.0, 6.0, 8.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 5.0, 2.0],
+        rotation_x: std::f32::consts::FRAC_PI_2,
+        texture_origin: [28.0, 8.0],
+        cube: [-4.0, -10.0, -7.0, 8.0, 16.0, 6.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-3.0, 12.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCube {
+        offset: [3.0, 12.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-3.0, 12.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCube {
+        offset: [3.0, 12.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
+const SHEEP_WOOL_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 6.0, -8.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-3.0, -4.0, -4.0, 6.0, 6.0, 6.0],
+        growth: 0.6,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 5.0, 2.0],
+        rotation_x: std::f32::consts::FRAC_PI_2,
+        texture_origin: [28.0, 8.0],
+        cube: [-4.0, -10.0, -7.0, 8.0, 16.0, 6.0],
+        growth: 1.75,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-3.0, 12.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.5,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [3.0, 12.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.5,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-3.0, 12.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.5,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [3.0, 12.0, -5.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 6.0, 4.0],
+        growth: 0.5,
         mirror: false,
     },
 ];
@@ -1177,6 +1323,38 @@ const CREEPER_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: CREEPER_CUBES,
 };
+
+const SHEEP_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 32.0],
+    cubes: SHEEP_CUBES,
+};
+
+const SHEEP_WOOL_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 32.0],
+    cubes: SHEEP_WOOL_CUBES,
+};
+
+fn sheep_wool_tint(color: u8) -> [f32; 3] {
+    const TINTS: [[f32; 3]; 16] = [
+        [0.901961, 0.901961, 0.901961],
+        [0.729412, 0.376471, 0.082353],
+        [0.584314, 0.227451, 0.552941],
+        [0.168627, 0.525490, 0.639216],
+        [0.745098, 0.635294, 0.176471],
+        [0.376471, 0.584314, 0.090196],
+        [0.713725, 0.407843, 0.498039],
+        [0.207843, 0.231373, 0.239216],
+        [0.458824, 0.458824, 0.443137],
+        [0.062745, 0.458824, 0.458824],
+        [0.400000, 0.145098, 0.541176],
+        [0.176471, 0.200000, 0.498039],
+        [0.384314, 0.247059, 0.145098],
+        [0.274510, 0.364706, 0.062745],
+        [0.517647, 0.133333, 0.109804],
+        [0.082353, 0.082353, 0.094118],
+    ];
+    TINTS[(color & 15) as usize]
+}
 
 fn entity_model_position(model: [f32; 3], position: [f64; 3], yaw: f32) -> [f32; 3] {
     let x = -model[0] / 16.0;
@@ -1209,17 +1387,20 @@ fn emit_entity_cube(
     pass: TerrainPass,
     light: [f32; 2],
     texture_size: [f32; 2],
+    tint: [f32; 3],
     cube: &EntityCube,
     yaw: f32,
 ) {
-    for (_, vertices, uvs) in model_box_faces(cube.cube, cube.texture_origin, cube.mirror) {
+    for (_, vertices, uvs) in
+        model_box_faces(cube.cube, cube.texture_origin, cube.mirror, cube.growth)
+    {
         let base = mesh.vertices.len() as u32;
         for (index, vertex) in vertices.iter().enumerate() {
             let model = entity_part_vertex(*vertex, cube);
             mesh.vertices.push(Vertex {
                 position: entity_model_position(model, position, yaw),
                 uv: atlas_uv_dimensions(region, atlas, &uvs[index], texture_size),
-                color: [1.0, 1.0, 1.0],
+                color: tint,
                 light,
             });
         }
@@ -1232,6 +1413,55 @@ fn emit_entity_cube(
             state: Block::AIR.default_state(),
         });
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_entity_layer(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    light: [f32; 2],
+    yaw: f32,
+    texture_id: u32,
+    texture_prefix: &str,
+    model: &EntityModel,
+    tint: [f32; 3],
+) {
+    let Some(path) = data.texture_table.get(texture_id as usize) else {
+        return;
+    };
+    if !path.starts_with(texture_prefix) {
+        return;
+    }
+    let pass = if atlas.region_has_alpha(texture_id) {
+        TerrainPass::Cutout
+    } else {
+        TerrainPass::Solid
+    };
+    let region = atlas.region(texture_id);
+    for cube in model.cubes {
+        emit_entity_cube(
+            atlas,
+            mesh,
+            position,
+            block_pos,
+            region,
+            pass,
+            light,
+            model.texture_size,
+            tint,
+            cube,
+            yaw,
+        );
+    }
+}
+
+fn entity_variant(root: &Tag) -> &str {
+    root.get("variant")
+        .and_then(Tag::as_str)
+        .unwrap_or("minecraft:temperate")
 }
 
 fn mesh_entities<A: BlockAccess + ?Sized>(
@@ -1252,56 +1482,6 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
         {
             continue;
         }
-        let variant = root
-            .get("variant")
-            .and_then(Tag::as_str)
-            .unwrap_or("minecraft:temperate");
-        let (model, texture_id, texture_prefix) = match entity.id() {
-            "minecraft:pig" => {
-                if variant == "minecraft:cold" {
-                    continue;
-                }
-                let texture_id = if variant == "minecraft:warm" {
-                    data.entity_textures.pig_warm
-                } else {
-                    data.entity_textures.pig_temperate
-                };
-                (&PIG_MODEL, texture_id, "minecraft:entity/pig/")
-            }
-            "minecraft:cow" => {
-                if variant != "minecraft:temperate" {
-                    continue;
-                }
-                (
-                    &COW_MODEL,
-                    data.entity_textures.cow_temperate,
-                    "minecraft:entity/cow/",
-                )
-            }
-            "minecraft:chicken" => {
-                if variant == "minecraft:cold" {
-                    continue;
-                }
-                let texture_id = if variant == "minecraft:warm" {
-                    data.entity_textures.chicken_warm
-                } else {
-                    data.entity_textures.chicken_temperate
-                };
-                (&CHICKEN_MODEL, texture_id, "minecraft:entity/chicken/")
-            }
-            "minecraft:creeper" => (
-                &CREEPER_MODEL,
-                data.entity_textures.creeper,
-                "minecraft:entity/creeper/",
-            ),
-            _ => continue,
-        };
-        let Some(path) = data.texture_table.get(texture_id as usize) else {
-            continue;
-        };
-        if !path.starts_with(texture_prefix) {
-            continue;
-        }
         let position = entity.position();
         let block_pos = [
             position[0].floor() as i32,
@@ -1316,25 +1496,125 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
             .and_then(|rotation| rotation.first())
             .and_then(Tag::as_f64)
             .unwrap_or(0.0) as f32;
-        let pass = if atlas.region_has_alpha(texture_id) {
-            TerrainPass::Cutout
-        } else {
-            TerrainPass::Solid
-        };
-        let region = atlas.region(texture_id);
-        for cube in model.cubes {
-            emit_entity_cube(
-                atlas,
-                mesh,
-                position,
-                block_pos,
-                region,
-                pass,
-                light,
-                model.texture_size,
-                cube,
-                yaw,
-            );
+        let white = [1.0, 1.0, 1.0];
+        match entity.id() {
+            "minecraft:pig" => {
+                let variant = entity_variant(&root);
+                if variant == "minecraft:cold" {
+                    continue;
+                }
+                let texture_id = if variant == "minecraft:warm" {
+                    data.entity_textures.pig_warm
+                } else {
+                    data.entity_textures.pig_temperate
+                };
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    texture_id,
+                    "minecraft:entity/pig/",
+                    &PIG_MODEL,
+                    white,
+                );
+            }
+            "minecraft:cow" => {
+                if entity_variant(&root) != "minecraft:temperate" {
+                    continue;
+                }
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.cow_temperate,
+                    "minecraft:entity/cow/",
+                    &COW_MODEL,
+                    white,
+                );
+            }
+            "minecraft:chicken" => {
+                let variant = entity_variant(&root);
+                if variant == "minecraft:cold" {
+                    continue;
+                }
+                let texture_id = if variant == "minecraft:warm" {
+                    data.entity_textures.chicken_warm
+                } else {
+                    data.entity_textures.chicken_temperate
+                };
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    texture_id,
+                    "minecraft:entity/chicken/",
+                    &CHICKEN_MODEL,
+                    white,
+                );
+            }
+            "minecraft:creeper" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.creeper,
+                    "minecraft:entity/creeper/",
+                    &CREEPER_MODEL,
+                    white,
+                );
+            }
+            "minecraft:sheep" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.sheep,
+                    "minecraft:entity/sheep/",
+                    &SHEEP_MODEL,
+                    white,
+                );
+                let sheared = matches!(root.get("Sheared"), Some(Tag::Byte(value)) if *value != 0);
+                if !sheared {
+                    let color = match root.get("Color") {
+                        Some(Tag::Byte(value)) => (*value as u8) & 15,
+                        _ => 0,
+                    };
+                    emit_entity_layer(
+                        data,
+                        atlas,
+                        mesh,
+                        position,
+                        block_pos,
+                        light,
+                        yaw,
+                        data.entity_textures.sheep_wool,
+                        "minecraft:entity/sheep/",
+                        &SHEEP_WOOL_MODEL,
+                        sheep_wool_tint(color),
+                    );
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -3335,6 +3615,40 @@ mod tests {
         data
     }
 
+    fn sheep_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec![
+            "minecraft:entity/sheep/sheep".into(),
+            "minecraft:entity/sheep/sheep_wool".into(),
+        ];
+        data.entity_textures.sheep = 0;
+        data.entity_textures.sheep_wool = 1;
+        data
+    }
+
+    fn sheep_atlas() -> Atlas {
+        let mut atlas = test_atlas();
+        atlas.width = 64;
+        atlas.height = 64;
+        atlas.pixels = vec![255; 64 * 64 * 4];
+        atlas.regions = vec![
+            AtlasRegion {
+                x: 0,
+                y: 0,
+                width: 64,
+                height: 32,
+            },
+            AtlasRegion {
+                x: 0,
+                y: 32,
+                width: 64,
+                height: 32,
+            },
+        ];
+        atlas.has_alpha = vec![true, true];
+        atlas
+    }
+
     fn entity_atlas() -> Atlas {
         let mut atlas = test_atlas();
         atlas.width = 64;
@@ -3350,16 +3664,20 @@ mod tests {
         atlas
     }
 
-    fn mesh_entity(data: &ResourcePackData, chunk: &Chunk) -> Mesh {
+    fn mesh_entity_with_atlas(data: &ResourcePackData, atlas: &Atlas, chunk: &Chunk) -> Mesh {
         mesh_chunk(
             data,
-            &entity_atlas(),
+            atlas,
             chunk,
             &World::new(0),
             [0, 0],
             LightMode::Flat,
             MeshOptions::default(),
         )
+    }
+
+    fn mesh_entity(data: &ResourcePackData, chunk: &Chunk) -> Mesh {
+        mesh_entity_with_atlas(data, &entity_atlas(), chunk)
     }
 
     fn mesh_bounds(mesh: &Mesh) -> ([f32; 3], [f32; 3]) {
@@ -3607,6 +3925,81 @@ mod tests {
         assert!((max[2] - 8.375).abs() < 1e-4);
     }
 
+    fn sheep_entity(color: Option<i8>, sheared: bool) -> mcre_world::WorldEntity {
+        let mut fields = vec![
+            ("id".into(), Tag::String("minecraft:sheep".into())),
+            (
+                "Rotation".into(),
+                Tag::List(vec![Tag::Float(0.0), Tag::Float(0.0)]),
+            ),
+        ];
+        if let Some(color) = color {
+            fields.push(("Color".into(), Tag::Byte(color)));
+        }
+        if sheared {
+            fields.push(("Sheared".into(), Tag::Byte(1)));
+        }
+        let root = Tag::Compound(fields);
+        mcre_world::WorldEntity::new(
+            "minecraft:sheep".into(),
+            [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
+    #[test]
+    fn sheep_entity_bakes_base_and_wool_layers() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(sheep_entity(None, false)));
+
+        let mesh = mesh_entity_with_atlas(&sheep_data(), &sheep_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 72);
+        assert_eq!(mesh.indices.len(), 72 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.640625).abs() < 1e-4);
+        assert!((max[0] - 8.359375).abs() < 1e-4);
+        assert!((min[1] - 64.001).abs() < 1e-4);
+        assert!((max[1] - 65.4135).abs() < 1e-4);
+        assert!((min[2] - 7.390625).abs() < 1e-4);
+        assert!((max[2] - 8.875).abs() < 1e-4);
+    }
+
+    #[test]
+    fn sheared_sheep_skips_wool_layer() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(sheep_entity(Some(14), true)));
+
+        let mesh = mesh_entity_with_atlas(&sheep_data(), &sheep_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 36);
+    }
+
+    #[test]
+    fn colored_sheep_tints_wool_layer() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(sheep_entity(Some(14), false)));
+
+        let mesh = mesh_entity_with_atlas(&sheep_data(), &sheep_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 72);
+        assert_eq!(mesh.vertices[0].color, [1.0, 1.0, 1.0]);
+        let wool = mesh.vertices[36 * 4].color;
+        assert!((wool[0] - 0.517647).abs() < 1e-4);
+        assert!((wool[1] - 0.133333).abs() < 1e-4);
+        assert!((wool[2] - 0.109804).abs() < 1e-4);
+    }
+
+    #[test]
+    fn model_box_growth_expands_geometry_only() {
+        let plain = model_box_faces([0.0, 0.0, 0.0, 8.0, 8.0, 8.0], [0.0, 0.0], false, 0.0);
+        let grown = model_box_faces([0.0, 0.0, 0.0, 8.0, 8.0, 8.0], [0.0, 0.0], false, 0.5);
+        for (plain_face, grown_face) in plain.iter().zip(grown.iter()) {
+            assert_eq!(plain_face.2, grown_face.2);
+        }
+        assert!((grown[2].1[0][0] + 0.5).abs() < 1e-6);
+        assert!((grown[4].1[0][0] - 8.5).abs() < 1e-6);
+        assert!((grown[0].1[0][1] + 0.5).abs() < 1e-6);
+        assert!((grown[1].1[0][1] - 8.5).abs() < 1e-6);
+    }
+
     #[test]
     fn baby_animals_are_skipped() {
         let root = Tag::Compound(vec![
@@ -3625,7 +4018,7 @@ mod tests {
 
     #[test]
     fn model_box_uvs_match_vanilla_layout() {
-        let faces = model_box_faces([0.0, 0.0, 0.0, 8.0, 8.0, 8.0], [0.0, 0.0], false);
+        let faces = model_box_faces([0.0, 0.0, 0.0, 8.0, 8.0, 8.0], [0.0, 0.0], false, 0.0);
         let east = faces
             .iter()
             .find(|(direction, _, _)| *direction == Direction::East)
@@ -3643,7 +4036,7 @@ mod tests {
             [[32.0, 8.0], [24.0, 8.0], [24.0, 16.0], [32.0, 16.0]]
         );
 
-        let mirrored = model_box_faces([0.0, 0.0, 0.0, 8.0, 8.0, 8.0], [0.0, 0.0], true);
+        let mirrored = model_box_faces([0.0, 0.0, 0.0, 8.0, 8.0, 8.0], [0.0, 0.0], true, 0.0);
         let north = mirrored
             .iter()
             .find(|(direction, _, _)| *direction == Direction::North)
