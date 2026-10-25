@@ -261,6 +261,42 @@ mod tests {
             path(data.entity_textures.skeleton),
             "minecraft:entity/skeleton/skeleton"
         );
+        assert_eq!(
+            path(data.entity_textures.wolf_pale),
+            "minecraft:entity/wolf/wolf"
+        );
+        assert_eq!(
+            path(data.entity_textures.wolf_spotted),
+            "minecraft:entity/wolf/wolf_spotted"
+        );
+        assert_eq!(
+            path(data.entity_textures.wolf_snowy),
+            "minecraft:entity/wolf/wolf_snowy"
+        );
+        assert_eq!(
+            path(data.entity_textures.wolf_black),
+            "minecraft:entity/wolf/wolf_black"
+        );
+        assert_eq!(
+            path(data.entity_textures.wolf_ashen),
+            "minecraft:entity/wolf/wolf_ashen"
+        );
+        assert_eq!(
+            path(data.entity_textures.wolf_rusty),
+            "minecraft:entity/wolf/wolf_rusty"
+        );
+        assert_eq!(
+            path(data.entity_textures.wolf_woods),
+            "minecraft:entity/wolf/wolf_woods"
+        );
+        assert_eq!(
+            path(data.entity_textures.wolf_chestnut),
+            "minecraft:entity/wolf/wolf_chestnut"
+        );
+        assert_eq!(
+            path(data.entity_textures.wolf_striped),
+            "minecraft:entity/wolf/wolf_striped"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

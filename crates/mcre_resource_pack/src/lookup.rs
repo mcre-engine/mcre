@@ -129,6 +129,15 @@ pub struct EntityTextureIds {
     pub sheep_wool: u32,
     pub zombie: u32,
     pub skeleton: u32,
+    pub wolf_pale: u32,
+    pub wolf_spotted: u32,
+    pub wolf_snowy: u32,
+    pub wolf_black: u32,
+    pub wolf_ashen: u32,
+    pub wolf_rusty: u32,
+    pub wolf_woods: u32,
+    pub wolf_chestnut: u32,
+    pub wolf_striped: u32,
 }
 
 impl EntityTextureIds {
@@ -144,6 +153,15 @@ impl EntityTextureIds {
             sheep_wool: interner.intern("minecraft:entity/sheep/sheep_wool"),
             zombie: interner.intern("minecraft:entity/zombie/zombie"),
             skeleton: interner.intern("minecraft:entity/skeleton/skeleton"),
+            wolf_pale: interner.intern("minecraft:entity/wolf/wolf"),
+            wolf_spotted: interner.intern("minecraft:entity/wolf/wolf_spotted"),
+            wolf_snowy: interner.intern("minecraft:entity/wolf/wolf_snowy"),
+            wolf_black: interner.intern("minecraft:entity/wolf/wolf_black"),
+            wolf_ashen: interner.intern("minecraft:entity/wolf/wolf_ashen"),
+            wolf_rusty: interner.intern("minecraft:entity/wolf/wolf_rusty"),
+            wolf_woods: interner.intern("minecraft:entity/wolf/wolf_woods"),
+            wolf_chestnut: interner.intern("minecraft:entity/wolf/wolf_chestnut"),
+            wolf_striped: interner.intern("minecraft:entity/wolf/wolf_striped"),
         }
     }
 }

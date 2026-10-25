@@ -1422,6 +1422,97 @@ const SKELETON_CUBES: &[EntityCube] = &[
     },
 ];
 
+const WOLF_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [-1.0, 13.5, -7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-2.0, -3.0, -2.0, 6.0, 6.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.0, 13.5, -7.0],
+        rotation_x: 0.0,
+        texture_origin: [16.0, 14.0],
+        cube: [-2.0, -5.0, 0.0, 2.0, 2.0, 1.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.0, 13.5, -7.0],
+        rotation_x: 0.0,
+        texture_origin: [16.0, 14.0],
+        cube: [2.0, -5.0, 0.0, 2.0, 2.0, 1.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.0, 13.5, -7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 10.0],
+        cube: [-0.5, -0.001, -5.0, 3.0, 3.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 14.0, 2.0],
+        rotation_x: std::f32::consts::FRAC_PI_2,
+        texture_origin: [18.0, 14.0],
+        cube: [-3.0, -2.0, -3.0, 6.0, 9.0, 6.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.0, 14.0, -3.0],
+        rotation_x: std::f32::consts::FRAC_PI_2,
+        texture_origin: [21.0, 0.0],
+        cube: [-3.0, -3.0, -3.0, 8.0, 6.0, 7.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-2.5, 16.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 18.0],
+        cube: [0.0, 0.0, -1.0, 2.0, 8.0, 2.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCube {
+        offset: [0.5, 16.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 18.0],
+        cube: [0.0, 0.0, -1.0, 2.0, 8.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-2.5, 16.0, -4.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 18.0],
+        cube: [0.0, 0.0, -1.0, 2.0, 8.0, 2.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCube {
+        offset: [0.5, 16.0, -4.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 18.0],
+        cube: [0.0, 0.0, -1.0, 2.0, 8.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.0, 12.0, 8.0],
+        rotation_x: std::f32::consts::PI / 5.0,
+        texture_origin: [9.0, 18.0],
+        cube: [0.0, 0.0, -1.0, 2.0, 8.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
@@ -1460,6 +1551,11 @@ const ZOMBIE_MODEL: EntityModel = EntityModel {
 const SKELETON_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SKELETON_CUBES,
+};
+
+const WOLF_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 32.0],
+    cubes: WOLF_CUBES,
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -1734,6 +1830,32 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     data.entity_textures.skeleton,
                     "minecraft:entity/skeleton/",
                     &SKELETON_MODEL,
+                    white,
+                );
+            }
+            "minecraft:wolf" => {
+                let texture_id = match entity_variant(&root) {
+                    "minecraft:spotted" => data.entity_textures.wolf_spotted,
+                    "minecraft:snowy" => data.entity_textures.wolf_snowy,
+                    "minecraft:black" => data.entity_textures.wolf_black,
+                    "minecraft:ashen" => data.entity_textures.wolf_ashen,
+                    "minecraft:rusty" => data.entity_textures.wolf_rusty,
+                    "minecraft:woods" => data.entity_textures.wolf_woods,
+                    "minecraft:chestnut" => data.entity_textures.wolf_chestnut,
+                    "minecraft:striped" => data.entity_textures.wolf_striped,
+                    _ => data.entity_textures.wolf_pale,
+                };
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    texture_id,
+                    "minecraft:entity/wolf/",
+                    &WOLF_MODEL,
                     white,
                 );
             }
@@ -3798,6 +3920,36 @@ mod tests {
         data
     }
 
+    fn wolf_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/wolf/wolf".into()];
+        data.entity_textures.wolf_pale = 0;
+        data
+    }
+
+    fn wolf_atlas() -> Atlas {
+        let mut atlas = test_atlas();
+        atlas.width = 64;
+        atlas.height = 64;
+        atlas.pixels = vec![255; 64 * 64 * 4];
+        atlas.regions = vec![
+            AtlasRegion {
+                x: 0,
+                y: 0,
+                width: 64,
+                height: 32,
+            },
+            AtlasRegion {
+                x: 0,
+                y: 32,
+                width: 64,
+                height: 32,
+            },
+        ];
+        atlas.has_alpha = vec![true, true];
+        atlas
+    }
+
     fn sheep_atlas() -> Atlas {
         let mut atlas = test_atlas();
         atlas.width = 64;
@@ -4191,6 +4343,45 @@ mod tests {
         assert!((max[1] - 66.03225).abs() < 1e-4);
         assert!((min[2] - 7.71875).abs() < 1e-4);
         assert!((max[2] - 8.28125).abs() < 1e-4);
+    }
+
+    #[test]
+    fn wolf_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:wolf", 0.0, "minecraft:pale")));
+
+        let mesh = mesh_entity(&wolf_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 66);
+        assert_eq!(mesh.indices.len(), 66 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.75).abs() < 1e-4);
+        assert!((max[0] - 8.25).abs() < 1e-4);
+        assert!((min[1] - 64.001).abs() < 1e-4);
+        assert!((max[1] - 64.96975).abs() < 1e-4);
+        assert!((min[2] - 7.155544).abs() < 1e-4);
+        assert!((max[2] - 8.75).abs() < 1e-4);
+    }
+
+    #[test]
+    fn wolf_variant_selects_texture() {
+        let mut data = empty_data();
+        data.texture_table = vec![
+            "minecraft:entity/wolf/wolf".into(),
+            "minecraft:entity/wolf/wolf_woods".into(),
+        ];
+        data.entity_textures.wolf_pale = 0;
+        data.entity_textures.wolf_woods = 1;
+
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:wolf", 0.0, "minecraft:woods")));
+
+        let mesh = mesh_entity_with_atlas(&data, &wolf_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 66);
+        assert!(
+            mesh.vertices
+                .iter()
+                .all(|vertex| vertex.uv[1] >= 0.5 - 1e-6)
+        );
     }
 
     #[test]

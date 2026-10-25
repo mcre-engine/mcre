@@ -187,9 +187,10 @@ Storage decisions (locked):
       NBT and expose namespaced IDs/positions in chunk/world storage.
 - [x] Bake static adult temperate/warm pigs, temperate cows, temperate/warm
       chickens, creepers, adult sheep (base plus tinted wool overlay),
-      zombies, and skeletons into chunk meshes from entity NBT (yaw, variant,
-      age) with the entity atlas textures and block light. (Colored-sheep
-      undercoat layer deferred.)
+      zombies, skeletons, and wild wolves (all nine coat variants) into chunk
+      meshes from entity NBT (yaw, variant, age) with the entity atlas
+      textures and block light. (Colored-sheep undercoat, wolf collar/angry
+      overlays, and sitting poses deferred.)
 - [ ] Decode and render the remaining entity models, animation, movement,
       shadows, and picking.
 
