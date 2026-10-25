@@ -337,14 +337,15 @@ open.
       zombies, drowned/husks, skeletons, wild wolves (all nine coat variants),
       parrots (all five variants), bats, bees, endermen, squids, spiders,
       horses (all seven coats with markings overlays), chest minecarts
-      (minecart model plus chest display block), and falling blocks (baked
-      block model at the entity position) into chunk meshes from entity NBT,
+      (minecart model plus chest display block), falling blocks (baked block
+      model at the entity position), and dropped block items (block model with
+      the vanilla ground display transform) into chunk meshes from entity NBT,
       including yaw, variant, age, entity and block atlas textures, and block
       light. (Undercoat, collar/angry overlays, parrot/bat/bee pose/flap
       animation, angry/nectar bee textures, carried blocks/glowing eyes,
       tentacle rotation, leg animation, horse saddle/armor/baby models,
-      minecart rail alignment and other minecart variants, and sitting poses
-      deferred.)
+      minecart rail alignment and other minecart variants, flat dropped items,
+      dropped-item stack clusters, and sitting poses deferred.)
 - [ ] Decode entity-specific data and render the remaining models, animation,
       movement, shadows, and picking; define lifecycle behavior for edits and
       streaming.

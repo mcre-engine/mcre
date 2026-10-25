@@ -2750,6 +2750,91 @@ fn entity_block_state(tag: &Tag) -> Option<BlockState> {
     }
 }
 
+fn item_block_state(root: &Tag) -> Option<BlockState> {
+    let item = root.get("Item")?;
+    let id = item.get("id").and_then(Tag::as_str)?;
+    let name = id.strip_prefix("minecraft:").unwrap_or(id);
+    let block = Block::all().find(|block| block.name() == name)?;
+    Some(block.default_state())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mesh_item_entity<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    access: &A,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    state: BlockState,
+    age: f32,
+) {
+    let Some(entry) = data.entries.get(u16::from(state) as usize) else {
+        return;
+    };
+    let min_y = entry
+        .rules
+        .iter()
+        .flat_map(|rule| &rule.variants)
+        .flat_map(|variant| &variant.quads)
+        .flat_map(|quad| &quad.vertices)
+        .map(|vertex| vertex[1])
+        .fold(f32::INFINITY, f32::min);
+    if !min_y.is_finite() {
+        return;
+    }
+    let min_offset_y = -(0.1875 + 0.25 * (min_y / 16.0 - 0.5)) + 0.0625;
+    let bob = (age / 10.0).sin() * 0.1 + 0.1;
+    let spin = age / 20.0;
+    let (sin, cos) = spin.sin_cos();
+    let (block_light, sky_light) = sample_light(access, block_pos);
+    let light = [f32::from(block_light), f32::from(sky_light)];
+    for_each_variant(entry, block_pos, |variant| {
+        for quad in &variant.quads {
+            let region = atlas.region(quad.texture_id);
+            let color = quad_color(data, access, state, block_pos, quad);
+            let base = mesh.vertices.len() as u32;
+            for i in 0..4 {
+                let v = &quad.vertices[i];
+                let uv = &quad.uvs[i];
+                let local = [
+                    0.25 * (v[0] / 16.0 - 0.5),
+                    0.1875 + 0.25 * (v[1] / 16.0 - 0.5),
+                    0.25 * (v[2] / 16.0 - 0.5),
+                ];
+                let rotated = [
+                    local[0] * cos + local[2] * sin,
+                    local[1],
+                    -local[0] * sin + local[2] * cos,
+                ];
+                mesh.vertices.push(Vertex {
+                    position: [
+                        position[0] as f32 + rotated[0],
+                        position[1] as f32 + bob + min_offset_y + rotated[1],
+                        position[2] as f32 + rotated[2],
+                    ],
+                    uv: atlas_uv(region, atlas, uv),
+                    color,
+                    light,
+                });
+            }
+            let pass = if atlas.region_has_alpha(quad.texture_id) {
+                TerrainPass::Cutout
+            } else {
+                TerrainPass::Solid
+            };
+            mesh.indices
+                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            mesh.opaque_meta.push(QuadMeta {
+                facing: FACING_UNASSIGNED,
+                pass,
+                block_pos,
+                state,
+            });
+        }
+    });
+}
+
 fn mesh_falling_block<A: BlockAccess + ?Sized>(
     data: &ResourcePackData,
     atlas: &Atlas,
@@ -3188,6 +3273,13 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     position[2].floor() as i32,
                 ];
                 mesh_falling_block(data, atlas, access, mesh, position, falling_pos, state);
+            }
+            "minecraft:item" => {
+                let Some(state) = item_block_state(&root) else {
+                    continue;
+                };
+                let age = root.get("Age").and_then(Tag::as_i32).unwrap_or(0) as f32;
+                mesh_item_entity(data, atlas, access, mesh, position, block_pos, state, age);
             }
             "minecraft:sheep" => {
                 emit_entity_layer(
@@ -5423,6 +5515,23 @@ mod tests {
         )
     }
 
+    fn item_entity(id: &str, age: i32) -> mcre_world::WorldEntity {
+        let item = Tag::Compound(vec![
+            ("id".into(), Tag::String(id.into())),
+            ("count".into(), Tag::Int(1)),
+        ]);
+        let root = Tag::Compound(vec![
+            ("id".into(), Tag::String("minecraft:item".into())),
+            ("Item".into(), item),
+            ("Age".into(), Tag::Short(age as i16)),
+        ]);
+        mcre_world::WorldEntity::new(
+            "minecraft:item".into(),
+            [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
     fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
             ("id".into(), Tag::String("minecraft:parrot".into())),
@@ -6215,6 +6324,50 @@ mod tests {
         assert!((max[1] - 65.0).abs() < 1e-4);
         assert!((min[2] - 7.5).abs() < 1e-4);
         assert!((max[2] - 8.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn item_entity_bakes_block_item_model() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(item_entity("minecraft:stone", 0)));
+
+        let data = stone_data(
+            [
+                Direction::Up,
+                Direction::Down,
+                Direction::North,
+                Direction::South,
+                Direction::East,
+                Direction::West,
+            ]
+            .into_iter()
+            .map(cube_quad)
+            .collect(),
+        );
+        let mesh = mesh_entity_with_atlas(&data, &test_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 6);
+        assert!(
+            mesh.opaque_meta
+                .iter()
+                .all(|meta| meta.facing == crate::vertex::FACING_UNASSIGNED)
+        );
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.875).abs() < 1e-4);
+        assert!((max[0] - 8.125).abs() < 1e-4);
+        assert!((min[1] - 64.1625).abs() < 1e-4);
+        assert!((max[1] - 64.4125).abs() < 1e-4);
+        assert!((min[2] - 7.875).abs() < 1e-4);
+        assert!((max[2] - 8.125).abs() < 1e-4);
+    }
+
+    #[test]
+    fn item_entity_skips_flat_items() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(item_entity("minecraft:bow", 0)));
+
+        let data = stone_data(vec![]);
+        let mesh = mesh_entity_with_atlas(&data, &test_atlas(), &chunk);
+        assert!(mesh.opaque_meta.is_empty());
     }
 
     #[test]

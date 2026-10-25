@@ -42,9 +42,10 @@ sign text and inventory summaries. Chests render their single and double-half
 models from the entity chest textures, standing/wall signs render ASCII text,
 and adult temperate/warm pigs, temperate cows, temperate/warm chickens,
 creepers, adult sheep, zombies, drowned/husks, skeletons, wild wolves,
-parrots, bats, bees, endermen, squids, spiders, horses, chest minecarts, and
-falling blocks render from the entity and block textures. Hanging sign
-text, non-ASCII glyphs, other entity models, animation, shadows, and picking
+parrots, bats, bees, endermen, squids, spiders, horses, chest minecarts,
+falling blocks, and dropped block items render from the entity and block
+textures. Hanging sign text, non-ASCII glyphs, flat dropped items, other
+entity models, dropped-item stack clusters, animation, shadows, and picking
 are not yet rendered. The current pack supplies the blockstates, models, and
 textures, so load a pack first.
 

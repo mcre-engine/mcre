@@ -329,6 +329,27 @@ def make_smoke_save(path):
             ],
         )
     )
+    item = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:item")
+        + nbt_compound(
+            "Item",
+            nbt_name(8, "id")
+            + nbt_string_payload("minecraft:gravel")
+            + nbt_int("count", 1),
+        )
+        + nbt_name(2, "Age")
+        + struct.pack(">h", 0)
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 12.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 6.5),
+            ],
+        )
+    )
     entity_chunk = nbt_compound(
         "",
         nbt_int_array("Position", [0, 0])
@@ -355,6 +376,7 @@ def make_smoke_save(path):
                 horse,
                 chest_minecart,
                 falling_block,
+                item,
             ],
         ),
     )
@@ -386,12 +408,14 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     )
     files = [
         "blockstates/grass_block.json",
+        "blockstates/gravel.json",
         "blockstates/sand.json",
         "blockstates/stone.json",
         "models/block/block.json",
         "models/block/cube.json",
         "models/block/cube_all.json",
         "models/block/grass_block.json",
+        "models/block/gravel.json",
         "models/block/sand.json",
         "models/block/stone.json",
     ]
@@ -406,6 +430,7 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
             "grass_block_top",
             "grass_block_side",
             "grass_block_side_overlay",
+            "gravel",
             "sand",
             "stone",
         )
