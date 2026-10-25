@@ -253,6 +253,10 @@ mod tests {
             path(data.entity_textures.sheep_wool),
             "minecraft:entity/sheep/sheep_wool"
         );
+        assert_eq!(
+            path(data.entity_textures.zombie),
+            "minecraft:entity/zombie/zombie"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

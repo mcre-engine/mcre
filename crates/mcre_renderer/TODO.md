@@ -186,9 +186,9 @@ Storage decisions (locked):
 - [x] Load separate entity-region chunks and legacy inline lists; preserve raw
       NBT and expose namespaced IDs/positions in chunk/world storage.
 - [x] Bake static adult temperate/warm pigs, temperate cows, temperate/warm
-      chickens, creepers, and adult sheep (base plus tinted wool overlay)
-      into chunk meshes from entity NBT (yaw, variant, age) with the entity
-      atlas textures and block light. (Colored-sheep undercoat layer
+      chickens, creepers, adult sheep (base plus tinted wool overlay), and
+      zombies into chunk meshes from entity NBT (yaw, variant, age) with the
+      entity atlas textures and block light. (Colored-sheep undercoat layer
       deferred.)
 - [ ] Decode and render the remaining entity models, animation, movement,
       shadows, and picking.

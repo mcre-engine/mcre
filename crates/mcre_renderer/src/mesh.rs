@@ -1304,6 +1304,65 @@ const SHEEP_WOOL_CUBES: &[EntityCube] = &[
     },
 ];
 
+const ZOMBIE_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 0.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 0.0],
+        cube: [-4.0, -8.0, -4.0, 8.0, 8.0, 8.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 0.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [32.0, 0.0],
+        cube: [-4.0, -8.0, -4.0, 8.0, 8.0, 8.0],
+        growth: 0.5,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 0.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [16.0, 16.0],
+        cube: [-4.0, 0.0, -2.0, 8.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-5.0, 2.0, 0.0],
+        rotation_x: -1.3962634,
+        texture_origin: [40.0, 16.0],
+        cube: [-3.0, -2.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [5.0, 2.0, 0.0],
+        rotation_x: -1.3962634,
+        texture_origin: [40.0, 16.0],
+        cube: [-1.0, -2.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCube {
+        offset: [-1.9, 12.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [1.9, 12.0, 0.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 16.0],
+        cube: [-2.0, 0.0, -2.0, 4.0, 12.0, 4.0],
+        growth: 0.0,
+        mirror: true,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
@@ -1332,6 +1391,11 @@ const SHEEP_MODEL: EntityModel = EntityModel {
 const SHEEP_WOOL_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SHEEP_WOOL_CUBES,
+};
+
+const ZOMBIE_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 64.0],
+    cubes: ZOMBIE_CUBES,
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -1576,6 +1640,21 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     data.entity_textures.creeper,
                     "minecraft:entity/creeper/",
                     &CREEPER_MODEL,
+                    white,
+                );
+            }
+            "minecraft:zombie" => {
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    data.entity_textures.zombie,
+                    "minecraft:entity/zombie/",
+                    &ZOMBIE_MODEL,
                     white,
                 );
             }
@@ -3626,6 +3705,13 @@ mod tests {
         data
     }
 
+    fn zombie_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/zombie/zombie".into()];
+        data.entity_textures.zombie = 0;
+        data
+    }
+
     fn sheep_atlas() -> Atlas {
         let mut atlas = test_atlas();
         atlas.width = 64;
@@ -3985,6 +4071,23 @@ mod tests {
         assert!((wool[0] - 0.517647).abs() < 1e-4);
         assert!((wool[1] - 0.133333).abs() < 1e-4);
         assert!((wool[2] - 0.109804).abs() < 1e-4);
+    }
+
+    #[test]
+    fn zombie_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(entity("minecraft:zombie", 0.0, "minecraft:temperate")));
+
+        let mesh = mesh_entity(&zombie_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 42);
+        assert_eq!(mesh.indices.len(), 42 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.5).abs() < 1e-4);
+        assert!((max[0] - 8.5).abs() < 1e-4);
+        assert!((min[1] - 64.001).abs() < 1e-4);
+        assert!((max[1] - 66.03225).abs() < 1e-4);
+        assert!((min[2] - 7.71875).abs() < 1e-4);
+        assert!((max[2] - 8.637211).abs() < 1e-4);
     }
 
     #[test]
