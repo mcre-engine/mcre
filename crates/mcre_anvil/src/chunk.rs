@@ -1,5 +1,5 @@
 use mcre_world::light::SECTION_LIGHT_BYTES;
-use mcre_world::{Biome, BlockState, Chunk, ChunkPos, WORLD_MIN_Y, World};
+use mcre_world::{Biome, BlockEntity, BlockState, Chunk, ChunkPos, WORLD_MIN_Y, World};
 
 use crate::Error;
 use crate::nbt::Tag;
@@ -14,6 +14,8 @@ pub struct ImportStats {
     pub chunks: u32,
     pub sections: u32,
     pub blocks_set: u64,
+    pub block_entities: u32,
+    pub skipped_block_entities: u32,
     pub skipped_sections: u32,
     pub skipped_chunks: u32,
     pub unknown_blocks: Vec<String>,
@@ -342,6 +344,68 @@ fn import_sections(
     Ok(())
 }
 
+fn decode_block_entities(
+    root: &Tag,
+    source_chunk: (i32, i32),
+    target_chunk: (i32, i32),
+    stats: &mut ImportStats,
+) -> Vec<BlockEntity> {
+    let Some(tag) = root
+        .get("block_entities")
+        .or_else(|| root.get("TileEntities"))
+    else {
+        return Vec::new();
+    };
+    let Some(entries) = tag.as_list() else {
+        stats.skipped_block_entities += 1;
+        return Vec::new();
+    };
+    let mut block_entities = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let Some(id) = entry.get("id").and_then(Tag::as_str) else {
+            stats.skipped_block_entities += 1;
+            continue;
+        };
+        let Some(x) = entry.get("x").and_then(Tag::as_i32) else {
+            stats.skipped_block_entities += 1;
+            continue;
+        };
+        let Some(y) = entry.get("y").and_then(Tag::as_i32) else {
+            stats.skipped_block_entities += 1;
+            continue;
+        };
+        let Some(z) = entry.get("z").and_then(Tag::as_i32) else {
+            stats.skipped_block_entities += 1;
+            continue;
+        };
+        if ChunkPos::from_block(x, z) != ChunkPos::new(source_chunk.0, source_chunk.1) {
+            stats.skipped_block_entities += 1;
+            continue;
+        }
+        let position = (
+            target_chunk.0 * 16 + x.rem_euclid(16),
+            y,
+            target_chunk.1 * 16 + z.rem_euclid(16),
+        );
+        let id = if id.contains(':') {
+            id.to_string()
+        } else {
+            format!("minecraft:{id}")
+        };
+        let mut stored = entry.clone();
+        stored.set("x", Tag::Int(position.0));
+        stored.set("y", Tag::Int(position.1));
+        stored.set("z", Tag::Int(position.2));
+        block_entities.push(BlockEntity::new(
+            id,
+            position,
+            crate::nbt::write_named("", &stored),
+        ));
+        stats.block_entities += 1;
+    }
+    block_entities
+}
+
 pub fn import_chunk(
     world: &mut World,
     chunk_x: i32,
@@ -365,7 +429,11 @@ pub fn import_chunk(
         stats.skipped_chunks += 1;
         return Ok(());
     };
-    import_sections(world, chunk_x, chunk_z, sections, blocks, biomes, stats)
+    import_sections(world, chunk_x, chunk_z, sections, blocks, biomes, stats)?;
+    for block_entity in decode_block_entities(root, (chunk_x, chunk_z), (chunk_x, chunk_z), stats) {
+        world.set_block_entity(block_entity);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -430,6 +498,9 @@ pub fn load_chunk_from_nbt(
         for (x, y, z, biome) in decoded.biomes {
             chunk.set_biome(x, decoded.base_y + y, z, biome);
         }
+    }
+    for block_entity in decode_block_entities(root, (chunk_x, chunk_z), (chunk_x, chunk_z), stats) {
+        chunk.set_block_entity(block_entity);
     }
     if light_correct {
         import_chunk_light(&mut chunk, &sky_layers, &block_layers);
@@ -510,6 +581,14 @@ pub fn import_area(
                 biomes,
                 stats,
             )?;
+            for block_entity in decode_block_entities(
+                &root,
+                (chunk_x, chunk_z),
+                (chunk_x - rect.origin_chunk.0, chunk_z - rect.origin_chunk.1),
+                stats,
+            ) {
+                world.set_block_entity(block_entity);
+            }
         }
     }
     Ok(())
@@ -613,6 +692,86 @@ mod tests {
         assert_eq!((chunk.pos().x, chunk.pos().z), (5, -3));
         assert_eq!(chunk.get_block(0, 5, 0).block().name(), "stone");
         assert_eq!(chunk.biome_at(0, 5, 0).name(), "plains");
+    }
+
+    #[test]
+    fn load_chunk_preserves_block_entities_and_skips_malformed_entries() {
+        let (_, mut root) = crate::nbt::read_named(&chunk_payload()).unwrap();
+        root.set(
+            "block_entities",
+            Tag::List(vec![
+                Tag::Compound(vec![
+                    ("id".into(), Tag::String("minecraft:chest".into())),
+                    ("x".into(), Tag::Int(82)),
+                    ("y".into(), Tag::Int(5)),
+                    ("z".into(), Tag::Int(-41)),
+                    (
+                        "CustomName".into(),
+                        Tag::String("{\"text\":\"Vault\"}".into()),
+                    ),
+                ]),
+                Tag::Compound(vec![
+                    ("id".into(), Tag::String("minecraft:chest".into())),
+                    ("x".into(), Tag::Int(100)),
+                    ("y".into(), Tag::Int(5)),
+                    ("z".into(), Tag::Int(-41)),
+                ]),
+                Tag::String("malformed".into()),
+            ]),
+        );
+
+        let blocks = BlockResolver::new();
+        let biomes = BiomeResolver::new();
+        let mut stats = ImportStats::default();
+        let chunk = load_chunk_from_nbt(&root, 5, -3, &blocks, &biomes, &mut stats)
+            .expect("load")
+            .expect("present");
+
+        assert_eq!(stats.block_entities, 1);
+        assert_eq!(stats.skipped_block_entities, 2);
+        let entity = chunk.block_entity_at((82, 5, -41)).expect("block entity");
+        assert_eq!(entity.id(), "minecraft:chest");
+        let (name, stored) = crate::nbt::read_named(entity.nbt()).unwrap();
+        assert!(name.is_empty());
+        assert_eq!(
+            stored.get("CustomName").and_then(Tag::as_str),
+            Some("{\"text\":\"Vault\"}")
+        );
+
+        let mut world = World::new(8);
+        let mut world_stats = ImportStats::default();
+        import_chunk(&mut world, 5, -3, &root, &blocks, &biomes, &mut world_stats)
+            .expect("import world chunk");
+        assert_eq!(
+            world.block_entity_at((82, 5, -41)).map(BlockEntity::id),
+            Some("minecraft:chest")
+        );
+    }
+
+    #[test]
+    fn load_chunk_accepts_legacy_tile_entities_and_normalizes_ids() {
+        let (_, mut root) = crate::nbt::read_named(&chunk_payload()).unwrap();
+        root.set(
+            "TileEntities",
+            Tag::List(vec![Tag::Compound(vec![
+                ("id".into(), Tag::String("sign".into())),
+                ("x".into(), Tag::Int(80)),
+                ("y".into(), Tag::Int(5)),
+                ("z".into(), Tag::Int(-48)),
+            ])]),
+        );
+        let blocks = BlockResolver::new();
+        let biomes = BiomeResolver::new();
+        let mut stats = ImportStats::default();
+        let chunk = load_chunk_from_nbt(&root, 5, -3, &blocks, &biomes, &mut stats)
+            .expect("load")
+            .expect("present");
+
+        assert_eq!(stats.block_entities, 1);
+        assert_eq!(
+            chunk.block_entity_at((80, 5, -48)).map(BlockEntity::id),
+            Some("minecraft:sign")
+        );
     }
 
     #[test]

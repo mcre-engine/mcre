@@ -2,7 +2,9 @@ use alloc::collections::VecDeque;
 use alloc::{boxed::Box, vec, vec::Vec};
 
 use crate::light::{ALL_DIRECTIONS, ChunkLight, propagate};
-use crate::{Biome, Block, BlockState, CHUNK_WIDTH, Chunk, ChunkPos, WORLD_HEIGHT, WORLD_MIN_Y};
+use crate::{
+    Biome, Block, BlockEntity, BlockState, CHUNK_WIDTH, Chunk, ChunkPos, WORLD_HEIGHT, WORLD_MIN_Y,
+};
 
 const LIGHT_MARGIN: i32 = 16;
 const LIGHT_TRACK_CAP: usize = 65_536;
@@ -77,6 +79,29 @@ impl World {
         chunk.set_block(local_x, pos.1, local_z, block);
         self.mark_dirty(chunk_pos, local_x, local_z);
         self.track_light_edit(pos, old_state);
+    }
+
+    pub fn block_entities(&self) -> impl Iterator<Item = &BlockEntity> {
+        self.chunks
+            .iter()
+            .flat_map(|chunk| chunk.block_entities().iter())
+    }
+
+    pub fn block_entity_at(&self, position: (i32, i32, i32)) -> Option<&BlockEntity> {
+        self.chunk_at(position.0, position.2)?
+            .block_entity_at(position)
+    }
+
+    pub fn set_block_entity(&mut self, block_entity: BlockEntity) -> bool {
+        let position = block_entity.position();
+        let chunk_pos = ChunkPos::from_block(position.0, position.2);
+        let chunk_idx = Self::chunk_idx(self.radius, (chunk_pos.x, chunk_pos.z));
+        let chunk = &mut self.chunks[chunk_idx];
+        if chunk.pos() != chunk_pos || !chunk.set_block_entity(block_entity) {
+            return false;
+        }
+        self.mark_chunk(chunk_pos);
+        true
     }
 
     fn track_light_edit(&mut self, pos: (i32, i32, i32), old_state: BlockState) {

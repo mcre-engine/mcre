@@ -1,4 +1,4 @@
-use mcre_world::{Block, BlockState, Chunk, ChunkPos, World, WorldStorage};
+use mcre_world::{Block, BlockEntity, BlockState, Chunk, ChunkPos, World, WorldStorage};
 
 fn stone() -> BlockState {
     Block::STONE.default_state()
@@ -87,6 +87,26 @@ fn set_block_marks_center_chunk_dirty() {
 
     assert_eq!(world.take_dirty(), vec![ChunkPos::new(0, 0)]);
     assert!(world.take_dirty().is_empty());
+}
+
+#[test]
+fn world_block_entity_lookup_tracks_block_replacement() {
+    let mut world = World::new(1);
+    let position = (-1, 64, 2);
+    let block_entity = BlockEntity::new("minecraft:chest".into(), position, vec![10, 20]);
+
+    assert!(world.set_block_entity(block_entity.clone()));
+    assert_eq!(world.block_entity_at(position), Some(&block_entity));
+    assert_eq!(world.block_entities().count(), 1);
+    assert!(!world.set_block_entity(BlockEntity::new(
+        "minecraft:chest".into(),
+        (32, 64, 2),
+        Vec::new(),
+    )));
+
+    world.set_block(position, stone());
+    assert_eq!(world.block_entity_at(position), None);
+    assert_eq!(world.block_entities().count(), 0);
 }
 
 #[test]

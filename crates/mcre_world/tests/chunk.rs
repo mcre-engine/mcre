@@ -1,4 +1,4 @@
-use mcre_world::{Block, Chunk, ChunkPos, WORLD_MIN_Y};
+use mcre_world::{Block, BlockEntity, Chunk, ChunkPos, WORLD_MIN_Y};
 
 #[test]
 fn test_set_get_roundtrip() {
@@ -48,4 +48,23 @@ fn test_chunk_pos() {
     assert_eq!(pos, ChunkPos::new(1, -1));
     assert_eq!(pos.min_block_x(), 16);
     assert_eq!(pos.min_block_z(), -16);
+}
+
+#[test]
+fn chunk_block_entities_round_trip_and_clear_on_block_change() {
+    let mut chunk = Chunk::new_at(ChunkPos::new(-2, 3));
+    let position = (-31, 64, 49);
+    let entity = BlockEntity::new("minecraft:chest".into(), position, vec![1, 2, 3]);
+
+    assert!(chunk.set_block_entity(entity.clone()));
+    assert_eq!(chunk.block_entity_at(position), Some(&entity));
+    assert_eq!(chunk.clone().block_entities(), &[entity]);
+    assert!(!chunk.set_block_entity(BlockEntity::new(
+        "minecraft:chest".into(),
+        (0, 64, 49),
+        Vec::new(),
+    )));
+
+    chunk.set_block(1, 64, 1, Block::STONE.default_state());
+    assert!(chunk.block_entities().is_empty());
 }

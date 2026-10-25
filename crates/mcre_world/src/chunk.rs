@@ -2,7 +2,7 @@ use alloc::{boxed::Box, vec::Vec};
 
 use crate::light::ChunkLight;
 use crate::section::Section;
-use crate::{Biome, Block, BlockState};
+use crate::{Biome, Block, BlockEntity, BlockState};
 
 pub const CHUNK_WIDTH: i32 = 16;
 pub const SECTION_WIDTH: usize = 16;
@@ -36,6 +36,7 @@ pub struct Chunk {
     light: ChunkLight,
     stored_light: bool,
     emitters: Vec<(i32, i32, i32)>,
+    block_entities: Vec<BlockEntity>,
 }
 
 impl Chunk {
@@ -51,6 +52,7 @@ impl Chunk {
             light: ChunkLight::new(),
             stored_light: false,
             emitters: Vec::new(),
+            block_entities: Vec::new(),
         }
     }
 
@@ -110,6 +112,15 @@ impl Chunk {
         let old =
             self.sections[section_index].get_block((local_x, (y - WORLD_MIN_Y) & 15, local_z));
         self.sections[section_index].set_block((local_x, (y - WORLD_MIN_Y) & 15, local_z), state);
+        if old != state {
+            let position = (
+                self.pos.x * CHUNK_WIDTH + local_x,
+                y,
+                self.pos.z * CHUNK_WIDTH + local_z,
+            );
+            self.block_entities
+                .retain(|block_entity| block_entity.position() != position);
+        }
         if old.light_emission() != state.light_emission() {
             self.emitters
                 .retain(|&(x, ey, z)| x != local_x || ey != y || z != local_z);
@@ -123,6 +134,27 @@ impl Chunk {
     /// maintained incrementally by `set_block` so light seeding never scans.
     pub fn emitters(&self) -> &[(i32, i32, i32)] {
         &self.emitters
+    }
+
+    pub fn block_entities(&self) -> &[BlockEntity] {
+        &self.block_entities
+    }
+
+    pub fn block_entity_at(&self, position: (i32, i32, i32)) -> Option<&BlockEntity> {
+        self.block_entities
+            .iter()
+            .find(|block_entity| block_entity.position() == position)
+    }
+
+    pub fn set_block_entity(&mut self, block_entity: BlockEntity) -> bool {
+        let position = block_entity.position();
+        if ChunkPos::from_block(position.0, position.2) != self.pos {
+            return false;
+        }
+        self.block_entities
+            .retain(|existing| existing.position() != position);
+        self.block_entities.push(block_entity);
+        true
     }
 
     pub fn biome_at(&self, local_x: i32, y: i32, local_z: i32) -> Biome {

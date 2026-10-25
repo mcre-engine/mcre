@@ -817,10 +817,12 @@ async fn load_save_world(fs: &OpfsFs, save_root: &FsPath) -> Result<(World, Spaw
     world.adopt_stored_light();
     world.compute_light();
     web_sys::console::log_1(&JsValue::from_str(&format!(
-        "loaded save: {} chunks, {} sections, {} blocks ({} unknown blocks)",
+        "loaded save: {} chunks, {} sections, {} blocks, {} block entities ({} skipped; {} unknown blocks)",
         stats.chunks,
         stats.sections,
         stats.blocks_set,
+        stats.block_entities,
+        stats.skipped_block_entities,
         stats.unknown_blocks.len()
     )));
     Ok((world, spawn))
@@ -1224,7 +1226,7 @@ impl WebViewer {
             let chunk_x = (camera_position[0].floor() as i32).div_euclid(16);
             let chunk_z = (camera_position[2].floor() as i32).div_euclid(16);
             let text = format!(
-                "Camera: {:.1}, {:.1}, {:.1}\nChunk: {}, {}\nTime: {:.0}\nChunks: {} in range / {} loaded\nSections: {}\nDraws: {} opaque + {} translucent",
+                "Camera: {:.1}, {:.1}, {:.1}\nChunk: {}, {}\nTime: {:.0}\nChunks: {} in range / {} loaded\nSections: {}\nBlock entities: {}\nDraws: {} opaque + {} translucent",
                 camera_position[0],
                 camera_position[1],
                 camera_position[2],
@@ -1234,6 +1236,7 @@ impl WebViewer {
                 chunks.len(),
                 state.sections.len(),
                 stats.sections,
+                state.world.block_entities().count(),
                 stats.opaque_draws,
                 stats.translucent_draws,
             );

@@ -167,8 +167,16 @@ Storage decisions (locked):
 - [ ] Vanilla particle providers/events, shape-aware spawn bounds and
       collision, then effect/entity particle sources.
 
-Order: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M9 → M8 → M10 → M11.
-Next: continue M11 (particles).
+## M12 — Block entities (in progress)
+
+- [x] Preserve raw block-entity NBT in chunk/world storage; load modern and
+      legacy Anvil lists, expose world lookup, and remove stale data on block
+      replacement.
+- [ ] Decode and render sign/chest payloads; wire edits and interaction.
+
+Order: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M9 → M8 → M10 → M11 → M12 → M13.
+Next: continue M12 block-entity payloads and rendering; M11 particle providers
+and shape-aware collision remain open.
 Verify each milestone: `cargo ck`, `cargo lint -- -D warnings`,
 `cargo test --workspace --all-features`, `cargo fmt --check`, `typos`,
 25s viewer smoke (expect exit 124).

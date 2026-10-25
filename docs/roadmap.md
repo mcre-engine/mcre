@@ -299,7 +299,9 @@ M8 — Liquids — done
 - Torch flicker is not present in 26.4-snapshot-4 (no `flicker` shader or
   source); skipped.
 
-Current queue: M11 particles → M12 block entities → M13 entities.
+Current queue: M11 particles → M12 block entities → M13 entities. M12 import
+and world storage are now underway; M11 particle-provider/collision work remains
+open.
 
 ### M11 — Particles (in progress)
 - [x] Native-viewer terrain debris on block break: respects
@@ -311,11 +313,20 @@ Current queue: M11 particles → M12 block entities → M13 entities.
       spawning/collision; the current debris spawn pattern uses unit-cube
       bounds for every block shape.
 
+### M12 — Block entities (in progress)
+- [x] Store block entities with loaded chunks and expose world-level lookup;
+      replacing the block at an entity position removes the stale entity.
+- [x] Import modern `block_entities` and legacy `TileEntities` compounds from
+      Anvil, retain their raw NBT, normalize IDs, and skip malformed or
+      out-of-chunk entries with import statistics.
+- [ ] Decode typed payloads and render signs, chests, and other block-entity
+      models; define update/removal behavior for interactive edits.
+
 ## 5. Open decisions / risks
 - UI toolkit locked to `egui` (native + wasm). Revisit only if it fights
   `winit`/`wgpu` versions.
-- Anvil block-entity/entity loading deferred (needed for chests/signs
-  visuals later — Phase 3).
+- Anvil entity loading is still pending; block-entity import/storage has begun
+  and its visuals remain future work.
 - Wasm wgpu limits may force atlas-size caps or texture downscaling —
   measure during 2C, don't pre-design.
 - Execution order: 1A → 1B → 1C → 1D, then 2A → 2B → 2C (anvil gives the
