@@ -2215,6 +2215,56 @@ const HORSE_MODEL: EntityModel = EntityModel {
     scale: 1.1,
 };
 
+const MINECART_CUBES: &[EntityCubeRot] = &[
+    EntityCubeRot {
+        offset: [0.0, 4.0, 0.0],
+        rotation: [std::f32::consts::FRAC_PI_2, 0.0, 0.0],
+        texture_origin: [0.0, 10.0],
+        cube: [-10.0, -8.0, -1.0, 20.0, 16.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCubeRot {
+        offset: [-9.0, 4.0, 0.0],
+        rotation: [0.0, std::f32::consts::PI * 1.5, 0.0],
+        texture_origin: [0.0, 0.0],
+        cube: [-8.0, -9.0, -1.0, 16.0, 8.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCubeRot {
+        offset: [9.0, 4.0, 0.0],
+        rotation: [0.0, std::f32::consts::FRAC_PI_2, 0.0],
+        texture_origin: [0.0, 0.0],
+        cube: [-8.0, -9.0, -1.0, 16.0, 8.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCubeRot {
+        offset: [0.0, 4.0, -7.0],
+        rotation: [0.0, std::f32::consts::PI, 0.0],
+        texture_origin: [0.0, 0.0],
+        cube: [-8.0, -9.0, -1.0, 16.0, 8.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCubeRot {
+        offset: [0.0, 4.0, 7.0],
+        rotation: [0.0, 0.0, 0.0],
+        texture_origin: [0.0, 0.0],
+        cube: [-8.0, -9.0, -1.0, 16.0, 8.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
+const MINECART_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 32.0],
+    cubes: &[],
+    rotated_cubes: MINECART_CUBES,
+    scale: 1.0,
+};
+
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
     const TINTS: [[f32; 3]; 16] = [
         [0.901961, 0.901961, 0.901961],
@@ -2487,6 +2537,155 @@ fn emit_entity_model(
             depth_offset,
             yaw,
         );
+    }
+}
+
+fn minecart_model_position(model: [f32; 3], position: [f64; 3], yaw: f32) -> [f32; 3] {
+    let x = -model[0] / 16.0;
+    let y = 0.375 - model[1] / 16.0;
+    let z = model[2] / 16.0;
+    let (sin, cos) = (180.0 - yaw).to_radians().sin_cos();
+    [
+        position[0] as f32 + x * cos + z * sin,
+        position[1] as f32 + y,
+        position[2] as f32 - x * sin + z * cos,
+    ]
+}
+
+fn minecart_chest_position(display: [f32; 3], position: [f64; 3], yaw: f32) -> [f32; 3] {
+    let (sin, cos) = (180.0 - yaw).to_radians().sin_cos();
+    [
+        position[0] as f32 + display[0] * cos + display[2] * sin,
+        position[1] as f32 + 0.375 + display[1],
+        position[2] as f32 - display[0] * sin + display[2] * cos,
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mesh_minecart(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    light: [f32; 2],
+    yaw: f32,
+    chest: bool,
+) {
+    let texture_id = data.entity_textures.minecart;
+    let Some(path) = data.texture_table.get(texture_id as usize) else {
+        return;
+    };
+    if !path.starts_with("minecraft:entity/minecart/") {
+        return;
+    }
+    let region = atlas.region(texture_id);
+    let pass = if atlas.region_has_alpha(texture_id) {
+        TerrainPass::Cutout
+    } else {
+        TerrainPass::Solid
+    };
+    for cube in MINECART_MODEL.rotated_cubes {
+        emit_minecart_cube(
+            atlas, mesh, position, block_pos, region, pass, light, cube, yaw,
+        );
+    }
+    if chest {
+        emit_minecart_chest(data, atlas, mesh, position, block_pos, light, yaw);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_minecart_cube(
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    region: AtlasRegion,
+    pass: TerrainPass,
+    light: [f32; 2],
+    cube: &EntityCubeRot,
+    yaw: f32,
+) {
+    for (_, vertices, uvs) in
+        model_box_faces(cube.cube, cube.texture_origin, cube.mirror, cube.growth)
+    {
+        let base = mesh.vertices.len() as u32;
+        for (index, vertex) in vertices.iter().enumerate() {
+            let model = entity_part_vertex(*vertex, cube.offset, cube.rotation);
+            mesh.vertices.push(Vertex {
+                position: minecart_model_position(model, position, yaw),
+                uv: atlas_uv_dimensions(region, atlas, &uvs[index], MINECART_MODEL.texture_size),
+                color: [1.0; 3],
+                light,
+            });
+        }
+        mesh.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        mesh.opaque_meta.push(QuadMeta {
+            facing: FACING_UNASSIGNED,
+            pass,
+            block_pos,
+            state: Block::AIR.default_state(),
+        });
+    }
+}
+
+fn emit_minecart_chest(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    light: [f32; 2],
+    yaw: f32,
+) {
+    let texture_id = data.chest_textures.normal.single;
+    let Some(path) = data.texture_table.get(texture_id as usize) else {
+        return;
+    };
+    if !path.starts_with("minecraft:entity/chest/") {
+        return;
+    }
+    let region = atlas.region(texture_id);
+    let pass = if atlas.region_has_alpha(texture_id) {
+        TerrainPass::Cutout
+    } else {
+        TerrainPass::Solid
+    };
+    let boxes = [
+        ([1.0, 0.0, 1.0, 14.0, 10.0, 14.0], [0.0, 19.0]),
+        ([1.0, 9.0, 1.0, 14.0, 5.0, 14.0], [0.0, 0.0]),
+        ([7.0, 7.0, 15.0, 2.0, 4.0, 1.0], [0.0, 0.0]),
+    ];
+    for (cube, texture_origin) in boxes {
+        for (_, vertices, uvs) in model_box_faces(cube, texture_origin, false, 0.0) {
+            let base = mesh.vertices.len() as u32;
+            for (index, vertex) in vertices.iter().enumerate() {
+                let facing = rotate_chest_position(*vertex, Direction::North);
+                let block = [facing[0] / 16.0, facing[1] / 16.0, facing[2] / 16.0];
+                let rotated = [block[2], block[1], -block[0]];
+                let display = [
+                    0.75 * (rotated[0] - 0.5),
+                    0.75 * rotated[1],
+                    0.75 * (rotated[2] + 0.5),
+                ];
+                mesh.vertices.push(Vertex {
+                    position: minecart_chest_position(display, position, yaw),
+                    uv: atlas_uv_dimensions(region, atlas, &uvs[index], [64.0, 64.0]),
+                    color: [1.0; 3],
+                    light,
+                });
+            }
+            mesh.indices
+                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            mesh.opaque_meta.push(QuadMeta {
+                facing: FACING_UNASSIGNED,
+                pass,
+                block_pos,
+                state: Block::AIR.default_state(),
+            });
+        }
     }
 }
 
@@ -2855,6 +3054,12 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                         white,
                     );
                 }
+            }
+            "minecraft:minecart" => {
+                mesh_minecart(data, atlas, mesh, position, block_pos, light, yaw, false);
+            }
+            "minecraft:chest_minecart" => {
+                mesh_minecart(data, atlas, mesh, position, block_pos, light, yaw, true);
             }
             "minecraft:sheep" => {
                 emit_entity_layer(
@@ -5000,6 +5205,32 @@ mod tests {
         data
     }
 
+    fn minecart_entity(id: &str) -> mcre_world::WorldEntity {
+        let root = Tag::Compound(vec![
+            ("id".into(), Tag::String(id.into())),
+            (
+                "Rotation".into(),
+                Tag::List(vec![Tag::Float(0.0), Tag::Float(0.0)]),
+            ),
+        ]);
+        mcre_world::WorldEntity::new(
+            id.into(),
+            [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
+    fn minecart_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec![
+            "minecraft:entity/minecart/minecart".into(),
+            "minecraft:entity/chest/normal".into(),
+        ];
+        data.entity_textures.minecart = 0;
+        data.chest_textures.normal.single = 1;
+        data
+    }
+
     fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
             ("id".into(), Tag::String("minecraft:parrot".into())),
@@ -5115,6 +5346,29 @@ mod tests {
             AtlasRegion {
                 x: 0,
                 y: 64,
+                width: 64,
+                height: 64,
+            },
+        ];
+        atlas.has_alpha = vec![true, true];
+        atlas
+    }
+
+    fn minecart_atlas() -> Atlas {
+        let mut atlas = test_atlas();
+        atlas.width = 64;
+        atlas.height = 96;
+        atlas.pixels = vec![255; 64 * 96 * 4];
+        atlas.regions = vec![
+            AtlasRegion {
+                x: 0,
+                y: 0,
+                width: 64,
+                height: 32,
+            },
+            AtlasRegion {
+                x: 0,
+                y: 32,
                 width: 64,
                 height: 64,
             },
@@ -5712,6 +5966,34 @@ mod tests {
                 .iter()
                 .all(|vertex| vertex.uv[1] >= 0.5 - 1e-6)
         );
+    }
+
+    #[test]
+    fn minecart_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(minecart_entity("minecraft:minecart")));
+
+        let mesh = mesh_entity_with_atlas(&minecart_data(), &minecart_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 30);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.375).abs() < 1e-4);
+        assert!((max[0] - 8.625).abs() < 1e-4);
+        assert!((min[1] - 64.0625).abs() < 1e-4);
+        assert!((max[1] - 64.6875).abs() < 1e-4);
+        assert!((min[2] - 7.5).abs() < 1e-4);
+        assert!((max[2] - 8.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn chest_minecart_bakes_chest_display_block() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(minecart_entity("minecraft:chest_minecart")));
+
+        let mesh = mesh_entity_with_atlas(&minecart_data(), &minecart_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 48);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[1] - 64.0625).abs() < 1e-4);
+        assert!((max[1] - 65.03125).abs() < 1e-4);
     }
 
     #[test]

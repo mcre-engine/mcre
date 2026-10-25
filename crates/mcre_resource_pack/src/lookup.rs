@@ -162,6 +162,7 @@ pub struct EntityTextureIds {
     pub horse_markings_whitefield: u32,
     pub horse_markings_whitedots: u32,
     pub horse_markings_blackdots: u32,
+    pub minecart: u32,
 }
 
 impl EntityTextureIds {
@@ -213,6 +214,7 @@ impl EntityTextureIds {
                 .intern("minecraft:entity/horse/horse_markings_whitedots"),
             horse_markings_blackdots: interner
                 .intern("minecraft:entity/horse/horse_markings_blackdots"),
+            minecart: interner.intern("minecraft:entity/minecart/minecart"),
         }
     }
 }

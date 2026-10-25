@@ -387,6 +387,10 @@ mod tests {
             path(data.entity_textures.horse_markings_blackdots),
             "minecraft:entity/horse/horse_markings_blackdots"
         );
+        assert_eq!(
+            path(data.entity_textures.minecart),
+            "minecraft:entity/minecart/minecart"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

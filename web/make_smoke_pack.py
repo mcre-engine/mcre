@@ -301,6 +301,19 @@ def make_smoke_save(path):
             ],
         )
     )
+    chest_minecart = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:chest_minecart")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 6.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 13.5),
+            ],
+        )
+    )
     entity_chunk = nbt_compound(
         "",
         nbt_int_array("Position", [0, 0])
@@ -325,6 +338,7 @@ def make_smoke_save(path):
                 glow_squid,
                 spider,
                 horse,
+                chest_minecart,
             ],
         ),
     )
@@ -397,6 +411,8 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     files.append("textures/entity/spider/spider.png")
     files.append("textures/entity/horse/horse_darkbrown.png")
     files.append("textures/entity/horse/horse_markings_whitefield.png")
+    files.append("textures/entity/minecart/minecart.png")
+    files.append("textures/entity/chest/normal.png")
     for name in files:
         file = assets / name
         archive.write(file, (pathlib.Path("pack/assets/minecraft") / name).as_posix())
