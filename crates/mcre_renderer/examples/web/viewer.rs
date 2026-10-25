@@ -360,7 +360,7 @@ async fn load_uploaded_save(
         .map_err(|error| format!("create save directory: {error}"))?;
     extract_world_zip(&fs, &save_root, &bytes).await?;
     let (world, spawn) = load_save_world(&fs, &save_root).await?;
-    let camera_position = save_camera(&world, &spawn);
+    let (camera_position, camera_yaw, camera_pitch) = save_camera(&world, &spawn);
     let sections = {
         let state = state.borrow();
         build_sections(&state.data, &state.atlas, &world)
@@ -370,6 +370,8 @@ async fn load_uploaded_save(
     state.world = world;
     state.sections = sections;
     state.camera.position = camera_position;
+    state.camera.yaw = camera_yaw;
+    state.camera.pitch = camera_pitch;
     state.generation += 1;
     if let Some(body) = web_sys::window().and_then(|window| window.document()?.body()) {
         let _ = body.set_attribute("data-save-loaded", "true");
@@ -631,8 +633,8 @@ async fn resolve_region_dir(fs: &OpfsFs, save_root: &FsPath, dimension: &str) ->
     }
 }
 
-fn save_camera(world: &World, spawn: &Spawn) -> [f32; 3] {
-    let column = (spawn.pos.0 + 6, spawn.pos.2 + 20);
+fn save_camera(world: &World, spawn: &Spawn) -> ([f32; 3], f32, f32) {
+    let column = (spawn.pos.0 + 6, spawn.pos.2 + 10);
     let mut top = spawn.pos.1;
     for y in (WORLD_MIN_Y..WORLD_MIN_Y + WORLD_HEIGHT).rev() {
         if let Some(state) = world.get_block((column.0, y, column.1))
@@ -642,7 +644,15 @@ fn save_camera(world: &World, spawn: &Spawn) -> [f32; 3] {
             break;
         }
     }
-    [column.0 as f32, top as f32 + 6.0, column.1 as f32]
+    let position = [column.0 as f32, top as f32 + 6.0, column.1 as f32];
+    let dx = spawn.pos.0 as f32 - position[0];
+    let dz = spawn.pos.2 as f32 - position[2];
+    let yaw = dx.atan2(-dz);
+    let target_y = spawn.pos.1 as f32 + 1.0;
+    let pitch = (target_y - position[1])
+        .atan2(dx.hypot(dz))
+        .clamp(-0.8, -0.45);
+    (position, yaw, pitch)
 }
 
 impl ApplicationHandler for WebViewer {
