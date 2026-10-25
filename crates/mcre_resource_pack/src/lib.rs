@@ -189,6 +189,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn chest_texture_ids_resolve_all_materials() {
+        let root =
+            std::env::temp_dir().join(format!("mcre-pack-chest-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let fs = NativeFs::new_custom_path(root.clone()).await.unwrap();
+        stage_pack(&root, "base", [255, 0, 0]);
+
+        let mut set = ResourcePackSet::new();
+        set.add_pack(&fs, &FsPath::from("base")).await.unwrap();
+        let data = set.build(&fs).await.unwrap();
+
+        let path = |id: u32| data.texture_table[id as usize].as_ref();
+        let chests = data.chest_textures;
+        assert_eq!(path(chests.normal.single), "minecraft:entity/chest/normal");
+        assert_eq!(
+            path(chests.normal.left),
+            "minecraft:entity/chest/normal_left"
+        );
+        assert_eq!(
+            path(chests.normal.right),
+            "minecraft:entity/chest/normal_right"
+        );
+        assert_eq!(path(chests.ender), "minecraft:entity/chest/ender");
+        assert_eq!(
+            path(chests.copper_weathered.single),
+            "minecraft:entity/chest/copper_weathered"
+        );
+        assert_eq!(
+            path(chests.copper_oxidized.right),
+            "minecraft:entity/chest/copper_oxidized_right"
+        );
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[tokio::test]
     async fn colormaps_missing_is_an_error() {
         let root =
             std::env::temp_dir().join(format!("mcre-pack-empty-test-{}", std::process::id()));

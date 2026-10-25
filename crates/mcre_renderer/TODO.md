@@ -174,7 +174,9 @@ Storage decisions (locked):
       replacement.
 - [x] Decode sign lines/style and inventory slot/item/count summaries; show
       them in the native block inspector.
-- [ ] Render sign/chest geometry and text; wire edits and interaction.
+- [x] Render single and double chest halves (normal, trapped, ender, copper
+      weathering) from the entity chest textures with facing rotation.
+- [ ] Render sign text; wire edits and interaction.
 
 ## M13 — Entities (in progress)
 

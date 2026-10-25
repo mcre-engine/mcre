@@ -8,14 +8,15 @@ use mcre_resource_pack::{
 };
 use mcre_world::shape::{face_boxes, face_shape_is_cube, is_covered};
 use mcre_world::{
-    Biome, Block, BlockState, Chunk, DoubleBlockHalf, SECTIONS_PER_CHUNK, WORLD_MIN_Y, World,
+    Biome, Block, BlockState, ChestType, Chunk, DoubleBlockHalf, SECTIONS_PER_CHUNK, WORLD_MIN_Y,
+    World,
 };
 
 use crate::atlas::{Atlas, AtlasRegion};
 use crate::occlusion::{FULL_VISIBILITY, SectionVisibility, compute_section_visibility};
 use crate::vertex::{
-    FACING_COUNT, QuadEncodeInput, TerrainPass, TerrainVertex, encode_quad, facing_of_cullface,
-    opposite_facing, pack_local_section_index,
+    FACING_COUNT, QuadEncodeInput, TerrainPass, TerrainVertex, encode_quad, facing_of,
+    facing_of_cullface, opposite_facing, pack_local_section_index,
 };
 
 const TINT_BLEND_RADIUS: i32 = 2;
@@ -321,6 +322,7 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                 &mut mesh, data, atlas, access, block_pos, state, fluid, options,
             );
         }
+        mesh_chest(data, atlas, access, &mut mesh, block_pos, state);
         let Some(entry) = data.entries.get(u16::from(state) as usize) else {
             continue;
         };
@@ -428,6 +430,225 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
 
     mesh.section_visibility = compute_section_visibility(chunk);
     mesh
+}
+
+/// Vanilla chest special model (`ChestModel` single or double-half layer):
+/// a bottom box, a lid, and the lock, oriented by the state's `facing` and
+/// textured from `textures/entity/chest/*`.
+fn mesh_chest<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    access: &A,
+    mesh: &mut Mesh,
+    block_pos: [i32; 3],
+    state: BlockState,
+) {
+    let (textures, ender) = match state.block() {
+        Block::CHEST => (data.chest_textures.normal, false),
+        Block::TRAPPED_CHEST => (data.chest_textures.trapped, false),
+        Block::COPPER_CHEST | Block::WAXED_COPPER_CHEST => (data.chest_textures.copper, false),
+        Block::EXPOSED_COPPER_CHEST | Block::WAXED_EXPOSED_COPPER_CHEST => {
+            (data.chest_textures.copper_exposed, false)
+        }
+        Block::WEATHERED_COPPER_CHEST | Block::WAXED_WEATHERED_COPPER_CHEST => {
+            (data.chest_textures.copper_weathered, false)
+        }
+        Block::OXIDIZED_COPPER_CHEST | Block::WAXED_OXIDIZED_COPPER_CHEST => {
+            (data.chest_textures.copper_oxidized, false)
+        }
+        Block::ENDER_CHEST => (mcre_resource_pack::lookup::ChestTextures::default(), true),
+        _ => return,
+    };
+    let chest_type = if ender {
+        ChestType::Single
+    } else {
+        state.chest_type()
+    };
+    let (texture_id, hidden, half) = if ender {
+        (data.chest_textures.ender, None, 0)
+    } else {
+        match chest_type {
+            ChestType::Single => (textures.single, None, 0),
+            ChestType::Left => (textures.left, Some(Direction::West), 1),
+            ChestType::Right => (textures.right, Some(Direction::East), 2),
+        }
+    };
+    let Some(path) = data.texture_table.get(texture_id as usize) else {
+        return;
+    };
+    if !path.starts_with("minecraft:entity/chest/") {
+        return;
+    }
+
+    let facing = state.facing();
+    let region = atlas.region(texture_id);
+    let pass = if atlas.region_has_alpha(texture_id) {
+        TerrainPass::Cutout
+    } else {
+        TerrainPass::Solid
+    };
+    let (block_light, sky_light) = sample_light(access, block_pos);
+    let light = [f32::from(block_light), f32::from(sky_light)];
+    let boxes = match half {
+        1 => [
+            ([0.0, 0.0, 1.0, 15.0, 10.0, 14.0], [0.0, 19.0]),
+            ([0.0, 9.0, 1.0, 15.0, 5.0, 14.0], [0.0, 0.0]),
+            ([0.0, 7.0, 15.0, 1.0, 4.0, 1.0], [0.0, 0.0]),
+        ],
+        2 => [
+            ([1.0, 0.0, 1.0, 15.0, 10.0, 14.0], [0.0, 19.0]),
+            ([1.0, 9.0, 1.0, 15.0, 5.0, 14.0], [0.0, 0.0]),
+            ([15.0, 7.0, 15.0, 1.0, 4.0, 1.0], [0.0, 0.0]),
+        ],
+        _ => [
+            ([1.0, 0.0, 1.0, 14.0, 10.0, 14.0], [0.0, 19.0]),
+            ([1.0, 9.0, 1.0, 14.0, 5.0, 14.0], [0.0, 0.0]),
+            ([7.0, 7.0, 15.0, 2.0, 4.0, 1.0], [0.0, 0.0]),
+        ],
+    };
+    for (cube, texture_origin) in boxes {
+        emit_chest_box(
+            atlas,
+            mesh,
+            block_pos,
+            state,
+            facing,
+            hidden,
+            region,
+            pass,
+            light,
+            cube,
+            texture_origin,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_chest_box(
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    block_pos: [i32; 3],
+    state: BlockState,
+    facing: Direction,
+    hidden: Option<Direction>,
+    region: AtlasRegion,
+    pass: TerrainPass,
+    light: [f32; 2],
+    cube: [f32; 6],
+    texture_origin: [f32; 2],
+) {
+    let [x, y, z, width, height, depth] = cube;
+    let [tex_u, tex_v] = texture_origin;
+    let points = [
+        [x, y, z],
+        [x + width, y, z],
+        [x + width, y + height, z],
+        [x, y + height, z],
+        [x, y, z + depth],
+        [x + width, y, z + depth],
+        [x + width, y + height, z + depth],
+        [x, y + height, z + depth],
+    ];
+    let u0 = tex_u;
+    let u1 = u0 + depth;
+    let u2 = u1 + width;
+    let u22 = u2 + width;
+    let u3 = u22 + depth;
+    let u4 = u3 + width;
+    let v0 = tex_v;
+    let v1 = v0 + depth;
+    let v2 = v1 + height;
+    let faces = [
+        (
+            Direction::Down,
+            [points[5], points[4], points[0], points[1]],
+            [[u2, v0], [u1, v0], [u1, v1], [u2, v1]],
+        ),
+        (
+            Direction::Up,
+            [points[2], points[3], points[7], points[6]],
+            [[u22, v1], [u2, v1], [u2, v0], [u22, v0]],
+        ),
+        (
+            Direction::West,
+            [points[0], points[4], points[7], points[3]],
+            [[u1, v1], [u0, v1], [u0, v2], [u1, v2]],
+        ),
+        (
+            Direction::North,
+            [points[1], points[0], points[3], points[2]],
+            [[u2, v1], [u1, v1], [u1, v2], [u2, v2]],
+        ),
+        (
+            Direction::East,
+            [points[5], points[1], points[2], points[6]],
+            [[u3, v1], [u2, v1], [u2, v2], [u3, v2]],
+        ),
+        (
+            Direction::South,
+            [points[4], points[5], points[6], points[7]],
+            [[u4, v1], [u3, v1], [u3, v2], [u4, v2]],
+        ),
+    ];
+    for (local_direction, local_vertices, uvs) in faces {
+        if hidden == Some(local_direction) {
+            continue;
+        }
+        let direction = rotate_chest_direction(local_direction, facing);
+        let vertices = local_vertices.map(|vertex| rotate_chest_position(vertex, facing));
+        let base = mesh.vertices.len() as u32;
+        for index in 0..4 {
+            mesh.vertices.push(Vertex {
+                position: [
+                    block_pos[0] as f32 + vertices[index][0] / 16.0,
+                    block_pos[1] as f32 + vertices[index][1] / 16.0,
+                    block_pos[2] as f32 + vertices[index][2] / 16.0,
+                ],
+                uv: atlas_uv_dimensions(region, atlas, &uvs[index], [64.0, 64.0]),
+                color: [1.0; 3],
+                light,
+            });
+        }
+        mesh.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        mesh.opaque_meta.push(QuadMeta {
+            facing: facing_of(direction),
+            pass,
+            block_pos,
+            state,
+        });
+    }
+}
+
+fn rotate_chest_position(position: [f32; 3], facing: Direction) -> [f32; 3] {
+    match facing {
+        Direction::South => position,
+        Direction::West => [16.0 - position[2], position[1], position[0]],
+        Direction::North => [16.0 - position[0], position[1], 16.0 - position[2]],
+        Direction::East => [position[2], position[1], 16.0 - position[0]],
+        Direction::Down | Direction::Up => position,
+    }
+}
+
+fn rotate_chest_direction(direction: Direction, facing: Direction) -> Direction {
+    let turns = match facing {
+        Direction::South => 0,
+        Direction::West => 1,
+        Direction::North => 2,
+        Direction::East => 3,
+        Direction::Down | Direction::Up => 0,
+    };
+    let mut direction = direction;
+    for _ in 0..turns {
+        direction = match direction {
+            Direction::North => Direction::East,
+            Direction::East => Direction::South,
+            Direction::South => Direction::West,
+            Direction::West => Direction::North,
+            Direction::Down | Direction::Up => direction,
+        };
+    }
+    direction
 }
 
 /// Vanilla `Block.getShadeBrightness`: collision-full cells darken
@@ -1099,8 +1320,17 @@ fn connection_prop(state: BlockState, direction: Direction) -> bool {
 /// centroid-biased texcoord encoding (Sodium `encodeTexture`), so no inset is
 /// applied here.
 pub(crate) fn atlas_uv(region: AtlasRegion, atlas: &Atlas, uv: &[f32; 2]) -> [f32; 2] {
-    let u = (uv[0] / 16.0).clamp(0.0, 1.0);
-    let v = (uv[1] / 16.0).clamp(0.0, 1.0);
+    atlas_uv_dimensions(region, atlas, uv, [16.0, 16.0])
+}
+
+fn atlas_uv_dimensions(
+    region: AtlasRegion,
+    atlas: &Atlas,
+    uv: &[f32; 2],
+    texture_size: [f32; 2],
+) -> [f32; 2] {
+    let u = (uv[0] / texture_size[0]).clamp(0.0, 1.0);
+    let v = (uv[1] / texture_size[1]).clamp(0.0, 1.0);
     let x0 = region.x as f32;
     let x1 = (region.x + region.width) as f32;
     let y0 = region.y as f32;
@@ -1370,6 +1600,7 @@ mod tests {
         }];
         ResourcePackData {
             fluid_textures: Default::default(),
+            chest_textures: Default::default(),
             entries,
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -1385,6 +1616,7 @@ mod tests {
     fn empty_data() -> ResourcePackData {
         ResourcePackData {
             fluid_textures: Default::default(),
+            chest_textures: Default::default(),
             entries: vec![],
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -1410,6 +1642,7 @@ mod tests {
         }];
         ResourcePackData {
             fluid_textures: Default::default(),
+            chest_textures: Default::default(),
             entries,
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -1435,6 +1668,7 @@ mod tests {
         }];
         ResourcePackData {
             fluid_textures: Default::default(),
+            chest_textures: Default::default(),
             entries,
             particle_texture_ids: vec![],
             texture_table: vec![],
@@ -2119,6 +2353,139 @@ mod tests {
             single,
         );
         assert_eq!(mesh.indices.len(), 6);
+    }
+
+    fn chest_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec![
+            "minecraft:entity/chest/normal".into(),
+            "minecraft:entity/chest/normal_left".into(),
+            "minecraft:entity/chest/normal_right".into(),
+        ];
+        data.chest_textures.normal = mcre_resource_pack::lookup::ChestTextures {
+            single: 0,
+            left: 1,
+            right: 2,
+        };
+        data
+    }
+
+    fn chest_atlas() -> Atlas {
+        let mut atlas = test_atlas();
+        atlas.regions = vec![AtlasRegion {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 64,
+        }];
+        atlas.has_alpha = vec![false];
+        atlas
+    }
+
+    fn chest_state(facing: Direction) -> BlockState {
+        Block::CHEST
+            .state(&[mcre_world::PropVal::Facing(facing)])
+            .expect("chest facing")
+    }
+
+    fn mesh_chest_at(facing: Direction) -> Mesh {
+        let mut chunk = Chunk::new();
+        chunk.set_block(0, 0, 0, chest_state(facing));
+        mesh_chunk(
+            &chest_data(),
+            &chest_atlas(),
+            &chunk,
+            &World::new(0),
+            [0, 0],
+            LightMode::Flat,
+            MeshOptions::default(),
+        )
+    }
+
+    #[test]
+    fn chest_emits_bottom_lid_and_lock_geometry() {
+        let mesh = mesh_chest_at(Direction::South);
+        assert_eq!(mesh.vertices.len(), 72);
+        assert_eq!(mesh.indices.len(), 108);
+        assert_eq!(mesh.opaque_meta.len(), 18);
+        assert!(mesh.translucent_indices.is_empty());
+    }
+
+    #[test]
+    fn chest_facing_rotates_geometry() {
+        let south = mesh_chest_at(Direction::South);
+        let south_front = south
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[2])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((south_front - 1.0).abs() < 1e-6);
+
+        let east = mesh_chest_at(Direction::East);
+        let east_front = east
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((east_front - 1.0).abs() < 1e-6);
+        let east_max_z = east
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[2])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(east_max_z < 1.0);
+    }
+
+    #[test]
+    fn double_chest_halves_use_half_models() {
+        for (chest_type, expected) in [
+            (mcre_world::TypePropVal::Left, Direction::West),
+            (mcre_world::TypePropVal::Right, Direction::East),
+        ] {
+            let mut chunk = Chunk::new();
+            let half = Block::CHEST
+                .state(&[
+                    mcre_world::PropVal::Facing(Direction::South),
+                    mcre_world::PropVal::Type(chest_type),
+                ])
+                .expect("double chest half");
+            chunk.set_block(0, 0, 0, half);
+            let mesh = mesh_chunk(
+                &chest_data(),
+                &chest_atlas(),
+                &chunk,
+                &World::new(0),
+                [0, 0],
+                LightMode::Flat,
+                MeshOptions::default(),
+            );
+            assert_eq!(mesh.vertices.len(), 60);
+            assert_eq!(mesh.indices.len(), 90);
+            assert!(
+                mesh.opaque_meta
+                    .iter()
+                    .all(|meta| meta.facing != facing_of(expected)),
+                "seam face {expected:?} must be hidden"
+            );
+        }
+    }
+
+    #[test]
+    fn chest_texture_must_match_the_vanilla_path() {
+        let mut data = chest_data();
+        data.texture_table = vec!["minecraft:block/stone".into()];
+        let mut chunk = Chunk::new();
+        chunk.set_block(0, 0, 0, chest_state(Direction::South));
+        let mesh = mesh_chunk(
+            &data,
+            &chest_atlas(),
+            &chunk,
+            &World::new(0),
+            [0, 0],
+            LightMode::Flat,
+            MeshOptions::default(),
+        );
+        assert!(mesh.is_empty());
     }
 
     #[test]

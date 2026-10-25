@@ -83,6 +83,50 @@ impl FluidTextureIds {
     }
 }
 
+/// Single/left/right sprite IDs for one chest material
+/// (`MultiblockChestResources`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ChestTextures {
+    pub single: u32,
+    pub left: u32,
+    pub right: u32,
+}
+
+impl ChestTextures {
+    fn intern(interner: &mut StringInterner, prefix: &str) -> Self {
+        Self {
+            single: interner.intern(&format!("minecraft:entity/chest/{prefix}")),
+            left: interner.intern(&format!("minecraft:entity/chest/{prefix}_left")),
+            right: interner.intern(&format!("minecraft:entity/chest/{prefix}_right")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ChestTextureIds {
+    pub normal: ChestTextures,
+    pub trapped: ChestTextures,
+    pub ender: u32,
+    pub copper: ChestTextures,
+    pub copper_exposed: ChestTextures,
+    pub copper_weathered: ChestTextures,
+    pub copper_oxidized: ChestTextures,
+}
+
+impl ChestTextureIds {
+    fn intern(interner: &mut StringInterner) -> Self {
+        Self {
+            normal: ChestTextures::intern(interner, "normal"),
+            trapped: ChestTextures::intern(interner, "trapped"),
+            ender: interner.intern("minecraft:entity/chest/ender"),
+            copper: ChestTextures::intern(interner, "copper"),
+            copper_exposed: ChestTextures::intern(interner, "copper_exposed"),
+            copper_weathered: ChestTextures::intern(interner, "copper_weathered"),
+            copper_oxidized: ChestTextures::intern(interner, "copper_oxidized"),
+        }
+    }
+}
+
 /// Final lookup table mapping block state IDs to baked rendering data.
 ///
 /// All string IDs (texture paths, model paths) are replaced with compact
@@ -96,6 +140,7 @@ pub struct ResourcePackData {
     pub texture_table: Vec<Box<str>>,
     /// Texture IDs for the built-in fluid models; always present in the table.
     pub fluid_textures: FluidTextureIds,
+    pub chest_textures: ChestTextureIds,
     /// Face-culling overrides keyed by block name (`"oak_leaves"`), merged
     /// across packs with last-pack-wins per block.
     pub culling: HashMap<String, CullingOverride>,
@@ -112,11 +157,13 @@ impl ResourcePackData {
         colormaps: Colormaps,
     ) -> Self {
         let fluid_textures = FluidTextureIds::intern(&mut interner);
+        let chest_textures = ChestTextureIds::intern(&mut interner);
         Self {
             entries,
             particle_texture_ids,
             texture_table: interner.into_strings(),
             fluid_textures,
+            chest_textures,
             culling,
             colormaps,
         }

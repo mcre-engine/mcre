@@ -321,8 +321,10 @@ open.
       out-of-chunk entries with import statistics.
 - [x] Decode front/back sign lines and style plus modern/legacy inventory
       slot, item ID, and count; expose summaries in the native block inspector.
-- [ ] Render sign/chest geometry and text, resolve translated components, and
-      define update behavior for interactive edits.
+- [x] Render single and double chests from the entity chest textures, including
+      trapped, ender, and copper weathering materials.
+- [ ] Render sign text, resolve translated components, and define update
+      behavior for interactive edits.
 
 ### M13 — Entities (in progress)
 - [x] Load modern separate entity-region chunks and legacy inline entity lists;
