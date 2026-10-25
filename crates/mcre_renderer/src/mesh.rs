@@ -527,23 +527,6 @@ fn mesh_chest<A: BlockAccess + ?Sized>(
 }
 
 type ModelBoxFace = (Direction, [[f32; 3]; 4], [[f32; 2]; 4]);
-type EntityUvOverride = fn(Direction, [[f32; 2]; 4]) -> Option<[[f32; 2]; 4]>;
-
-fn parrot_leg_uv_override(direction: Direction, _: [[f32; 2]; 4]) -> Option<[[f32; 2]; 4]> {
-    Some(match direction {
-        Direction::Down => [[18.0, 19.0], [17.0, 19.0], [17.0, 20.0], [18.0, 20.0]],
-        Direction::Up => [[18.0, 20.0], [17.0, 20.0], [17.0, 19.0], [18.0, 19.0]],
-        _ => [[18.0, 19.0], [17.0, 19.0], [17.0, 21.0], [18.0, 21.0]],
-    })
-}
-
-fn enderman_head_uv_override(direction: Direction, _: [[f32; 2]; 4]) -> Option<[[f32; 2]; 4]> {
-    if direction == Direction::Up {
-        Some([[16.0, 0.0], [8.0, 0.0], [8.0, 8.0], [16.0, 8.0]])
-    } else {
-        None
-    }
-}
 
 /// Vanilla `ModelPart.Cube` face layout: vertices and texture coordinates
 /// for a box `[min_x, min_y, min_z, width, height, depth]` at `texture_origin`.
@@ -624,6 +607,86 @@ fn model_box_faces(
         }
     }
     faces
+}
+
+fn opaque_face_texels(
+    atlas: &Atlas,
+    region: AtlasRegion,
+    texture_size: [f32; 2],
+    uvs: [[f32; 2]; 4],
+) -> Vec<[f32; 2]> {
+    if texture_size[0] <= 0.0 || texture_size[1] <= 0.0 || region.width == 0 || region.height == 0 {
+        return Vec::new();
+    }
+    let min_u = uvs.iter().map(|uv| uv[0]).fold(f32::INFINITY, f32::min);
+    let max_u = uvs.iter().map(|uv| uv[0]).fold(f32::NEG_INFINITY, f32::max);
+    let min_v = uvs.iter().map(|uv| uv[1]).fold(f32::INFINITY, f32::min);
+    let max_v = uvs.iter().map(|uv| uv[1]).fold(f32::NEG_INFINITY, f32::max);
+    let x_start = ((min_u / texture_size[0]) * region.width as f32)
+        .floor()
+        .clamp(0.0, region.width as f32) as usize;
+    let x_end = ((max_u / texture_size[0]) * region.width as f32)
+        .ceil()
+        .clamp(0.0, region.width as f32) as usize;
+    let y_start = ((min_v / texture_size[1]) * region.height as f32)
+        .floor()
+        .clamp(0.0, region.height as f32) as usize;
+    let y_end = ((max_v / texture_size[1]) * region.height as f32)
+        .ceil()
+        .clamp(0.0, region.height as f32) as usize;
+    let mut texels = Vec::new();
+    for y in y_start..y_end {
+        for x in x_start..x_end {
+            let atlas_x = region.x as usize + x;
+            let atlas_y = region.y as usize + y;
+            let alpha_index = (atlas_y * atlas.width as usize + atlas_x) * 4 + 3;
+            if atlas
+                .pixels
+                .get(alpha_index)
+                .is_some_and(|alpha| *alpha > 0)
+            {
+                texels.push([
+                    (x as f32 + 0.5) * texture_size[0] / region.width as f32,
+                    (y as f32 + 0.5) * texture_size[1] / region.height as f32,
+                ]);
+            }
+        }
+    }
+    texels
+}
+
+fn repair_transparent_cube_faces(
+    atlas: &Atlas,
+    region: AtlasRegion,
+    texture_size: [f32; 2],
+    faces: &mut [ModelBoxFace; 6],
+) {
+    let samples: [Vec<[f32; 2]>; 6] = core::array::from_fn(|index| {
+        opaque_face_texels(atlas, region, texture_size, faces[index].2)
+    });
+    for (index, (_, _, uvs)) in faces.iter_mut().enumerate() {
+        if !samples[index].is_empty() {
+            continue;
+        }
+        let center = uvs.iter().fold([0.0; 2], |mut center, uv| {
+            center[0] += uv[0] * 0.25;
+            center[1] += uv[1] * 0.25;
+            center
+        });
+        let nearest = samples
+            .iter()
+            .enumerate()
+            .filter(|(other, _)| *other != index)
+            .flat_map(|(_, texels)| texels)
+            .min_by(|a, b| {
+                let distance =
+                    |uv: &[f32; 2]| (uv[0] - center[0]).powi(2) + (uv[1] - center[1]).powi(2);
+                distance(a).total_cmp(&distance(b))
+            });
+        if let Some(uv) = nearest {
+            *uvs = [*uv; 4];
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2373,16 +2436,13 @@ fn emit_entity_cube(
     scale: f32,
     depth_offset: f32,
     yaw: f32,
-    uv_override: Option<EntityUvOverride>,
 ) {
     let y_offset = ENTITY_SCALE_PIVOT_Y * (1.0 - scale);
-    for (direction, vertices, mut uvs) in model_box_faces(cube, texture_origin, mirror, growth) {
-        if let Some(override_uvs) = uv_override {
-            let Some(overridden) = override_uvs(direction, uvs) else {
-                continue;
-            };
-            uvs = overridden;
-        }
+    let mut faces = model_box_faces(cube, texture_origin, mirror, growth);
+    if pass == TerrainPass::Cutout && cube[3] > 0.0 && cube[4] > 0.0 && cube[5] > 0.0 {
+        repair_transparent_cube_faces(atlas, region, texture_size, &mut faces);
+    }
+    for (_, vertices, uvs) in faces {
         let base = mesh.vertices.len() as u32;
         let mut positions = [[0.0; 3]; 4];
         for (index, vertex) in vertices.iter().enumerate() {
@@ -2538,7 +2598,6 @@ fn emit_entity_model(
             model.scale,
             depth_offset,
             yaw,
-            None,
         );
     }
     for cube in model.rotated_cubes {
@@ -2561,59 +2620,8 @@ fn emit_entity_model(
             model.scale,
             depth_offset,
             yaw,
-            None,
         );
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn emit_entity_cube_uv_overlay(
-    data: &ResourcePackData,
-    atlas: &Atlas,
-    mesh: &mut Mesh,
-    position: [f64; 3],
-    block_pos: [i32; 3],
-    light: [f32; 2],
-    yaw: f32,
-    texture_id: u32,
-    texture_prefix: &str,
-    model: &EntityModel,
-    cube: &EntityCube,
-    uv_override: EntityUvOverride,
-) {
-    let Some(path) = data.texture_table.get(texture_id as usize) else {
-        return;
-    };
-    if !path.starts_with(texture_prefix) {
-        return;
-    }
-    let region = atlas.region(texture_id);
-    let pass = if atlas.region_has_alpha(texture_id) {
-        TerrainPass::Cutout
-    } else {
-        TerrainPass::Solid
-    };
-    emit_entity_cube(
-        atlas,
-        mesh,
-        position,
-        block_pos,
-        region,
-        pass,
-        light,
-        model.texture_size,
-        [1.0; 3],
-        cube.offset,
-        [cube.rotation_x, 0.0, 0.0],
-        cube.texture_origin,
-        cube.cube,
-        cube.growth,
-        cube.mirror,
-        model.scale,
-        ENTITY_OVERLAY_DEPTH_OFFSET,
-        yaw,
-        Some(uv_override),
-    );
 }
 
 fn minecart_model_position(model: [f32; 3], position: [f64; 3], yaw: f32) -> [f32; 3] {
@@ -3192,22 +3200,6 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     &PARROT_MODEL,
                     white,
                 );
-                for cube in &PARROT_CUBES[9..11] {
-                    emit_entity_cube_uv_overlay(
-                        data,
-                        atlas,
-                        mesh,
-                        position,
-                        block_pos,
-                        light,
-                        yaw,
-                        texture_id,
-                        "minecraft:entity/parrot/",
-                        &PARROT_MODEL,
-                        cube,
-                        parrot_leg_uv_override,
-                    );
-                }
             }
             "minecraft:bat" => {
                 emit_entity_layer(
@@ -3252,20 +3244,6 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     "minecraft:entity/enderman/",
                     &ENDERMAN_MODEL,
                     white,
-                );
-                emit_entity_cube_uv_overlay(
-                    data,
-                    atlas,
-                    mesh,
-                    position,
-                    block_pos,
-                    light,
-                    yaw,
-                    data.entity_textures.enderman,
-                    "minecraft:entity/enderman/",
-                    &ENDERMAN_MODEL,
-                    &ENDERMAN_CUBES[0],
-                    enderman_head_uv_override,
                 );
             }
             "minecraft:squid" => {
@@ -5743,11 +5721,6 @@ mod tests {
         atlas.width = 64;
         atlas.height = 32;
         atlas.pixels = vec![0; 64 * 32 * 4];
-        for y in 0..8 {
-            for x in 8..16 {
-                atlas.pixels[(y * 64 + x) * 4 + 3] = 255;
-            }
-        }
         atlas.regions = vec![AtlasRegion {
             x: 0,
             y: 0,
@@ -5755,6 +5728,54 @@ mod tests {
             height: 32,
         }];
         atlas.has_alpha = vec![true];
+        let region = atlas.regions[0];
+        for (direction, _, uvs) in model_box_faces(
+            ENDERMAN_CUBES[0].cube,
+            ENDERMAN_CUBES[0].texture_origin,
+            false,
+            0.0,
+        ) {
+            if direction != Direction::Up {
+                mark_uv_opaque(&mut atlas, region, ENDERMAN_MODEL.texture_size, uvs);
+            }
+        }
+        atlas
+    }
+
+    fn mark_uv_opaque(
+        atlas: &mut Atlas,
+        region: AtlasRegion,
+        texture_size: [f32; 2],
+        uvs: [[f32; 2]; 4],
+    ) {
+        let min_u = uvs.iter().map(|uv| uv[0]).fold(f32::INFINITY, f32::min);
+        let max_u = uvs.iter().map(|uv| uv[0]).fold(f32::NEG_INFINITY, f32::max);
+        let min_v = uvs.iter().map(|uv| uv[1]).fold(f32::INFINITY, f32::min);
+        let max_v = uvs.iter().map(|uv| uv[1]).fold(f32::NEG_INFINITY, f32::max);
+        let x_start = ((min_u / texture_size[0]) * region.width as f32).floor() as usize;
+        let x_end = ((max_u / texture_size[0]) * region.width as f32).ceil() as usize;
+        let y_start = ((min_v / texture_size[1]) * region.height as f32).floor() as usize;
+        let y_end = ((max_v / texture_size[1]) * region.height as f32).ceil() as usize;
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                let alpha =
+                    ((region.y as usize + y) * atlas.width as usize + region.x as usize + x) * 4
+                        + 3;
+                atlas.pixels[alpha] = 255;
+            }
+        }
+    }
+
+    fn parrot_atlas_with_leg_texture() -> Atlas {
+        let mut atlas = parrot_atlas();
+        atlas.pixels.fill(0);
+        let cube = PARROT_CUBES[9];
+        let face = model_box_faces(cube.cube, cube.texture_origin, cube.mirror, cube.growth)
+            .into_iter()
+            .find(|(direction, _, _)| *direction == Direction::South)
+            .unwrap();
+        let region = atlas.regions[0];
+        mark_uv_opaque(&mut atlas, region, PARROT_MODEL.texture_size, face.2);
         atlas
     }
 
@@ -6224,19 +6245,16 @@ mod tests {
     }
 
     #[test]
-    fn parrot_leg_overlays_sample_opaque_feather_pixels() {
-        let mut atlas = parrot_atlas();
-        atlas.pixels.fill(0);
-        for y in 19..=20 {
-            atlas.pixels[(y * atlas.width as usize + 17) * 4 + 3] = 255;
-        }
+    fn parrot_leg_faces_remap_to_opaque_texture_pixels() {
+        let atlas = parrot_atlas_with_leg_texture();
         let mut chunk = Chunk::new();
         assert!(chunk.set_entity(parrot_entity(0)));
 
         let mesh = mesh_entity_with_atlas(&parrot_data(), &atlas, &chunk);
-        let overlay_vertices = &mesh.vertices[66 * 4..];
-        assert_eq!(overlay_vertices.len(), 12 * 4);
-        for quad in overlay_vertices.as_chunks::<4>().0 {
+        assert_eq!(mesh.opaque_meta.len(), 66);
+        let leg_vertices = &mesh.vertices[54 * 4..];
+        assert_eq!(leg_vertices.len(), 12 * 4);
+        for quad in leg_vertices.as_chunks::<4>().0 {
             let center = quad.iter().fold([0.0; 2], |mut center, vertex| {
                 center[0] += vertex.uv[0] * atlas.width as f32 / 4.0;
                 center[1] += vertex.uv[1] * atlas.height as f32 / 4.0;
@@ -6252,12 +6270,12 @@ mod tests {
         assert!(chunk.set_entity(parrot_entity(0)));
 
         let mesh = mesh_entity(&parrot_data(), &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 78);
-        assert_eq!(mesh.indices.len(), 78 * 6);
+        assert_eq!(mesh.opaque_meta.len(), 66);
+        assert_eq!(mesh.indices.len(), 66 * 6);
         let (min, max) = mesh_bounds(&mesh);
         assert!((min[0] - 7.875).abs() < 1e-4);
         assert!((max[0] - 8.125).abs() < 1e-4);
-        assert!((min[1] - 63.999123).abs() < 1e-4);
+        assert!((min[1] - 64.00012).abs() < 1e-4);
         assert!((max[1] - 64.9261).abs() < 1e-4);
         assert!((min[2] - 7.76822).abs() < 1e-4);
         assert!((max[2] - 8.44518).abs() < 1e-4);
@@ -6277,7 +6295,7 @@ mod tests {
         assert!(chunk.set_entity(parrot_entity(3)));
 
         let mesh = mesh_entity_with_atlas(&data, &parrot_atlas(), &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 78);
+        assert_eq!(mesh.opaque_meta.len(), 66);
         assert!(
             mesh.vertices
                 .iter()
@@ -6326,22 +6344,31 @@ mod tests {
 
         let atlas = enderman_atlas();
         let mesh = mesh_entity_with_atlas(&enderman_data(), &atlas, &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 37);
-        assert_eq!(mesh.indices.len(), 37 * 6);
-        let old_bottom = &mesh.vertices[4..8];
-        let old_bottom_center = old_bottom.iter().fold([0.0; 2], |mut center, vertex| {
+        assert_eq!(mesh.opaque_meta.len(), 36);
+        assert_eq!(mesh.indices.len(), 36 * 6);
+        let bottom_uvs = model_box_faces(
+            ENDERMAN_CUBES[0].cube,
+            ENDERMAN_CUBES[0].texture_origin,
+            ENDERMAN_CUBES[0].mirror,
+            ENDERMAN_CUBES[0].growth,
+        )
+        .into_iter()
+        .find(|(direction, _, _)| *direction == Direction::Up)
+        .unwrap()
+        .2;
+        let original_center = bottom_uvs.iter().fold([0.0; 2], |mut center, uv| {
+            center[0] += uv[0] * 0.25;
+            center[1] += uv[1] * 0.25;
+            center
+        });
+        assert_eq!(alpha_at_pixel(&atlas, original_center), 0);
+        let bottom = &mesh.vertices[4..8];
+        let bottom_center = bottom.iter().fold([0.0; 2], |mut center, vertex| {
             center[0] += vertex.uv[0] * atlas.width as f32 / 4.0;
             center[1] += vertex.uv[1] * atlas.height as f32 / 4.0;
             center
         });
-        assert_eq!(alpha_at_pixel(&atlas, old_bottom_center), 0);
-        let covered_bottom = &mesh.vertices[mesh.vertices.len() - 4..];
-        let covered_center = covered_bottom.iter().fold([0.0; 2], |mut center, vertex| {
-            center[0] += vertex.uv[0] * atlas.width as f32 / 4.0;
-            center[1] += vertex.uv[1] * atlas.height as f32 / 4.0;
-            center
-        });
-        assert_eq!(alpha_at_pixel(&atlas, covered_center), 255);
+        assert_eq!(alpha_at_pixel(&atlas, bottom_center), 255);
         let (min, max) = mesh_bounds(&mesh);
         assert!((min[0] - 7.625).abs() < 1e-4);
         assert!((max[0] - 8.375).abs() < 1e-4);
