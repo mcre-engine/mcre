@@ -343,6 +343,50 @@ mod tests {
             path(data.entity_textures.spider),
             "minecraft:entity/spider/spider"
         );
+        assert_eq!(
+            path(data.entity_textures.horse_white),
+            "minecraft:entity/horse/horse_white"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_creamy),
+            "minecraft:entity/horse/horse_creamy"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_chestnut),
+            "minecraft:entity/horse/horse_chestnut"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_brown),
+            "minecraft:entity/horse/horse_brown"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_black),
+            "minecraft:entity/horse/horse_black"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_gray),
+            "minecraft:entity/horse/horse_gray"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_darkbrown),
+            "minecraft:entity/horse/horse_darkbrown"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_markings_white),
+            "minecraft:entity/horse/horse_markings_white"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_markings_whitefield),
+            "minecraft:entity/horse/horse_markings_whitefield"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_markings_whitedots),
+            "minecraft:entity/horse/horse_markings_whitedots"
+        );
+        assert_eq!(
+            path(data.entity_textures.horse_markings_blackdots),
+            "minecraft:entity/horse/horse_markings_blackdots"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

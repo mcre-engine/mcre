@@ -151,6 +151,17 @@ pub struct EntityTextureIds {
     pub squid: u32,
     pub glow_squid: u32,
     pub spider: u32,
+    pub horse_white: u32,
+    pub horse_creamy: u32,
+    pub horse_chestnut: u32,
+    pub horse_brown: u32,
+    pub horse_black: u32,
+    pub horse_gray: u32,
+    pub horse_darkbrown: u32,
+    pub horse_markings_white: u32,
+    pub horse_markings_whitefield: u32,
+    pub horse_markings_whitedots: u32,
+    pub horse_markings_blackdots: u32,
 }
 
 impl EntityTextureIds {
@@ -188,6 +199,20 @@ impl EntityTextureIds {
             squid: interner.intern("minecraft:entity/squid/squid"),
             glow_squid: interner.intern("minecraft:entity/squid/glow_squid"),
             spider: interner.intern("minecraft:entity/spider/spider"),
+            horse_white: interner.intern("minecraft:entity/horse/horse_white"),
+            horse_creamy: interner.intern("minecraft:entity/horse/horse_creamy"),
+            horse_chestnut: interner.intern("minecraft:entity/horse/horse_chestnut"),
+            horse_brown: interner.intern("minecraft:entity/horse/horse_brown"),
+            horse_black: interner.intern("minecraft:entity/horse/horse_black"),
+            horse_gray: interner.intern("minecraft:entity/horse/horse_gray"),
+            horse_darkbrown: interner.intern("minecraft:entity/horse/horse_darkbrown"),
+            horse_markings_white: interner.intern("minecraft:entity/horse/horse_markings_white"),
+            horse_markings_whitefield: interner
+                .intern("minecraft:entity/horse/horse_markings_whitefield"),
+            horse_markings_whitedots: interner
+                .intern("minecraft:entity/horse/horse_markings_whitedots"),
+            horse_markings_blackdots: interner
+                .intern("minecraft:entity/horse/horse_markings_blackdots"),
         }
     }
 }

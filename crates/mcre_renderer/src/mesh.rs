@@ -691,6 +691,8 @@ const SIGN_TEXT_SCALE: f32 = 1.0 / 96.0;
 const SIGN_TEXT_OFFSET: [f32; 3] = [0.0, 0.333_333_34, 0.046_666_667];
 const SIGN_TEXT_WALL_OFFSET: [f32; 3] = [0.0, -0.3125, -0.4375];
 const SIGN_TEXT_DEPTH_OFFSET: f32 = 0.001;
+const ENTITY_OVERLAY_DEPTH_OFFSET: f32 = 0.001;
+const ENTITY_SCALE_PIVOT_Y: f32 = 24.016;
 
 /// Vanilla standing/wall sign text (`AbstractSignRenderer` +
 /// `StandingSignRenderer`): four centred lines of ASCII glyphs from
@@ -951,6 +953,7 @@ struct EntityModel {
     texture_size: [f32; 2],
     cubes: &'static [EntityCube],
     rotated_cubes: &'static [EntityCubeRot],
+    scale: f32,
 }
 
 const PIG_CUBES: &[EntityCube] = &[
@@ -2001,94 +2004,215 @@ const SPIDER_LEG_CUBES: &[EntityCubeRot] = &[
     },
 ];
 
+const HORSE_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 11.0, 5.0],
+        rotation_x: 0.0,
+        texture_origin: [0.0, 32.0],
+        cube: [-5.0, -8.0, -17.0, 10.0, 10.0, 22.0],
+        growth: 0.05,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 4.0, -12.0],
+        rotation_x: std::f32::consts::FRAC_PI_6,
+        texture_origin: [0.0, 35.0],
+        cube: [-2.05, -6.0, -2.0, 4.0, 12.0, 7.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 4.0, -12.0],
+        rotation_x: std::f32::consts::FRAC_PI_6,
+        texture_origin: [0.0, 13.0],
+        cube: [-3.0, -11.0, -2.0, 6.0, 5.0, 7.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 4.0, -12.0],
+        rotation_x: std::f32::consts::FRAC_PI_6,
+        texture_origin: [56.0, 36.0],
+        cube: [-1.0, -11.0, 5.01, 2.0, 16.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 4.0, -12.0],
+        rotation_x: std::f32::consts::FRAC_PI_6,
+        texture_origin: [0.0, 25.0],
+        cube: [-2.0, -11.0, -7.0, 4.0, 5.0, 5.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 4.0, -12.0],
+        rotation_x: std::f32::consts::FRAC_PI_6,
+        texture_origin: [19.0, 16.0],
+        cube: [0.55, -13.0, 4.0, 2.0, 3.0, 1.0],
+        growth: -0.001,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 4.0, -12.0],
+        rotation_x: std::f32::consts::FRAC_PI_6,
+        texture_origin: [19.0, 16.0],
+        cube: [-2.55, -13.0, 4.0, 2.0, 3.0, 1.0],
+        growth: -0.001,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [4.0, 14.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 21.0],
+        cube: [-3.0, -1.01, -1.0, 4.0, 11.0, 4.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCube {
+        offset: [-4.0, 14.0, 7.0],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 21.0],
+        cube: [-1.0, -1.01, -1.0, 4.0, 11.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [4.0, 14.0, -10.0],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 21.0],
+        cube: [-3.0, -1.01, -1.9, 4.0, 11.0, 4.0],
+        growth: 0.0,
+        mirror: true,
+    },
+    EntityCube {
+        offset: [-4.0, 14.0, -10.0],
+        rotation_x: 0.0,
+        texture_origin: [48.0, 21.0],
+        cube: [-1.0, -1.01, -1.9, 4.0, 11.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 6.0, 7.0],
+        rotation_x: std::f32::consts::FRAC_PI_6,
+        texture_origin: [42.0, 36.0],
+        cube: [-1.5, 0.0, 0.0, 3.0, 14.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const COW_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: COW_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const CHICKEN_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: CHICKEN_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const CREEPER_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: CREEPER_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const SHEEP_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SHEEP_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const SHEEP_WOOL_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SHEEP_WOOL_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const ZOMBIE_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: ZOMBIE_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const SKELETON_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SKELETON_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const WOLF_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: WOLF_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const PARROT_MODEL: EntityModel = EntityModel {
     texture_size: [32.0, 32.0],
     cubes: PARROT_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const BAT_MODEL: EntityModel = EntityModel {
     texture_size: [32.0, 32.0],
     cubes: BAT_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const BEE_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: BEE_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const ENDERMAN_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: ENDERMAN_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const SQUID_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SQUID_CUBES,
     rotated_cubes: &[],
+    scale: 1.0,
 };
 
 const SPIDER_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: SPIDER_CUBES,
     rotated_cubes: SPIDER_LEG_CUBES,
+    scale: 1.0,
+};
+
+const HORSE_MODEL: EntityModel = EntityModel {
+    texture_size: [64.0, 64.0],
+    cubes: HORSE_CUBES,
+    rotated_cubes: &[],
+    scale: 1.1,
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -2138,6 +2262,30 @@ fn entity_part_vertex(vertex: [f32; 3], offset: [f32; 3], rotation: [f32; 3]) ->
     [offset[0] + x_rot, offset[1] + y_rot, offset[2] + z]
 }
 
+fn quad_normal(points: [[f32; 3]; 4]) -> [f32; 3] {
+    let a = [
+        points[1][0] - points[0][0],
+        points[1][1] - points[0][1],
+        points[1][2] - points[0][2],
+    ];
+    let b = [
+        points[2][0] - points[0][0],
+        points[2][1] - points[0][1],
+        points[2][2] - points[0][2],
+    ];
+    let normal = [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ];
+    let length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+    if length > 0.0 {
+        [normal[0] / length, normal[1] / length, normal[2] / length]
+    } else {
+        [0.0; 3]
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn emit_entity_cube(
     atlas: &Atlas,
@@ -2155,27 +2303,64 @@ fn emit_entity_cube(
     cube: [f32; 6],
     growth: f32,
     mirror: bool,
+    scale: f32,
+    depth_offset: f32,
     yaw: f32,
 ) {
+    let y_offset = ENTITY_SCALE_PIVOT_Y * (1.0 - scale);
     for (_, vertices, uvs) in model_box_faces(cube, texture_origin, mirror, growth) {
         let base = mesh.vertices.len() as u32;
+        let mut positions = [[0.0; 3]; 4];
         for (index, vertex) in vertices.iter().enumerate() {
             let model = entity_part_vertex(*vertex, offset, rotation);
+            let model = [
+                model[0] * scale,
+                model[1] * scale + y_offset,
+                model[2] * scale,
+            ];
+            positions[index] = entity_model_position(model, position, yaw);
+        }
+        if depth_offset != 0.0 {
+            let normal = quad_normal(positions);
+            for position in &mut positions {
+                for axis in 0..3 {
+                    position[axis] += normal[axis] * depth_offset;
+                }
+            }
+        }
+        for (index, position) in positions.iter().enumerate() {
             mesh.vertices.push(Vertex {
-                position: entity_model_position(model, position, yaw),
+                position: *position,
                 uv: atlas_uv_dimensions(region, atlas, &uvs[index], texture_size),
                 color: tint,
                 light,
             });
         }
-        mesh.indices
-            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
-        mesh.opaque_meta.push(QuadMeta {
-            facing: FACING_UNASSIGNED,
-            pass,
-            block_pos,
-            state: Block::AIR.default_state(),
-        });
+        if pass == TerrainPass::Translucent {
+            mesh.translucent_indices.extend_from_slice(&[
+                base,
+                base + 1,
+                base + 2,
+                base,
+                base + 2,
+                base + 3,
+            ]);
+            mesh.translucent_meta.push(QuadMeta {
+                facing: FACING_UNASSIGNED,
+                pass,
+                block_pos,
+                state: Block::AIR.default_state(),
+            });
+        } else {
+            mesh.indices
+                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            mesh.opaque_meta.push(QuadMeta {
+                facing: FACING_UNASSIGNED,
+                pass,
+                block_pos,
+                state: Block::AIR.default_state(),
+            });
+        }
     }
 }
 
@@ -2204,6 +2389,60 @@ fn emit_entity_layer(
     } else {
         TerrainPass::Solid
     };
+    emit_entity_model(
+        atlas, mesh, position, block_pos, light, yaw, texture_id, model, tint, pass, 0.0,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_entity_overlay_layer(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    light: [f32; 2],
+    yaw: f32,
+    texture_id: u32,
+    texture_prefix: &str,
+    model: &EntityModel,
+    tint: [f32; 3],
+) {
+    let Some(path) = data.texture_table.get(texture_id as usize) else {
+        return;
+    };
+    if !path.starts_with(texture_prefix) {
+        return;
+    }
+    emit_entity_model(
+        atlas,
+        mesh,
+        position,
+        block_pos,
+        light,
+        yaw,
+        texture_id,
+        model,
+        tint,
+        TerrainPass::Translucent,
+        ENTITY_OVERLAY_DEPTH_OFFSET,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_entity_model(
+    atlas: &Atlas,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    light: [f32; 2],
+    yaw: f32,
+    texture_id: u32,
+    model: &EntityModel,
+    tint: [f32; 3],
+    pass: TerrainPass,
+    depth_offset: f32,
+) {
     let region = atlas.region(texture_id);
     for cube in model.cubes {
         emit_entity_cube(
@@ -2222,6 +2461,8 @@ fn emit_entity_layer(
             cube.cube,
             cube.growth,
             cube.mirror,
+            model.scale,
+            depth_offset,
             yaw,
         );
     }
@@ -2242,6 +2483,8 @@ fn emit_entity_layer(
             cube.cube,
             cube.growth,
             cube.mirror,
+            model.scale,
+            depth_offset,
             yaw,
         );
     }
@@ -2565,6 +2808,53 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     &SPIDER_MODEL,
                     white,
                 );
+            }
+            "minecraft:horse" => {
+                let variant = root.get("Variant").and_then(Tag::as_i32).unwrap_or(0) as u32;
+                let texture_id = match variant & 0xFF {
+                    1 => data.entity_textures.horse_creamy,
+                    2 => data.entity_textures.horse_chestnut,
+                    3 => data.entity_textures.horse_brown,
+                    4 => data.entity_textures.horse_black,
+                    5 => data.entity_textures.horse_gray,
+                    6 => data.entity_textures.horse_darkbrown,
+                    _ => data.entity_textures.horse_white,
+                };
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    texture_id,
+                    "minecraft:entity/horse/",
+                    &HORSE_MODEL,
+                    white,
+                );
+                let markings_id = match (variant >> 8) & 0xFF {
+                    1 => Some(data.entity_textures.horse_markings_white),
+                    2 => Some(data.entity_textures.horse_markings_whitefield),
+                    3 => Some(data.entity_textures.horse_markings_whitedots),
+                    4 => Some(data.entity_textures.horse_markings_blackdots),
+                    _ => None,
+                };
+                if let Some(markings_id) = markings_id {
+                    emit_entity_overlay_layer(
+                        data,
+                        atlas,
+                        mesh,
+                        position,
+                        block_pos,
+                        light,
+                        yaw,
+                        markings_id,
+                        "minecraft:entity/horse/",
+                        &HORSE_MODEL,
+                        white,
+                    );
+                }
             }
             "minecraft:sheep" => {
                 emit_entity_layer(
@@ -4683,6 +4973,33 @@ mod tests {
         data
     }
 
+    fn horse_entity(variant: i32) -> mcre_world::WorldEntity {
+        let root = Tag::Compound(vec![
+            ("id".into(), Tag::String("minecraft:horse".into())),
+            (
+                "Rotation".into(),
+                Tag::List(vec![Tag::Float(0.0), Tag::Float(0.0)]),
+            ),
+            ("Variant".into(), Tag::Int(variant)),
+        ]);
+        mcre_world::WorldEntity::new(
+            "minecraft:horse".into(),
+            [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
+    fn horse_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec![
+            "minecraft:entity/horse/horse_white".into(),
+            "minecraft:entity/horse/horse_markings_whitefield".into(),
+        ];
+        data.entity_textures.horse_white = 0;
+        data.entity_textures.horse_markings_whitefield = 1;
+        data
+    }
+
     fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
             ("id".into(), Tag::String("minecraft:parrot".into())),
@@ -4780,6 +5097,29 @@ mod tests {
             height: 64,
         }];
         atlas.has_alpha = vec![true];
+        atlas
+    }
+
+    fn horse_atlas() -> Atlas {
+        let mut atlas = test_atlas();
+        atlas.width = 64;
+        atlas.height = 128;
+        atlas.pixels = vec![255; 64 * 128 * 4];
+        atlas.regions = vec![
+            AtlasRegion {
+                x: 0,
+                y: 0,
+                width: 64,
+                height: 64,
+            },
+            AtlasRegion {
+                x: 0,
+                y: 64,
+                width: 64,
+                height: 64,
+            },
+        ];
+        atlas.has_alpha = vec![true, true];
         atlas
     }
 
@@ -5340,6 +5680,38 @@ mod tests {
         assert!((max[1] - 64.8135).abs() < 1e-4);
         assert!((min[2] - 7.0625).abs() < 1e-4);
         assert!((max[2] - 8.769607).abs() < 1e-4);
+    }
+
+    #[test]
+    fn horse_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(horse_entity(0)));
+
+        let mesh = mesh_entity_with_atlas(&horse_data(), &horse_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 72);
+        assert_eq!(mesh.indices.len(), 72 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.652812).abs() < 1e-4);
+        assert!((max[0] - 8.347188).abs() < 1e-4);
+        assert!((min[1] - 64.00179).abs() < 1e-4);
+        assert!((max[1] - 66.32189).abs() < 1e-4);
+        assert!((min[2] - 6.799343).abs() < 1e-4);
+        assert!((max[2] - 9.6199).abs() < 1e-4);
+    }
+
+    #[test]
+    fn horse_markings_layer_uses_translucent_overlay() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(horse_entity(2 << 8)));
+
+        let mesh = mesh_entity_with_atlas(&horse_data(), &horse_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 72);
+        assert_eq!(mesh.translucent_meta.len(), 72);
+        assert!(
+            mesh.vertices[72 * 4..]
+                .iter()
+                .all(|vertex| vertex.uv[1] >= 0.5 - 1e-6)
+        );
     }
 
     #[test]

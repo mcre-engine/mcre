@@ -188,12 +188,13 @@ Storage decisions (locked):
 - [x] Bake static adult temperate/warm pigs, temperate cows, temperate/warm
       chickens, creepers, adult sheep (base plus tinted wool overlay),
       zombies, drowned/husks, skeletons, wild wolves (all nine coat variants),
-      parrots (all five variants), bats, bees, endermen, squids, and spiders
-      into chunk meshes from entity NBT (yaw, variant, age) with the entity
-      atlas textures and block light. (Colored-sheep undercoat, wolf
-      collar/angry overlays, parrot/bat/bee pose/flap animation, angry/nectar
-      bee textures, carried blocks/glowing eyes, tentacle rotation, leg
-      animation, and sitting poses deferred.)
+      parrots (all five variants), bats, bees, endermen, squids, spiders, and
+      horses (all seven coats with markings overlays) into chunk meshes from
+      entity NBT (yaw, variant, age) with the entity atlas textures and block
+      light. (Colored-sheep undercoat, wolf collar/angry overlays,
+      parrot/bat/bee pose/flap animation, angry/nectar bee textures, carried
+      blocks/glowing eyes, tentacle rotation, leg animation, horse
+      saddle/armor/baby models, and sitting poses deferred.)
 - [ ] Decode and render the remaining entity models, animation, movement,
       shadows, and picking.
 
