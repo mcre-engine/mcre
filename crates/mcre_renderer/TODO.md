@@ -189,14 +189,15 @@ Storage decisions (locked):
       chickens, creepers, adult sheep (base plus tinted wool overlay),
       zombies, drowned/husks, skeletons, wild wolves (all nine coat variants),
       parrots (all five variants), bats, bees, endermen, squids, spiders,
-      horses (all seven coats with markings overlays), and chest minecarts
-      (minecart model plus chest display block) into chunk meshes from entity
-      NBT (yaw, variant, age) with the entity atlas textures and block light.
-      (Colored-sheep undercoat, wolf collar/angry overlays, parrot/bat/bee
-      pose/flap animation, angry/nectar bee textures, carried blocks/glowing
-      eyes, tentacle rotation, leg animation, horse saddle/armor/baby models,
-      minecart rail alignment and other minecart variants, and sitting poses
-      deferred.)
+      horses (all seven coats with markings overlays), chest minecarts
+      (minecart model plus chest display block), and falling blocks (baked
+      block model at the entity position) into chunk meshes from entity NBT
+      (yaw, variant, age) with the entity and block atlas textures and block
+      light. (Colored-sheep undercoat, wolf collar/angry overlays,
+      parrot/bat/bee pose/flap animation, angry/nectar bee textures, carried
+      blocks/glowing eyes, tentacle rotation, leg animation, horse
+      saddle/armor/baby models, minecart rail alignment and other minecart
+      variants, and sitting poses deferred.)
 - [ ] Decode and render the remaining entity models, animation, movement,
       shadows, and picking.
 

@@ -314,6 +314,21 @@ def make_smoke_save(path):
             ],
         )
     )
+    falling_block = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:falling_block")
+        + nbt_name(8, "BlockState")
+        + nbt_string_payload("minecraft:sand")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 10.5),
+                struct.pack(">d", 18.0),
+                struct.pack(">d", 6.5),
+            ],
+        )
+    )
     entity_chunk = nbt_compound(
         "",
         nbt_int_array("Position", [0, 0])
@@ -339,6 +354,7 @@ def make_smoke_save(path):
                 spider,
                 horse,
                 chest_minecart,
+                falling_block,
             ],
         ),
     )
@@ -370,11 +386,13 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     )
     files = [
         "blockstates/grass_block.json",
+        "blockstates/sand.json",
         "blockstates/stone.json",
         "models/block/block.json",
         "models/block/cube.json",
         "models/block/cube_all.json",
         "models/block/grass_block.json",
+        "models/block/sand.json",
         "models/block/stone.json",
     ]
     files.extend(
@@ -388,6 +406,7 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
             "grass_block_top",
             "grass_block_side",
             "grass_block_side_overlay",
+            "sand",
             "stone",
         )
     )

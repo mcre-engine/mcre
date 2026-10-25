@@ -9,8 +9,8 @@ use mcre_resource_pack::{
 };
 use mcre_world::shape::{face_boxes, face_shape_is_cube, is_covered};
 use mcre_world::{
-    Biome, Block, BlockState, ChestType, Chunk, DoubleBlockHalf, SECTIONS_PER_CHUNK, WORLD_MIN_Y,
-    World,
+    Biome, Block, BlockState, ChestType, Chunk, DoubleBlockHalf, PropKey, PropVal,
+    SECTIONS_PER_CHUNK, WORLD_MIN_Y, World,
 };
 
 use crate::atlas::{Atlas, AtlasRegion};
@@ -2695,6 +2695,120 @@ fn entity_variant(root: &Tag) -> &str {
         .unwrap_or("minecraft:temperate")
 }
 
+fn parse_block_state(value: &str) -> Option<BlockState> {
+    let value = value.strip_prefix("minecraft:").unwrap_or(value);
+    let (name, props) = match value.split_once('[') {
+        Some((name, rest)) => (name, rest.strip_suffix(']').unwrap_or(rest)),
+        None => (value, ""),
+    };
+    let block = Block::all().find(|block| block.name() == name)?;
+    let props: Vec<PropVal> = props
+        .split(',')
+        .filter(|pair| !pair.is_empty())
+        .filter_map(|pair| {
+            let (key, value) = pair.split_once('=')?;
+            let key = PropKey::ALL
+                .iter()
+                .copied()
+                .find(|prop| prop.as_str() == key)?;
+            PropVal::parse_with_key(key, value)
+        })
+        .collect();
+    block.state(&props)
+}
+
+fn entity_block_state(tag: &Tag) -> Option<BlockState> {
+    match tag {
+        Tag::String(value) => parse_block_state(value),
+        Tag::Compound(fields) => {
+            let name = fields
+                .iter()
+                .find(|(key, _)| key == "Name")
+                .and_then(|(_, value)| value.as_str())?;
+            let name = name.strip_prefix("minecraft:").unwrap_or(name);
+            let block = Block::all().find(|block| block.name() == name)?;
+            let props: Vec<PropVal> = fields
+                .iter()
+                .find(|(key, _)| key == "Properties")
+                .and_then(|(_, value)| value.as_compound())
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(|(key, value)| {
+                            let key = PropKey::ALL
+                                .iter()
+                                .copied()
+                                .find(|prop| prop.as_str() == key)?;
+                            PropVal::parse_with_key(key, value.as_str()?)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            block.state(&props)
+        }
+        _ => None,
+    }
+}
+
+fn mesh_falling_block<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    access: &A,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    block_pos: [i32; 3],
+    state: BlockState,
+) {
+    let Some(entry) = data.entries.get(u16::from(state) as usize) else {
+        return;
+    };
+    let origin = [position[0] - 0.5, position[1], position[2] - 0.5];
+    for_each_variant(entry, block_pos, |variant| {
+        for quad in &variant.quads {
+            let region = atlas.region(quad.texture_id);
+            let base_color = quad_color(data, access, state, block_pos, quad);
+            let (colors, lights) = flat_face(
+                access,
+                quad.direction,
+                block_pos,
+                &quad.vertices,
+                false,
+                state,
+                base_color,
+            );
+            let base = mesh.vertices.len() as u32;
+            for i in 0..4 {
+                let v = &quad.vertices[i];
+                let uv = &quad.uvs[i];
+                mesh.vertices.push(Vertex {
+                    position: [
+                        origin[0] as f32 + v[0] / 16.0,
+                        origin[1] as f32 + v[1] / 16.0,
+                        origin[2] as f32 + v[2] / 16.0,
+                    ],
+                    uv: atlas_uv(region, atlas, uv),
+                    color: colors[i],
+                    light: lights[i],
+                });
+            }
+            let facing = facing_of_cullface(quad.cullface);
+            let pass = if atlas.region_has_alpha(quad.texture_id) {
+                TerrainPass::Cutout
+            } else {
+                TerrainPass::Solid
+            };
+            mesh.indices
+                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            mesh.opaque_meta.push(QuadMeta {
+                facing,
+                pass,
+                block_pos,
+                state,
+            });
+        }
+    });
+}
+
 fn mesh_entities<A: BlockAccess + ?Sized>(
     data: &ResourcePackData,
     atlas: &Atlas,
@@ -3060,6 +3174,20 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
             }
             "minecraft:chest_minecart" => {
                 mesh_minecart(data, atlas, mesh, position, block_pos, light, yaw, true);
+            }
+            "minecraft:falling_block" => {
+                let Some(tag) = root.get("BlockState") else {
+                    continue;
+                };
+                let Some(state) = entity_block_state(tag) else {
+                    continue;
+                };
+                let falling_pos = [
+                    position[0].floor() as i32,
+                    (position[1] + 0.98).floor() as i32,
+                    position[2].floor() as i32,
+                ];
+                mesh_falling_block(data, atlas, access, mesh, position, falling_pos, state);
             }
             "minecraft:sheep" => {
                 emit_entity_layer(
@@ -4036,6 +4164,58 @@ mod tests {
             texture_id: 0,
             cullface,
             direction: cullface.unwrap_or(Direction::Up),
+            tintindex: None,
+            shade: 1.0,
+            light_emission: 0,
+            ambient_occlusion: true,
+        }
+    }
+
+    fn cube_quad(direction: Direction) -> BakedQuadEntry {
+        let vertices = match direction {
+            Direction::Up => [
+                Vec3f::new(0.0, 16.0, 0.0),
+                Vec3f::new(0.0, 16.0, 16.0),
+                Vec3f::new(16.0, 16.0, 16.0),
+                Vec3f::new(16.0, 16.0, 0.0),
+            ],
+            Direction::Down => [
+                Vec3f::new(0.0, 0.0, 0.0),
+                Vec3f::new(16.0, 0.0, 0.0),
+                Vec3f::new(16.0, 0.0, 16.0),
+                Vec3f::new(0.0, 0.0, 16.0),
+            ],
+            Direction::North => [
+                Vec3f::new(0.0, 0.0, 0.0),
+                Vec3f::new(0.0, 16.0, 0.0),
+                Vec3f::new(16.0, 16.0, 0.0),
+                Vec3f::new(16.0, 0.0, 0.0),
+            ],
+            Direction::South => [
+                Vec3f::new(0.0, 0.0, 16.0),
+                Vec3f::new(16.0, 0.0, 16.0),
+                Vec3f::new(16.0, 16.0, 16.0),
+                Vec3f::new(0.0, 16.0, 16.0),
+            ],
+            Direction::West => [
+                Vec3f::new(0.0, 0.0, 0.0),
+                Vec3f::new(0.0, 0.0, 16.0),
+                Vec3f::new(0.0, 16.0, 16.0),
+                Vec3f::new(0.0, 16.0, 0.0),
+            ],
+            Direction::East => [
+                Vec3f::new(16.0, 0.0, 0.0),
+                Vec3f::new(16.0, 16.0, 0.0),
+                Vec3f::new(16.0, 16.0, 16.0),
+                Vec3f::new(16.0, 0.0, 16.0),
+            ],
+        };
+        BakedQuadEntry {
+            vertices,
+            uvs: [[0.0, 0.0]; 4],
+            texture_id: 0,
+            cullface: Some(direction),
+            direction,
             tintindex: None,
             shade: 1.0,
             light_emission: 0,
@@ -5231,6 +5411,18 @@ mod tests {
         data
     }
 
+    fn falling_block_entity(state: &str) -> mcre_world::WorldEntity {
+        let root = Tag::Compound(vec![
+            ("id".into(), Tag::String("minecraft:falling_block".into())),
+            ("BlockState".into(), Tag::String(state.into())),
+        ]);
+        mcre_world::WorldEntity::new(
+            "minecraft:falling_block".into(),
+            [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
     fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
         let root = Tag::Compound(vec![
             ("id".into(), Tag::String("minecraft:parrot".into())),
@@ -5994,6 +6186,35 @@ mod tests {
         let (min, max) = mesh_bounds(&mesh);
         assert!((min[1] - 64.0625).abs() < 1e-4);
         assert!((max[1] - 65.03125).abs() < 1e-4);
+    }
+
+    #[test]
+    fn falling_block_entity_bakes_block_model() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(falling_block_entity("minecraft:stone")));
+
+        let data = stone_data(
+            [
+                Direction::Up,
+                Direction::Down,
+                Direction::North,
+                Direction::South,
+                Direction::East,
+                Direction::West,
+            ]
+            .into_iter()
+            .map(cube_quad)
+            .collect(),
+        );
+        let mesh = mesh_entity_with_atlas(&data, &test_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.5).abs() < 1e-4);
+        assert!((max[0] - 8.5).abs() < 1e-4);
+        assert!((min[1] - 64.0).abs() < 1e-4);
+        assert!((max[1] - 65.0).abs() < 1e-4);
+        assert!((min[2] - 7.5).abs() < 1e-4);
+        assert!((max[2] - 8.5).abs() < 1e-4);
     }
 
     #[test]

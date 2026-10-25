@@ -336,9 +336,10 @@ open.
       chickens, creepers, adult sheep (base plus tinted wool overlay),
       zombies, drowned/husks, skeletons, wild wolves (all nine coat variants),
       parrots (all five variants), bats, bees, endermen, squids, spiders,
-      horses (all seven coats with markings overlays), and chest minecarts
-      (minecart model plus chest display block) into chunk meshes from entity
-      NBT, including yaw, variant, age, entity atlas textures, and block
+      horses (all seven coats with markings overlays), chest minecarts
+      (minecart model plus chest display block), and falling blocks (baked
+      block model at the entity position) into chunk meshes from entity NBT,
+      including yaw, variant, age, entity and block atlas textures, and block
       light. (Undercoat, collar/angry overlays, parrot/bat/bee pose/flap
       animation, angry/nectar bee textures, carried blocks/glowing eyes,
       tentacle rotation, leg animation, horse saddle/armor/baby models,
