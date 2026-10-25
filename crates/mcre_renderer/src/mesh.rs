@@ -1513,6 +1513,97 @@ const WOLF_CUBES: &[EntityCube] = &[
     },
 ];
 
+const PARROT_CUBES: &[EntityCube] = &[
+    EntityCube {
+        offset: [0.0, 16.5, -3.0],
+        rotation_x: 0.4937,
+        texture_origin: [2.0, 8.0],
+        cube: [-1.5, 0.0, -1.5, 3.0, 6.0, 3.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 21.07, 1.16],
+        rotation_x: 1.015,
+        texture_origin: [22.0, 1.0],
+        cube: [-1.5, -1.0, -1.0, 3.0, 4.0, 1.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [1.5, 16.94, -2.76],
+        rotation_x: -0.6981,
+        texture_origin: [19.0, 8.0],
+        cube: [-0.5, 0.0, -1.5, 1.0, 5.0, 3.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.5, 16.94, -2.76],
+        rotation_x: -0.6981,
+        texture_origin: [19.0, 8.0],
+        cube: [-0.5, 0.0, -1.5, 1.0, 5.0, 3.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 15.69, -2.76],
+        rotation_x: 0.0,
+        texture_origin: [2.0, 2.0],
+        cube: [-1.0, -1.5, -1.0, 2.0, 3.0, 2.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 13.69, -3.76],
+        rotation_x: 0.0,
+        texture_origin: [10.0, 0.0],
+        cube: [-1.0, -0.5, -2.0, 2.0, 1.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 15.19, -4.26],
+        rotation_x: 0.0,
+        texture_origin: [11.0, 7.0],
+        cube: [-0.5, -1.0, -0.5, 1.0, 2.0, 1.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 13.94, -5.21],
+        rotation_x: 0.0,
+        texture_origin: [16.0, 7.0],
+        cube: [-0.5, 0.0, -0.5, 1.0, 2.0, 1.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [0.0, 13.54, -2.61],
+        rotation_x: -0.2214,
+        texture_origin: [2.0, 18.0],
+        cube: [0.0, -4.0, -2.0, 0.0, 5.0, 4.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [1.0, 22.0, -1.05],
+        rotation_x: -0.0299,
+        texture_origin: [14.0, 18.0],
+        cube: [-0.5, 0.0, -0.5, 1.0, 2.0, 1.0],
+        growth: 0.0,
+        mirror: false,
+    },
+    EntityCube {
+        offset: [-1.0, 22.0, -1.05],
+        rotation_x: -0.0299,
+        texture_origin: [14.0, 18.0],
+        cube: [-0.5, 0.0, -0.5, 1.0, 2.0, 1.0],
+        growth: 0.0,
+        mirror: false,
+    },
+];
+
 const PIG_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 64.0],
     cubes: PIG_CUBES,
@@ -1556,6 +1647,11 @@ const SKELETON_MODEL: EntityModel = EntityModel {
 const WOLF_MODEL: EntityModel = EntityModel {
     texture_size: [64.0, 32.0],
     cubes: WOLF_CUBES,
+};
+
+const PARROT_MODEL: EntityModel = EntityModel {
+    texture_size: [32.0, 32.0],
+    cubes: PARROT_CUBES,
 };
 
 fn sheep_wool_tint(color: u8) -> [f32; 3] {
@@ -1886,6 +1982,28 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
                     texture_id,
                     "minecraft:entity/wolf/",
                     &WOLF_MODEL,
+                    white,
+                );
+            }
+            "minecraft:parrot" => {
+                let texture_id = match root.get("Variant").and_then(Tag::as_i32).unwrap_or(0) {
+                    1 => data.entity_textures.parrot_blue,
+                    2 => data.entity_textures.parrot_green,
+                    3 => data.entity_textures.parrot_yellow_blue,
+                    4 => data.entity_textures.parrot_grey,
+                    _ => data.entity_textures.parrot_red_blue,
+                };
+                emit_entity_layer(
+                    data,
+                    atlas,
+                    mesh,
+                    position,
+                    block_pos,
+                    light,
+                    yaw,
+                    texture_id,
+                    "minecraft:entity/parrot/",
+                    &PARROT_MODEL,
                     white,
                 );
             }
@@ -3964,6 +4082,29 @@ mod tests {
         data
     }
 
+    fn parrot_data() -> ResourcePackData {
+        let mut data = empty_data();
+        data.texture_table = vec!["minecraft:entity/parrot/parrot_red_blue".into()];
+        data.entity_textures.parrot_red_blue = 0;
+        data
+    }
+
+    fn parrot_entity(variant: i32) -> mcre_world::WorldEntity {
+        let root = Tag::Compound(vec![
+            ("id".into(), Tag::String("minecraft:parrot".into())),
+            (
+                "Rotation".into(),
+                Tag::List(vec![Tag::Float(0.0), Tag::Float(0.0)]),
+            ),
+            ("Variant".into(), Tag::Int(variant)),
+        ]);
+        mcre_world::WorldEntity::new(
+            "minecraft:parrot".into(),
+            [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
     fn wolf_atlas() -> Atlas {
         let mut atlas = test_atlas();
         atlas.width = 64;
@@ -3980,6 +4121,29 @@ mod tests {
                 x: 0,
                 y: 32,
                 width: 64,
+                height: 32,
+            },
+        ];
+        atlas.has_alpha = vec![true, true];
+        atlas
+    }
+
+    fn parrot_atlas() -> Atlas {
+        let mut atlas = test_atlas();
+        atlas.width = 32;
+        atlas.height = 64;
+        atlas.pixels = vec![255; 32 * 64 * 4];
+        atlas.regions = vec![
+            AtlasRegion {
+                x: 0,
+                y: 0,
+                width: 32,
+                height: 32,
+            },
+            AtlasRegion {
+                x: 0,
+                y: 32,
+                width: 32,
                 height: 32,
             },
         ];
@@ -4430,6 +4594,45 @@ mod tests {
         assert!(chunk.set_entity(entity("minecraft:wolf", 0.0, "minecraft:woods")));
 
         let mesh = mesh_entity_with_atlas(&data, &wolf_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 66);
+        assert!(
+            mesh.vertices
+                .iter()
+                .all(|vertex| vertex.uv[1] >= 0.5 - 1e-6)
+        );
+    }
+
+    #[test]
+    fn parrot_entity_bakes_model_into_chunk_mesh() {
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(parrot_entity(0)));
+
+        let mesh = mesh_entity(&parrot_data(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 66);
+        assert_eq!(mesh.indices.len(), 66 * 6);
+        let (min, max) = mesh_bounds(&mesh);
+        assert!((min[0] - 7.875).abs() < 1e-4);
+        assert!((max[0] - 8.125).abs() < 1e-4);
+        assert!((min[1] - 64.00012).abs() < 1e-4);
+        assert!((max[1] - 64.9261).abs() < 1e-4);
+        assert!((min[2] - 7.76822).abs() < 1e-4);
+        assert!((max[2] - 8.44518).abs() < 1e-4);
+    }
+
+    #[test]
+    fn parrot_variant_selects_texture() {
+        let mut data = empty_data();
+        data.texture_table = vec![
+            "minecraft:entity/parrot/parrot_red_blue".into(),
+            "minecraft:entity/parrot/parrot_yellow_blue".into(),
+        ];
+        data.entity_textures.parrot_red_blue = 0;
+        data.entity_textures.parrot_yellow_blue = 1;
+
+        let mut chunk = Chunk::new();
+        assert!(chunk.set_entity(parrot_entity(3)));
+
+        let mesh = mesh_entity_with_atlas(&data, &parrot_atlas(), &chunk);
         assert_eq!(mesh.opaque_meta.len(), 66);
         assert!(
             mesh.vertices

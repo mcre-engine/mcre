@@ -140,6 +140,11 @@ pub struct EntityTextureIds {
     pub wolf_woods: u32,
     pub wolf_chestnut: u32,
     pub wolf_striped: u32,
+    pub parrot_red_blue: u32,
+    pub parrot_blue: u32,
+    pub parrot_green: u32,
+    pub parrot_yellow_blue: u32,
+    pub parrot_grey: u32,
 }
 
 impl EntityTextureIds {
@@ -166,6 +171,11 @@ impl EntityTextureIds {
             wolf_woods: interner.intern("minecraft:entity/wolf/wolf_woods"),
             wolf_chestnut: interner.intern("minecraft:entity/wolf/wolf_chestnut"),
             wolf_striped: interner.intern("minecraft:entity/wolf/wolf_striped"),
+            parrot_red_blue: interner.intern("minecraft:entity/parrot/parrot_red_blue"),
+            parrot_blue: interner.intern("minecraft:entity/parrot/parrot_blue"),
+            parrot_green: interner.intern("minecraft:entity/parrot/parrot_green"),
+            parrot_yellow_blue: interner.intern("minecraft:entity/parrot/parrot_yellow_blue"),
+            parrot_grey: interner.intern("minecraft:entity/parrot/parrot_grey"),
         }
     }
 }

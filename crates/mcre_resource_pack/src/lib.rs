@@ -305,6 +305,26 @@ mod tests {
             path(data.entity_textures.wolf_striped),
             "minecraft:entity/wolf/wolf_striped"
         );
+        assert_eq!(
+            path(data.entity_textures.parrot_red_blue),
+            "minecraft:entity/parrot/parrot_red_blue"
+        );
+        assert_eq!(
+            path(data.entity_textures.parrot_blue),
+            "minecraft:entity/parrot/parrot_blue"
+        );
+        assert_eq!(
+            path(data.entity_textures.parrot_green),
+            "minecraft:entity/parrot/parrot_green"
+        );
+        assert_eq!(
+            path(data.entity_textures.parrot_yellow_blue),
+            "minecraft:entity/parrot/parrot_yellow_blue"
+        );
+        assert_eq!(
+            path(data.entity_textures.parrot_grey),
+            "minecraft:entity/parrot/parrot_grey"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }
