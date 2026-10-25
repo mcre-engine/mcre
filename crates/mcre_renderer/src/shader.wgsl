@@ -20,6 +20,7 @@ struct VertexOutput {
     /// `x` spherical camera distance, `y` cylindrical camera distance.
     @location(3) distance: vec2<f32>,
     @location(4) raw_light: vec2<f32>,
+    @location(5) @interpolate(flat) cutout: u32,
 };
 
 struct Params {
@@ -83,6 +84,7 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instance: u32) -> VertexOut
         max(length(camera_relative_pos.xz), abs(camera_relative_pos.y)),
     );
     out.raw_light = light_uv;
+    out.cutout = in.light_data.z;
     return out;
 }
 
@@ -180,7 +182,7 @@ fn terrain_color(in: VertexOutput, cutout: bool, mip: bool) -> vec4<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return terrain_color(in, true, true);
+    return terrain_color(in, in.cutout != 0u, true);
 }
 
 @fragment

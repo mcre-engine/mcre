@@ -93,6 +93,7 @@ flat-seam-shots: flat-seam-world
   for spec in docs/shots/flat-seam-*.json; do
     cargo run -r -p mcre_renderer --example viewer -- --shot "$spec"
   done
+  python3 tasks/gen_world/check_flat_seam.py
 
 # Decompile Minecraft client jar to Java source code (output in target/mc-src/)
 [unix]

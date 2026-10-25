@@ -374,6 +374,7 @@ pub struct QuadEncodeInput {
     pub block_pos: [i32; 3],
     pub state_id: u16,
     pub translucent: bool,
+    pub cutout: bool,
     pub emission: u8,
     pub section_id: u8,
 }
@@ -412,7 +413,7 @@ pub fn encode_quad(input: &QuadEncodeInput) -> [TerrainVertex; 4] {
         let light_data = pack_light_data(
             encode_lightmap_coord(input.light[i][0]),
             encode_lightmap_coord(input.light[i][1]),
-            0,
+            u8::from(input.cutout),
             input.section_id,
         );
         let mid = compute_mid_block(input.positions[i], input.block_pos);
@@ -640,6 +641,7 @@ mod tests {
             block_pos: [1, 2, 3],
             state_id: 7,
             translucent: true,
+            cutout: false,
             emission: 3,
             section_id: 9,
         };
@@ -673,10 +675,12 @@ mod tests {
             block_pos: [0, 0, 0],
             state_id: 0,
             translucent: false,
+            cutout: true,
             emission: 0,
             section_id: 0,
         };
         let vertices = encode_quad(&input);
+        assert!(vertices.iter().all(|vertex| vertex.light_data[2] == 1));
         assert_eq!(
             vertices[0].normal_tangent,
             pack_norm_i8(0.5, 1.0, 1.0, 0.75)
