@@ -4,11 +4,11 @@ use alloc::{
     boxed::Box,
     vec::{self, Vec},
 };
-use mcre_core::Vec4f;
+use mcre_core::Direction;
 use mcre_world::{BlockState, PropFilter, PropVal};
 use serde::{Deserialize, Deserializer};
 
-use crate::BlockModelId;
+use crate::{BakedQuad, BlockModelId};
 
 /// Represents a single variant entry from the "variants" map.
 #[derive(Debug, Clone)]
@@ -101,28 +101,176 @@ pub enum Condition {
 }
 
 impl RotationDegrees {
-    pub fn rotate_uv(self, uv: Vec4f) -> Vec4f {
-        let [u1, v1, u2, v2] = *uv;
-
-        // UV corners in Minecraft order:
-        // 0 = top-left, 1 = top-right, 2 = bottom-right, 3 = bottom-left
-        // but you can treat them as a loop
-        let mut pts = [(u1, v1), (u2, v1), (u2, v2), (u1, v2)];
-
+    pub fn quadrant(self) -> usize {
         match self {
-            Self::R0 => {}
-            Self::R90 => pts.rotate_right(1), // 1-step rotate
-            Self::R180 => pts.rotate_right(2),
-            Self::R270 => pts.rotate_right(3),
+            Self::R0 => 0,
+            Self::R90 => 1,
+            Self::R180 => 2,
+            Self::R270 => 3,
+        }
+    }
+
+    fn degrees(self) -> f32 {
+        match self {
+            Self::R0 => 0.0,
+            Self::R90 => 90.0,
+            Self::R180 => 180.0,
+            Self::R270 => 270.0,
+        }
+    }
+}
+
+type Mat3 = [[f32; 3]; 3];
+
+const IDENTITY: Mat3 = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+fn mat3_mul(a: &Mat3, b: &Mat3) -> Mat3 {
+    let mut out = [[0.0; 3]; 3];
+    for (i, row) in out.iter_mut().enumerate() {
+        for (j, cell) in row.iter_mut().enumerate() {
+            *cell = (0..3).map(|k| a[i][k] * b[k][j]).sum();
+        }
+    }
+    out
+}
+
+fn mat3_apply(m: &Mat3, v: [f32; 3]) -> [f32; 3] {
+    [
+        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+    ]
+}
+
+fn mat3_transpose(m: &Mat3) -> Mat3 {
+    [
+        [m[0][0], m[1][0], m[2][0]],
+        [m[0][1], m[1][1], m[2][1]],
+        [m[0][2], m[1][2], m[2][2]],
+    ]
+}
+
+fn snapped_sin_cos(degrees: f32) -> (f32, f32) {
+    // No float methods in `no_std` on this toolchain: libm instead.
+    // Cardinal angles stay bit-exact; general angles match platform trig
+    // within 1 ulp (good enough for model rotations).
+    let bent = degrees - 360.0 * libm::floorf(degrees / 360.0);
+    if libm::fabsf(bent) < 1e-6 {
+        (0.0, 1.0)
+    } else if libm::fabsf(bent - 90.0) < 1e-6 {
+        (1.0, 0.0)
+    } else if libm::fabsf(bent - 180.0) < 1e-6 {
+        (0.0, -1.0)
+    } else if libm::fabsf(bent - 270.0) < 1e-6 {
+        (-1.0, 0.0)
+    } else {
+        let radians = degrees * (core::f32::consts::PI / 180.0);
+        (libm::sinf(radians), libm::cosf(radians))
+    }
+}
+
+fn rot_x(degrees: f32) -> Mat3 {
+    let (sin, cos) = snapped_sin_cos(degrees);
+    [[1.0, 0.0, 0.0], [0.0, cos, -sin], [0.0, sin, cos]]
+}
+
+fn rot_y(degrees: f32) -> Mat3 {
+    let (sin, cos) = snapped_sin_cos(degrees);
+    [[cos, 0.0, sin], [0.0, 1.0, 0.0], [-sin, 0.0, cos]]
+}
+
+fn rot_z(degrees: f32) -> Mat3 {
+    let (sin, cos) = snapped_sin_cos(degrees);
+    [[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]]
+}
+
+fn dir_unit(dir: Direction) -> [f32; 3] {
+    match dir {
+        Direction::Down => [0.0, -1.0, 0.0],
+        Direction::Up => [0.0, 1.0, 0.0],
+        Direction::North => [0.0, 0.0, -1.0],
+        Direction::South => [0.0, 0.0, 1.0],
+        Direction::West => [-1.0, 0.0, 0.0],
+        Direction::East => [1.0, 0.0, 0.0],
+    }
+}
+
+fn local_to_global(dir: Direction) -> Mat3 {
+    match dir {
+        Direction::South => IDENTITY,
+        Direction::East => rot_y(90.0),
+        Direction::West => rot_y(-90.0),
+        Direction::North => rot_y(180.0),
+        Direction::Up => rot_x(-90.0),
+        Direction::Down => rot_x(90.0),
+    }
+}
+
+fn closest_direction(v: [f32; 3]) -> Direction {
+    let mut best = Direction::South;
+    let mut best_dot = f32::NEG_INFINITY;
+    for dir in Direction::ALL {
+        let u = dir_unit(dir);
+        let dot = v[0] * u[0] + v[1] * u[1] + v[2] * u[2];
+        if dot > best_dot {
+            best_dot = dot;
+            best = dir;
+        }
+    }
+    best
+}
+
+impl ModelVariant {
+    pub fn transform_quads(&self, quads: &mut [BakedQuad]) {
+        let rotation = self.model_rotation();
+        if rotation == IDENTITY {
+            return;
         }
 
-        // After rotation, recompute bounding box
-        let min_u = pts.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
-        let max_u = pts.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max);
-        let min_v = pts.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
-        let max_v = pts.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max);
+        let center = [8.0, 8.0, 8.0];
+        for quad in quads {
+            for vertex in &mut quad.vertices {
+                let rel = [
+                    vertex[0] - center[0],
+                    vertex[1] - center[1],
+                    vertex[2] - center[2],
+                ];
+                let rotated = mat3_apply(&rotation, rel);
+                vertex[0] = rotated[0] + center[0];
+                vertex[1] = rotated[1] + center[1];
+                vertex[2] = rotated[2] + center[2];
+            }
 
-        Vec4f::new(min_u, min_v, max_u, max_v)
+            quad.direction = closest_direction(mat3_apply(&rotation, dir_unit(quad.direction)));
+            if let Some(cullface) = quad.cullface {
+                quad.cullface = Some(closest_direction(mat3_apply(&rotation, dir_unit(cullface))));
+            }
+
+            if self.uvlock {
+                let uv_transform = Self::uv_transform(rotation, quad.direction);
+                for uv in &mut quad.uvs {
+                    let rel = [uv[0] - 8.0, uv[1] - 8.0, 0.0];
+                    let rotated = mat3_apply(&uv_transform, rel);
+                    uv[0] = rotated[0] + 8.0;
+                    uv[1] = rotated[1] + 8.0;
+                }
+            }
+        }
+    }
+
+    fn model_rotation(&self) -> Mat3 {
+        let x = rot_x(-self.x.degrees());
+        let y = rot_y(-self.y.degrees());
+        let z = rot_z(-self.z.degrees());
+        mat3_mul(&z, &mat3_mul(&y, &x))
+    }
+
+    fn uv_transform(rotation: Mat3, face: Direction) -> Mat3 {
+        let face_action = mat3_mul(&rotation, &local_to_global(face));
+        let normal = mat3_apply(&face_action, [0.0, 0.0, 1.0]);
+        let new_side = closest_direction(normal);
+        let face_mapping = mat3_mul(&mat3_transpose(&local_to_global(new_side)), &face_action);
+        mat3_transpose(&face_mapping)
     }
 }
 
@@ -286,6 +434,23 @@ mod tests {
                 ),
             }
         }
+    }
+
+    #[test]
+    fn quadrant_rotations_use_exact_trig() {
+        use super::snapped_sin_cos;
+        assert_eq!(snapped_sin_cos(0.0), (0.0, 1.0));
+        assert_eq!(snapped_sin_cos(90.0), (1.0, 0.0));
+        assert_eq!(snapped_sin_cos(180.0), (0.0, -1.0));
+        assert_eq!(snapped_sin_cos(270.0), (-1.0, 0.0));
+        assert_eq!(snapped_sin_cos(-90.0), (-1.0, 0.0));
+        assert_eq!(snapped_sin_cos(-180.0), (0.0, -1.0));
+        // Non-cardinal angles go through libm, whose rounding can differ
+        // from platform trig by 1 ulp; compare approximately.
+        let (sin, cos) = snapped_sin_cos(45.0);
+        let (expected_sin, expected_cos) = 45.0_f32.to_radians().sin_cos();
+        assert!((sin - expected_sin).abs() < 1e-6);
+        assert!((cos - expected_cos).abs() < 1e-6);
     }
 }
 

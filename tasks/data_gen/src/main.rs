@@ -4,21 +4,259 @@ use indexmap::IndexMap;
 use jni::{
     Env, JValue, jni_sig, jni_str,
     objects::{JObject, JString},
+    strings::JNIString,
 };
 use mcje::{get_registry, iterate};
 use mcre_core::OffsetType;
 use mcre_data::{
+    biome::{Biome, GrassColorModifier},
     block::{Block, BlockStateField, BlockStateFieldValues},
+    shape::OcclusionShape,
     state::{BlockState, StateValue},
 };
 
 const BLOCK_DATA_PATH: &str = "crates/mcre_data/blocks.json";
 const BLOCK_STATE_DATA_PATH: &str = "crates/mcre_data/block_states.json";
+const BIOME_DATA_PATH: &str = "crates/mcre_data/biomes.json";
+const SHAPE_DATA_PATH: &str = "crates/mcre_data/shapes.json";
+
+const ICE_TAG: &str = "face_occluding_ice_blocks";
+const BARS_TAG: &str = "bars";
+const LEAVES_TAG: &str = "leaves";
+const FLUID_FLOW_TAG: &str = "blocks_fluid_flow";
+
+fn read_block_tag(jar_version: &str, root: &std::path::Path, tag: &str) -> Option<Vec<String>> {
+    let jar_path = root
+        .join("target/downloads")
+        .join(jar_version)
+        .join("mc.jar");
+    let file = std::fs::File::open(&jar_path).ok()?;
+    let mut archive = zip::ZipArchive::new(file).ok()?;
+    let mut members = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    resolve_block_tag(&mut archive, tag, &mut members, &mut visited)?;
+    Some(members)
+}
+
+/// Resolves a vanilla block tag from the game jar. The jar is mandatory when
+/// the generator runs, so a missing tag is a version-bump failure, not
+/// something to paper over with a hardcoded list.
+fn block_tag_members(tag: &str) -> Vec<String> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../");
+    let version = fs::read_to_string(root.join("mc-version"))
+        .unwrap_or_else(|err| panic!("failed to read mc-version: {err}"))
+        .trim()
+        .to_string();
+    let jar_path = root.join("target/downloads").join(&version).join("mc.jar");
+    read_block_tag(&version, &root, tag).unwrap_or_else(|| {
+        panic!(
+            "failed to resolve block tag {tag:?} from {}",
+            jar_path.display()
+        )
+    })
+}
+
+fn resolve_block_tag(
+    archive: &mut zip::ZipArchive<std::fs::File>,
+    tag: &str,
+    members: &mut Vec<String>,
+    visited: &mut std::collections::HashSet<String>,
+) -> Option<()> {
+    if !visited.insert(tag.to_string()) {
+        return Some(());
+    }
+    let mut entry = archive
+        .by_name(&format!("data/minecraft/tags/block/{tag}.json"))
+        .ok()?;
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut entry, &mut text).ok()?;
+    drop(entry);
+    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let values = json.get("values")?.as_array()?;
+    let names = values
+        .iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .collect::<Vec<_>>();
+    for name in names {
+        if let Some(name) = name.strip_prefix('#') {
+            let name = name.strip_prefix("minecraft:").unwrap_or(name);
+            resolve_block_tag(archive, name, members, visited);
+        } else if let Some(name) = name.strip_prefix("minecraft:") {
+            members.push(name.to_string());
+        } else {
+            members.push(name);
+        }
+    }
+    Some(())
+}
+
+fn direction<'a>(env: &mut Env<'a>, name: &str) -> JObject<'a> {
+    let jni_name = JNIString::new(name);
+    env.get_static_field(
+        jni_str!("net/minecraft/core/Direction"),
+        &jni_name,
+        jni_sig!("Lnet/minecraft/core/Direction;"),
+    )
+    .unwrap()
+    .l()
+    .unwrap()
+}
+
+fn fluid_name<'a>(
+    state: &JObject<'a>,
+    fluid_registry: &JObject<'a>,
+    env: &mut Env<'a>,
+) -> Option<String> {
+    let fluid_state = env
+        .call_method(
+            state,
+            jni_str!("getFluidState"),
+            jni_sig!("()Lnet/minecraft/world/level/material/FluidState;"),
+            &[],
+        )
+        .unwrap()
+        .l()
+        .unwrap();
+
+    let empty = env
+        .call_method(&fluid_state, jni_str!("isEmpty"), jni_sig!("()Z"), &[])
+        .unwrap()
+        .z()
+        .unwrap();
+    if empty {
+        return None;
+    }
+
+    let fluid = env
+        .call_method(
+            &fluid_state,
+            jni_str!("getType"),
+            jni_sig!("()Lnet/minecraft/world/level/material/Fluid;"),
+            &[],
+        )
+        .unwrap()
+        .l()
+        .unwrap();
+
+    let identifier = env
+        .call_method(
+            fluid_registry,
+            jni_str!("getKey"),
+            jni_sig!("(Ljava/lang/Object;)Lnet/minecraft/resources/Identifier;"),
+            &[JValue::Object(&fluid)],
+        )
+        .unwrap()
+        .l()
+        .unwrap();
+
+    Some(get_identifier_path(&identifier, env))
+}
+
+fn skip_rendering<'a>(
+    state: &JObject<'a>,
+    neighbor: &JObject<'a>,
+    dir: &JObject<'a>,
+    env: &mut Env<'a>,
+) -> bool {
+    env.call_method(
+        state,
+        jni_str!("skipRendering"),
+        jni_sig!(
+            "(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/Direction;)Z"
+        ),
+        &[JValue::Object(neighbor), JValue::Object(dir)],
+    )
+    .unwrap()
+    .z()
+    .unwrap()
+}
 
 #[mcje::main]
 async fn main(env: &mut Env<'_>) {
     generate_block_data(env);
     generate_block_state_data(env);
+    generate_biome_data();
+}
+
+fn parse_hex_color(json: &serde_json::Value) -> Option<[u8; 3]> {
+    let hex = json.as_str()?.strip_prefix('#')?;
+    let rgb = u32::from_str_radix(hex, 16).ok()?;
+    Some([
+        ((rgb >> 16) & 0xFF) as u8,
+        ((rgb >> 8) & 0xFF) as u8,
+        (rgb & 0xFF) as u8,
+    ])
+}
+
+fn generate_biome_data() {
+    println!("[DEBUG] Generating biome data");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../");
+    let version = fs::read_to_string(root.join("mc-version"))
+        .map(|s| s.trim().to_string())
+        .expect("mc-version readable");
+    let jar_path = root.join("target/downloads").join(&version).join("mc.jar");
+    let file = std::fs::File::open(&jar_path).expect("mc.jar readable");
+    let mut archive = zip::ZipArchive::new(file).expect("mc.jar is a zip");
+
+    let mut names: Vec<String> = archive
+        .file_names()
+        .filter_map(|name| {
+            let name = name.ok()?;
+            name.strip_prefix("data/minecraft/worldgen/biome/")
+                .and_then(|rest| rest.strip_suffix(".json"))
+                .map(str::to_string)
+        })
+        .collect();
+    names.sort();
+
+    let mut biomes = Vec::with_capacity(names.len());
+    for (id, name) in names.iter().enumerate() {
+        let path = format!("data/minecraft/worldgen/biome/{name}.json");
+        let mut entry = archive.by_name(&path).expect("biome entry readable");
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut entry, &mut text).expect("biome entry text");
+        let json: serde_json::Value = serde_json::from_str(&text).expect("biome json parses");
+        let effects = json.get("effects").expect("biome effects present");
+        biomes.push(Biome {
+            id: id as u16,
+            name: name.clone(),
+            temperature: json
+                .get("temperature")
+                .and_then(|v| v.as_f64())
+                .expect("biome temperature") as f32,
+            downfall: json
+                .get("downfall")
+                .and_then(|v| v.as_f64())
+                .expect("biome downfall") as f32,
+            has_precipitation: json
+                .get("has_precipitation")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+            water_color: effects
+                .get("water_color")
+                .and_then(parse_hex_color)
+                .expect("biome water_color"),
+            foliage_color_override: effects.get("foliage_color").and_then(parse_hex_color),
+            dry_foliage_color_override: effects.get("dry_foliage_color").and_then(parse_hex_color),
+            grass_color_override: effects.get("grass_color").and_then(parse_hex_color),
+            grass_color_modifier: match effects.get("grass_color_modifier").and_then(|v| v.as_str())
+            {
+                None => GrassColorModifier::None,
+                Some("dark_forest") => GrassColorModifier::DarkForest,
+                Some("swamp") => GrassColorModifier::Swamp,
+                Some(other) => panic!("unknown grass_color_modifier: {other}"),
+            },
+        });
+    }
+    println!("[DEBUG] Done! {} biomes", biomes.len());
+
+    let json_string = serde_json::to_string_pretty(&biomes).unwrap();
+    let root = env!("CARGO_MANIFEST_DIR");
+    let root = PathBuf::from(root);
+    let data_path = root.join("../../").join(BIOME_DATA_PATH);
+    fs::write(&data_path, json_string).unwrap();
+
+    println!("[DEBUG] Biome data saved to `{BIOME_DATA_PATH}`");
 }
 
 fn generate_block_data<'a>(env: &mut Env<'a>) {
@@ -38,6 +276,25 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
     let mut blocks = Vec::new();
 
     let mut block_state_id_counter = 0u16;
+
+    // `IceBlock.skipRendering` is the only override that consults the
+    // `face_occluding_ice_blocks` tag, so `instanceof IceBlock` exactly detects
+    // blocks that skip rendering against tag members.
+    let ice_class = env
+        .find_class(jni_str!("net/minecraft/world/level/block/IceBlock"))
+        .unwrap();
+    let leaves_class = env
+        .find_class(jni_str!("net/minecraft/world/level/block/LeavesBlock"))
+        .unwrap();
+    let half_transparent_class = env
+        .find_class(jni_str!(
+            "net/minecraft/world/level/block/HalfTransparentBlock"
+        ))
+        .unwrap();
+    let ice_tag_members = block_tag_members(ICE_TAG);
+    let bars_tag_members = block_tag_members(BARS_TAG);
+    let fluid_flow_tag_members = block_tag_members(FLUID_FLOW_TAG);
+    let fluid_registry = get_registry(env, "FLUID", "DefaultedRegistry");
 
     iterate(&block_registry, env, |i, block, env| {
         let display_name = get_block_display_name(env, &block);
@@ -269,6 +526,37 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
             .f()
             .unwrap();
 
+        let liquid = env
+            .call_method(&default_state, jni_str!("liquid"), jni_sig!("()Z"), &[])
+            .unwrap()
+            .z()
+            .unwrap();
+        let liquid_fluid = if liquid {
+            fluid_name(&default_state, &fluid_registry, env)
+        } else {
+            None
+        };
+
+        let is_ice = env.is_instance_of(&block, &ice_class).unwrap();
+        let half_transparent = env.is_instance_of(&block, &half_transparent_class).unwrap();
+        let blocks_fluid_flow = fluid_flow_tag_members.contains(&name);
+
+        let skip_against_tags = if env.is_instance_of(&block, &ice_class).unwrap() {
+            vec![ICE_TAG.to_string()]
+        } else {
+            Vec::new()
+        };
+        let mut culling_tags = Vec::new();
+        if ice_tag_members.contains(&name) {
+            culling_tags.push(ICE_TAG.to_string());
+        }
+        if bars_tag_members.contains(&name) {
+            culling_tags.push(BARS_TAG.to_string());
+        }
+        if env.is_instance_of(&block, &leaves_class).unwrap() {
+            culling_tags.push(LEAVES_TAG.to_string());
+        }
+
         blocks.push(Block {
             id: i as u16,
             name,
@@ -296,6 +584,12 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
             offset_type,
             max_horizontal_offset,
             max_vertical_offset,
+            liquid_fluid,
+            is_ice,
+            half_transparent,
+            blocks_fluid_flow,
+            skip_against_tags,
+            culling_tags,
         });
     });
     println!("[DEBUG] Done!");
@@ -312,6 +606,7 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
 fn generate_block_state_data<'a>(env: &mut Env<'a>) {
     println!("[DEBUG] Generating block state data");
     let block_registry = get_registry(env, "BLOCK", "DefaultedRegistry");
+    let fluid_registry = get_registry(env, "FLUID", "DefaultedRegistry");
 
     let block_state_registry = env
         .get_static_field(
@@ -322,6 +617,53 @@ fn generate_block_state_data<'a>(env: &mut Env<'a>) {
         .unwrap()
         .l()
         .unwrap();
+
+    let empty_getter = env
+        .get_static_field(
+            jni_str!("net/minecraft/world/level/EmptyBlockGetter"),
+            jni_str!("INSTANCE"),
+            jni_sig!("Lnet/minecraft/world/level/EmptyBlockGetter;"),
+        )
+        .unwrap()
+        .l()
+        .unwrap();
+
+    let block_pos_zero = env
+        .get_static_field(
+            jni_str!("net/minecraft/core/BlockPos"),
+            jni_str!("ZERO"),
+            jni_sig!("Lnet/minecraft/core/BlockPos;"),
+        )
+        .unwrap()
+        .l()
+        .unwrap();
+
+    let directions = [
+        direction(env, "DOWN"),
+        direction(env, "UP"),
+        direction(env, "NORTH"),
+        direction(env, "SOUTH"),
+        direction(env, "WEST"),
+        direction(env, "EAST"),
+    ];
+    for (i, dir) in directions.iter().enumerate() {
+        let idx = env
+            .call_method(dir, jni_str!("get3DDataValue"), jni_sig!("()I"), &[])
+            .unwrap()
+            .i()
+            .unwrap();
+        assert_eq!(idx as usize, i, "vanilla Direction order mismatch");
+    }
+
+    let mut ctx = StateGenCtx {
+        block_registry,
+        fluid_registry,
+        empty_getter,
+        block_pos_zero,
+        directions,
+        shapes: std::collections::HashMap::new(),
+        shape_list: Vec::new(),
+    };
 
     let mut block_state = env
         .call_method(
@@ -339,7 +681,7 @@ fn generate_block_state_data<'a>(env: &mut Env<'a>) {
     let mut states = Vec::new();
 
     while !block_state.is_null() {
-        let state = process_block_state(&block_registry, block_state_id, &block_state, env);
+        let state = process_block_state(&mut ctx, block_state_id, &block_state, env);
         states.push(state);
         block_state_id += 1;
         block_state = env
@@ -366,10 +708,32 @@ fn generate_block_state_data<'a>(env: &mut Env<'a>) {
         "[DEBUG] Block state data saved to `{}`",
         BLOCK_STATE_DATA_PATH
     );
+
+    let shapes: Vec<OcclusionShape> = ctx
+        .shape_list
+        .into_iter()
+        .map(|boxes| OcclusionShape { boxes })
+        .collect();
+    println!("[DEBUG] {} distinct occlusion shapes", shapes.len());
+    let json_string = serde_json::to_string_pretty(&shapes).unwrap();
+    let data_path = root.join("../../").join(SHAPE_DATA_PATH);
+    fs::write(&data_path, json_string).unwrap();
+
+    println!("[DEBUG] Shape data saved to `{SHAPE_DATA_PATH}`");
+}
+
+struct StateGenCtx<'a> {
+    block_registry: JObject<'a>,
+    fluid_registry: JObject<'a>,
+    empty_getter: JObject<'a>,
+    block_pos_zero: JObject<'a>,
+    directions: [JObject<'a>; 6],
+    shapes: std::collections::HashMap<Vec<[u64; 6]>, u16>,
+    shape_list: Vec<Vec<[f64; 6]>>,
 }
 
 fn process_block_state<'a>(
-    block_registry: &JObject<'a>,
+    ctx: &mut StateGenCtx<'a>,
     id: u16,
     block_state: &JObject<'a>,
     env: &mut Env<'a>,
@@ -386,7 +750,7 @@ fn process_block_state<'a>(
 
     let block_id: u16 = env
         .call_method(
-            block_registry,
+            &ctx.block_registry,
             jni_str!("getId"),
             jni_sig!("(Ljava/lang/Object;)I"),
             &[JValue::Object(&block)],
@@ -396,8 +760,6 @@ fn process_block_state<'a>(
         .unwrap()
         .try_into()
         .unwrap();
-
-    let block_name = get_block_name(&block, block_registry, env);
 
     let light_emission: u8 = env
         .get_field(block_state, jni_str!("lightEmission"), jni_sig!("I"))
@@ -447,20 +809,175 @@ fn process_block_state<'a>(
         .z()
         .unwrap();
 
+    let mut self_skip = 0u8;
+    for (i, dir) in ctx.directions.iter().enumerate() {
+        if skip_rendering(block_state, block_state, dir, env) {
+            self_skip |= 1 << i;
+        }
+    }
+
+    let mut face_sturdy = 0u8;
+    for (i, dir) in ctx.directions.iter().enumerate() {
+        let sturdy = env
+            .call_method(
+                block_state,
+                jni_str!("isFaceSturdy"),
+                jni_sig!("(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/Direction;)Z"),
+                &[
+                    JValue::Object(&ctx.empty_getter),
+                    JValue::Object(&ctx.block_pos_zero),
+                    JValue::Object(dir),
+                ],
+            )
+            .unwrap()
+            .z()
+            .unwrap();
+        if sturdy {
+            face_sturdy |= 1 << i;
+        }
+    }
+
+    let collision_full = env
+        .call_method(
+            block_state,
+            jni_str!("isCollisionShapeFullBlock"),
+            jni_sig!("(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)Z"),
+            &[
+                JValue::Object(&ctx.empty_getter),
+                JValue::Object(&ctx.block_pos_zero),
+            ],
+        )
+        .unwrap()
+        .z()
+        .unwrap();
+
+    let shade_brightness = env
+        .call_method(
+            block_state,
+            jni_str!("getShadeBrightness"),
+            jni_sig!("(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)F"),
+            &[
+                JValue::Object(&ctx.empty_getter),
+                JValue::Object(&ctx.block_pos_zero),
+            ],
+        )
+        .unwrap()
+        .f()
+        .unwrap();
+
+    let solid = env
+        .get_field(block_state, jni_str!("legacySolid"), jni_sig!("Z"))
+        .unwrap()
+        .z()
+        .unwrap();
+
+    let fluid = fluid_name(block_state, &ctx.fluid_registry, env);
+
+    let occlusion_shape = occlusion_shape_id(block_state, ctx, env);
+
+    let emissive_rendering = env
+        .call_method(
+            block_state,
+            jni_str!("emissiveRendering"),
+            jni_sig!("()Z"),
+            &[],
+        )
+        .unwrap()
+        .z()
+        .unwrap();
+
     let state_values = get_state_values(block_state, env);
 
     BlockState {
         id,
         block_id,
-        block_name,
         light_emission,
         use_shape_for_light_occlusion,
         propagates_skylight_down,
         light_dampening,
         solid_render,
         is_randomly_ticking,
+        self_skip,
+        face_sturdy,
+        collision_full,
+        shade_brightness,
+        solid,
+        fluid,
+        occlusion_shape,
+        emissive_rendering,
         state_values,
     }
+}
+
+fn occlusion_shape_id<'a>(
+    block_state: &JObject<'a>,
+    ctx: &mut StateGenCtx<'a>,
+    env: &mut Env<'a>,
+) -> u16 {
+    let shape = env
+        .call_method(
+            block_state,
+            jni_str!("getOcclusionShape"),
+            jni_sig!("()Lnet/minecraft/world/phys/shapes/VoxelShape;"),
+            &[],
+        )
+        .unwrap()
+        .l()
+        .unwrap();
+    let aabbs = env
+        .call_method(
+            &shape,
+            jni_str!("toAabbs"),
+            jni_sig!("()Ljava/util/List;"),
+            &[],
+        )
+        .unwrap()
+        .l()
+        .unwrap();
+    let mut boxes = Vec::new();
+    iterate(&aabbs, env, |_, aabb, env| {
+        let mut field = |name: &str| {
+            let jni_name = JNIString::new(name);
+            env.get_field(&aabb, &jni_name, jni_sig!("D"))
+                .unwrap()
+                .d()
+                .unwrap()
+                + 0.0
+        };
+        boxes.push([
+            field("minX"),
+            field("minY"),
+            field("minZ"),
+            field("maxX"),
+            field("maxY"),
+            field("maxZ"),
+        ]);
+    });
+    boxes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let key: Vec<[u64; 6]> = boxes
+        .iter()
+        .map(|b| {
+            [
+                b[0].to_bits(),
+                b[1].to_bits(),
+                b[2].to_bits(),
+                b[3].to_bits(),
+                b[4].to_bits(),
+                b[5].to_bits(),
+            ]
+        })
+        .collect();
+    if let Some(id) = ctx.shapes.get(&key) {
+        return *id;
+    }
+    let id = ctx.shape_list.len() as u16;
+    assert!(
+        ctx.shape_list.len() < u16::MAX as usize,
+        "too many distinct occlusion shapes"
+    );
+    ctx.shapes.insert(key, id);
+    ctx.shape_list.push(boxes);
+    id
 }
 
 pub fn determine_offset_type(block_state: &JObject, env: &mut Env) -> OffsetType {

@@ -48,6 +48,10 @@ impl StringInterner {
         self.strings.get(id as usize).map(|s| s.as_ref())
     }
 
+    pub fn get(&self, s: &str) -> Option<u32> {
+        self.map.get(s).copied()
+    }
+
     /// Resolves an ID back to its string.
     ///
     /// # Panics

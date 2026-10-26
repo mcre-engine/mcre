@@ -1,0 +1,17 @@
+[package]
+name = "mcre_shot"
+version = "0.1.0"
+description = "Shared parity-shot spec: one camera/environment description for the mcre and vanilla screenshot pipelines"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+categories.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }

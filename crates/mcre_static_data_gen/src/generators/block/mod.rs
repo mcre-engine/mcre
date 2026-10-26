@@ -6,7 +6,9 @@ use crate::{
 };
 
 use mcre_data::block::Block;
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub struct BlockScope<'a> {
     pub blocks: &'a [Block],
@@ -38,11 +40,14 @@ pub struct BlockRootUnit<'a> {
 impl UnitGen for BlockRootUnit<'_> {
     fn generate(&self, _analysis: &Analysis) -> Unit {
         let max = self.blocks.last().unwrap().id;
+        let tag_union = tag_union(self.blocks);
+        let skip_arms = tag_arms(self.blocks, |block| &block.skip_against_tags, &tag_union);
+        let cull_arms = tag_arms(self.blocks, |block| &block.culling_tags, &tag_union);
         let code = quote! {
             mod data;
             mod consts;
 
-            use crate::{BlockState, FieldKey};
+            use crate::{BlockState, FieldKey, PropKey, PropVal};
             use mcre_core::OffsetType;
             use serde::{Serialize, Deserialize};
 
@@ -88,6 +93,31 @@ impl UnitGen for BlockRootUnit<'_> {
 
                 pub fn max_state(self) -> BlockState {
                     data::max_state::get(self.0).into()
+                }
+
+                pub fn state(self, props: &[PropVal]) -> Option<BlockState> {
+                    let default = self.default_state();
+
+                    for prop in props {
+                        default.get_prop(prop.key())?;
+                    }
+
+                    if props.is_empty() {
+                        return Some(default);
+                    }
+
+                    let max = u16::from(self.max_state());
+                    let mut id = u16::from(self.min_state());
+                    loop {
+                        let state = BlockState::from(id);
+                        if state_matches_props(state, props, default) {
+                            return Some(state);
+                        }
+                        if id == max {
+                            return None;
+                        }
+                        id += 1;
+                    }
                 }
 
                 pub fn is_field_present(self, field: FieldKey) -> bool {
@@ -171,9 +201,66 @@ impl UnitGen for BlockRootUnit<'_> {
                     data::max_vertical_offset::get(self.0)
                 }
 
+                pub fn liquid_fluid(self) -> Option<&'static str> {
+                    let fluid = data::liquid_fluid::get(self.0);
+                    if fluid.is_empty() {
+                        None
+                    } else {
+                        Some(fluid)
+                    }
+                }
+
+        pub fn is_ice(self) -> bool {
+            data::is_ice::get(self.0)
+        }
+
+        pub fn half_transparent(self) -> bool {
+            data::half_transparent::get(self.0)
+        }
+
+        pub fn blocks_fluid_flow(self) -> bool {
+            data::blocks_fluid_flow::get(self.0)
+        }
+
+                pub fn skip_against_tags(self) -> &'static [&'static str] {
+                    match data::skip_against_tags::get(self.0) {
+                        #( #skip_arms, )*
+                        _ => &[],
+                    }
+                }
+
+                pub fn culling_tags(self) -> &'static [&'static str] {
+                    match data::culling_tags::get(self.0) {
+                        #( #cull_arms, )*
+                        _ => &[],
+                    }
+                }
+
                 pub fn all() -> impl Iterator<Item = Self> {
                     BlockIter::new(Block(0), Self::MAX)
                 }
+            }
+
+            fn state_matches_props(state: BlockState, props: &[PropVal], default: BlockState) -> bool {
+                for prop in props {
+                    if state.get_prop(prop.key()) != Some(*prop) {
+                        return false;
+                    }
+                }
+
+                for key in PropKey::ALL {
+                    if props.iter().any(|prop| prop.key() == key) {
+                        continue;
+                    }
+                    let Some(default_value) = default.get_prop(key) else {
+                        continue;
+                    };
+                    if state.get_prop(key) != Some(default_value) {
+                        return false;
+                    }
+                }
+
+                true
             }
 
             pub struct BlockIter {
@@ -252,4 +339,41 @@ impl UnitGen for BlockConstsUnit<'_> {
             data: None,
         }
     }
+}
+
+pub(crate) fn tag_union(blocks: &[Block]) -> Vec<String> {
+    let mut set = BTreeSet::new();
+    for block in blocks {
+        set.extend(block.skip_against_tags.iter().cloned());
+        set.extend(block.culling_tags.iter().cloned());
+    }
+    set.into_iter().collect()
+}
+
+pub(crate) fn tags_mask(tags: &[String], union: &[String]) -> u8 {
+    let mut mask = 0u8;
+    for (i, tag) in union.iter().enumerate() {
+        if tags.contains(tag) {
+            mask |= 1 << i;
+        }
+    }
+    mask
+}
+
+fn tag_arms(
+    blocks: &[Block],
+    select: impl Fn(&Block) -> &[String],
+    union: &[String],
+) -> Vec<TokenStream> {
+    let mut seen: BTreeMap<u8, Vec<String>> = BTreeMap::new();
+    for block in blocks {
+        let tags = select(block);
+        seen.entry(tags_mask(tags, union))
+            .or_insert_with(|| tags.to_vec());
+    }
+    seen.into_iter()
+        .map(|(mask, tags)| {
+            quote! { #mask => &[#( #tags ),*] }
+        })
+        .collect()
 }

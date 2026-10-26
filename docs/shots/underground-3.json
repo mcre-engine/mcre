@@ -1,0 +1,15 @@
+{
+  "name": "underground-3",
+  "world": "target/gen_world/world",
+  "eye": [76.5, 12.5, -20.5],
+  "yaw": 225.0,
+  "pitch": -15.0,
+  "fov": 70.0,
+  "brightness": 1.0,
+  "time_ticks": 6000,
+  "width": 948,
+  "height": 1005,
+  "render_distance": 8,
+  "clouds": "off",
+  "settle_ms": 4000
+}

@@ -28,7 +28,14 @@ async fn main() {
         .join(&target_mc_version)
         .join("assets");
 
-    if cache_dir.exists() {
+    let minecraft_assets = cache_dir.join("minecraft");
+    if minecraft_assets
+        .join("models/block/grass_block.json")
+        .is_file()
+        && minecraft_assets
+            .join("blockstates/grass_block.json")
+            .is_file()
+    {
         return;
     }
 
@@ -51,7 +58,7 @@ async fn main() {
         if !entry.is_file() {
             continue;
         }
-        let name = entry.name();
+        let name = entry.name().unwrap();
 
         if name.starts_with("assets/minecraft") {
             let outpath = cache_dir.join(name.strip_prefix("assets/").unwrap());

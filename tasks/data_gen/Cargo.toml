@@ -18,9 +18,12 @@ mcre_data       = { workspace = true }
 mcje = { workspace = true }
 jni          = { workspace = true }
 
-tokio      = { workspace = true }
 serde_json = { workspace = true }
 indexmap   = { workspace = true }
+zip        = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["fs", "rt-multi-thread"] }
 
 [build-dependencies]
 

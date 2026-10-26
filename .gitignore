@@ -2,3 +2,4 @@
 **/logs
 /crates/mcre_assets/assets
 bump.log
+/web/node_modules

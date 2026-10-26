@@ -16,22 +16,20 @@ pub type ModelMap = FxHashMap<String, BlockModelDefinition>;
 /// were added by earlier packs.
 pub fn merge_block_model_definitions(packs: &[ResourcePack]) -> ModelMap {
     let mut result: ModelMap = HashMap::with_capacity_and_hasher(4096, FxBuildHasher);
-    let mut previous_packs: Vec<&ResourcePack> = Vec::new();
 
     for pack in packs {
-        // Apply filter: remove entries from earlier packs matching this pack's filter
-        for _prev_pack in &previous_packs {
-            let to_remove: Vec<String> = result
-                .keys()
-                .filter(|key| {
-                    let (ns, path) = split_key(key);
-                    pack.matches_filter(ns, path)
-                })
-                .cloned()
-                .collect();
-            for key in to_remove {
-                result.remove(&key);
-            }
+        // Apply this pack's filter once: remove lower-priority entries it
+        // hides. Vanilla matches against the full resource path.
+        let to_remove: Vec<String> = result
+            .keys()
+            .filter(|key| {
+                let (ns, path) = split_key(key);
+                pack.matches_filter(ns, &format!("models/{path}.json"))
+            })
+            .cloned()
+            .collect();
+        for key in to_remove {
+            result.remove(&key);
         }
 
         // Parse and insert this pack's model entries
@@ -45,8 +43,6 @@ pub fn merge_block_model_definitions(packs: &[ResourcePack]) -> ModelMap {
                 }
             }
         }
-
-        previous_packs.push(pack);
     }
 
     result

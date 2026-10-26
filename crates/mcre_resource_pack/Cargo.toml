@@ -23,12 +23,16 @@ serde_json = { workspace = true, features = ["std"] }
 hashbrown  = { workspace = true }
 rustc-hash = { workspace = true }
 thiserror  = "2"
+png        = { workspace = true }
 
 embedded-io-async = { workspace = true }
 
 reqwest = { workspace = true, optional = true }
 mcje_downloader = { workspace = true, optional = true }
-zip = { workspace = true, optional = true }
+zip = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["fs"] }
 
 [features]
-download = ["reqwest", "mcje_downloader", "zip"]
+download = ["reqwest", "mcje_downloader"]

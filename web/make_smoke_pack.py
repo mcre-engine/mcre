@@ -1,0 +1,462 @@
+import gzip
+import pathlib
+import struct
+import sys
+import zipfile
+import zlib
+
+
+def nbt_name(kind, name):
+    raw = name.encode()
+    return bytes([kind]) + struct.pack(">H", len(raw)) + raw
+
+
+def nbt_int(name, value):
+    return nbt_name(3, name) + struct.pack(">i", value)
+
+
+def nbt_string_payload(value):
+    raw = value.encode()
+    return struct.pack(">H", len(raw)) + raw
+
+
+def nbt_int_array(name, values):
+    return (
+        nbt_name(11, name)
+        + struct.pack(">i", len(values))
+        + b"".join(struct.pack(">i", value) for value in values)
+    )
+
+
+def nbt_list(name, kind, payloads):
+    return (
+        nbt_name(9, name)
+        + bytes([kind])
+        + struct.pack(">i", len(payloads))
+        + b"".join(payloads)
+    )
+
+
+def nbt_compound(name, payload):
+    return nbt_name(10, name) + payload + b"\x00"
+
+
+def nbt_compound_payload(payload):
+    return payload + b"\x00"
+
+
+def make_region(payload):
+    compressed = zlib.compress(payload)
+    sectors = (5 + len(compressed) + 4095) // 4096
+    region = bytearray(8192 + sectors * 4096)
+    region[0:4] = struct.pack(">I", (2 << 8) | sectors)
+    region[8192:8196] = struct.pack(">I", len(compressed) + 1)
+    region[8196] = 2
+    region[8197 : 8197 + len(compressed)] = compressed
+    return bytes(region)
+
+
+def make_smoke_save(path):
+    spawn = nbt_compound(
+        "spawn",
+        nbt_int_array("pos", [8, 20, 8])
+        + nbt_name(8, "dimension")
+        + nbt_string_payload("minecraft:overworld"),
+    )
+    level = nbt_compound("", nbt_compound("Data", spawn))
+    section = nbt_compound_payload(
+        nbt_int("Y", 0)
+        + nbt_compound(
+            "block_states",
+            nbt_list("palette", 8, [nbt_string_payload("minecraft:stone")]),
+        )
+        + nbt_compound(
+            "biomes",
+            nbt_list("palette", 8, [nbt_string_payload("minecraft:plains")]),
+        )
+    )
+    chunk = nbt_compound(
+        "",
+        nbt_int("xPos", 0)
+        + nbt_int("zPos", 0)
+        + nbt_list("sections", 10, [section]),
+    )
+    pig = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:pig")
+        + nbt_list(
+            "Pos",
+            6,
+            [struct.pack(">d", 8.5), struct.pack(">d", 17.0), struct.pack(">d", 8.5)],
+        )
+    )
+    cow = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:cow")
+        + nbt_name(8, "variant")
+        + nbt_string_payload("minecraft:temperate")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 10.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 8.5),
+            ],
+        )
+    )
+    chicken = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:chicken")
+        + nbt_name(8, "variant")
+        + nbt_string_payload("minecraft:temperate")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 12.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 8.5),
+            ],
+        )
+    )
+    creeper = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:creeper")
+        + nbt_list(
+            "Pos",
+            6,
+            [struct.pack(">d", 6.5), struct.pack(">d", 17.0), struct.pack(">d", 8.5)],
+        )
+    )
+    sheep = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:sheep")
+        + nbt_name(1, "Color")
+        + struct.pack(">b", 14)
+        + nbt_list(
+            "Pos",
+            6,
+            [struct.pack(">d", 4.5), struct.pack(">d", 17.0), struct.pack(">d", 8.5)],
+        )
+    )
+    zombie = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:zombie")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 8.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 11.5),
+            ],
+        )
+    )
+    skeleton = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:skeleton")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 12.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 11.5),
+            ],
+        )
+    )
+    wolf = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:wolf")
+        + nbt_name(8, "variant")
+        + nbt_string_payload("minecraft:woods")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 2.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 11.5),
+            ],
+        )
+    )
+    drowned = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:drowned")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 14.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 11.5),
+            ],
+        )
+    )
+    parrot = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:parrot")
+        + nbt_name(3, "Variant")
+        + struct.pack(">i", 3)
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 14.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 8.5),
+            ],
+        )
+    )
+    bat = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:bat")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 10.5),
+                struct.pack(">d", 20.0),
+                struct.pack(">d", 14.5),
+            ],
+        )
+    )
+    bee = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:bee")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 12.5),
+                struct.pack(">d", 20.0),
+                struct.pack(">d", 14.5),
+            ],
+        )
+    )
+    enderman = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:enderman")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 6.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 11.5),
+            ],
+        )
+    )
+    squid = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:squid")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 8.5),
+                struct.pack(">d", 20.0),
+                struct.pack(">d", 14.5),
+            ],
+        )
+    )
+    glow_squid = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:glow_squid")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 4.5),
+                struct.pack(">d", 20.0),
+                struct.pack(">d", 14.5),
+            ],
+        )
+    )
+    spider = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:spider")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 12.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 14.5),
+            ],
+        )
+    )
+    horse = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:horse")
+        + nbt_int("Variant", 518)
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 8.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 13.5),
+            ],
+        )
+    )
+    chest_minecart = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:chest_minecart")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 6.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 13.5),
+            ],
+        )
+    )
+    falling_block = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:falling_block")
+        + nbt_name(8, "BlockState")
+        + nbt_string_payload("minecraft:sand")
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 10.5),
+                struct.pack(">d", 18.0),
+                struct.pack(">d", 6.5),
+            ],
+        )
+    )
+    item = nbt_compound_payload(
+        nbt_name(8, "id")
+        + nbt_string_payload("minecraft:item")
+        + nbt_compound(
+            "Item",
+            nbt_name(8, "id")
+            + nbt_string_payload("minecraft:gravel")
+            + nbt_int("count", 1),
+        )
+        + nbt_name(2, "Age")
+        + struct.pack(">h", 0)
+        + nbt_list(
+            "Pos",
+            6,
+            [
+                struct.pack(">d", 12.5),
+                struct.pack(">d", 17.0),
+                struct.pack(">d", 6.5),
+            ],
+        )
+    )
+    entity_chunk = nbt_compound(
+        "",
+        nbt_int_array("Position", [0, 0])
+        + nbt_list(
+            "Entities",
+            10,
+            [
+                pig,
+                cow,
+                chicken,
+                creeper,
+                sheep,
+                zombie,
+                skeleton,
+                wolf,
+                drowned,
+                parrot,
+                bat,
+                bee,
+                enderman,
+                squid,
+                glow_squid,
+                spider,
+                horse,
+                chest_minecart,
+                falling_block,
+                item,
+            ],
+        ),
+    )
+
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        archive.writestr("level.dat", gzip.compress(level, mtime=0))
+        archive.writestr("region/r.0.0.mca", make_region(chunk))
+        archive.writestr("entities/r.0.0.mca", make_region(entity_chunk))
+
+
+version = pathlib.Path("mc-version").read_text().strip()
+assets = pathlib.Path("target/downloads") / version / "assets" / "minecraft"
+if not assets.is_dir():
+    raise SystemExit(f"Minecraft assets not found: {assets}")
+
+out = pathlib.Path(sys.argv[1])
+save_out = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else out.with_name("smoke-save.zip")
+out.parent.mkdir(parents=True, exist_ok=True)
+save_out.parent.mkdir(parents=True, exist_ok=True)
+make_smoke_save(save_out)
+with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+    archive.writestr(
+        "pack/pack.mcmeta",
+        '{"pack":{"description":"MCRE browser smoke pack","min_format":[100,2],"max_format":[100,2]}}',
+    )
+    archive.writestr(
+        "pack/assets/minecraft/textures/block/stone.png.mcmeta",
+        '{"animation":{"frametime":1,"frames":[0,0]}}',
+    )
+    files = [
+        "blockstates/grass_block.json",
+        "blockstates/gravel.json",
+        "blockstates/sand.json",
+        "blockstates/stone.json",
+        "models/block/block.json",
+        "models/block/cube.json",
+        "models/block/cube_all.json",
+        "models/block/grass_block.json",
+        "models/block/gravel.json",
+        "models/block/sand.json",
+        "models/block/stone.json",
+    ]
+    files.extend(
+        f"textures/colormap/{name}.png"
+        for name in ("grass", "foliage", "dry_foliage")
+    )
+    files.extend(
+        f"textures/block/{name}.png"
+        for name in (
+            "dirt",
+            "grass_block_top",
+            "grass_block_side",
+            "grass_block_side_overlay",
+            "gravel",
+            "sand",
+            "stone",
+        )
+    )
+    files.append("textures/entity/pig/pig_temperate.png")
+    files.append("textures/entity/cow/cow_temperate.png")
+    files.append("textures/entity/chicken/chicken_temperate.png")
+    files.append("textures/entity/creeper/creeper.png")
+    files.append("textures/entity/sheep/sheep.png")
+    files.append("textures/entity/sheep/sheep_wool.png")
+    files.append("textures/entity/zombie/zombie.png")
+    files.append("textures/entity/skeleton/skeleton.png")
+    files.append("textures/entity/wolf/wolf.png")
+    files.append("textures/entity/wolf/wolf_woods.png")
+    files.append("textures/entity/zombie/drowned.png")
+    files.append("textures/entity/parrot/parrot_yellow_blue.png")
+    files.append("textures/entity/bat/bat.png")
+    files.append("textures/entity/bee/bee.png")
+    files.append("textures/entity/enderman/enderman.png")
+    files.append("textures/entity/squid/squid.png")
+    files.append("textures/entity/squid/glow_squid.png")
+    files.append("textures/entity/spider/spider.png")
+    files.append("textures/entity/horse/horse_darkbrown.png")
+    files.append("textures/entity/horse/horse_markings_whitefield.png")
+    files.append("textures/entity/minecart/minecart.png")
+    files.append("textures/entity/chest/normal.png")
+    for name in files:
+        file = assets / name
+        archive.write(file, (pathlib.Path("pack/assets/minecraft") / name).as_posix())

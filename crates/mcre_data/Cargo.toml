@@ -20,7 +20,8 @@ serde      = { workspace = true, features = ["std"] }
 serde_json = { workspace = true, features = ["std"] }
 indexmap   = { workspace = true, features = ["std"] }
 
-tokio = { workspace = true }
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
 mcje = { workspace = true }
