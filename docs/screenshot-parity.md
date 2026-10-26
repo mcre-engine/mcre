@@ -61,6 +61,14 @@ contains a 17×17-chunk stone plane with the camera at `[136.5, 2.0, 136.5]`.
 views put multiple chunk boundaries across a low horizon; the recipe checks
 for sky-colored pinholes and off-sprite colors on the stone floor in each capture.
 
+`just spawner-gallery-shots` creates a flat floor with four raised mob spawners
+(`zombie`, `skeleton`, `pig`, `creeper`) at cardinal points around the camera
+and captures a view facing each. The specs fix the animation clock for
+reproducible preview poses.
+
+`just entity-shadow-shot` captures a pig on a flat stone floor with a fixed
+camera and clock, covering model winding and the contact-shadow pass.
+
 ## Spec format
 
 `docs/shots/noon.json`:

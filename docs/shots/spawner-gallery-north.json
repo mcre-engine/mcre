@@ -1,0 +1,16 @@
+{
+  "name": "spawner-gallery-north",
+  "world": "target/spawner_gallery/world",
+  "eye": [136.5, 2.6, 136.5],
+  "yaw": 180.0,
+  "pitch": 17.0,
+  "fov": 70.0,
+  "brightness": 1.0,
+  "time_ticks": 6000,
+  "animation_ticks": 0.0,
+  "width": 960,
+  "height": 540,
+  "render_distance": 8,
+  "clouds": "off",
+  "settle_ms": 500
+}

@@ -95,6 +95,22 @@ flat-seam-shots: flat-seam-world
   done
   python3 tasks/gen_world/check_flat_seam.py
 
+spawner-gallery-world:
+  python3 tasks/gen_world/spawner_gallery.py
+
+spawner-gallery-shots: spawner-gallery-world
+  #!/usr/bin/env bash
+  set -euo pipefail
+  for spec in docs/shots/spawner-gallery-*.json; do
+    cargo run -r -p mcre_renderer --example viewer -- --shot "$spec"
+  done
+
+entity-shadow-world:
+  python3 tasks/gen_world/entity_shadow.py
+
+entity-shadow-shot: entity-shadow-world
+  cargo run -r -p mcre_renderer --example viewer -- --shot docs/shots/entity-shadow-pig.json
+
 # Decompile Minecraft client jar to Java source code (output in target/mc-src/)
 [unix]
 src version=`cat mc-version`:

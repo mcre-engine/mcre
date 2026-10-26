@@ -1,0 +1,16 @@
+{
+  "name": "entity-shadow-pig",
+  "world": "target/entity_shadow/world",
+  "eye": [136.5, 2.5, 132.5],
+  "yaw": 0.0,
+  "pitch": 14.0,
+  "fov": 70.0,
+  "brightness": 1.0,
+  "time_ticks": 6000,
+  "animation_ticks": 0.0,
+  "width": 960,
+  "height": 540,
+  "render_distance": 8,
+  "clouds": "off",
+  "settle_ms": 500
+}
