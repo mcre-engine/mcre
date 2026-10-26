@@ -41,9 +41,10 @@ public final class ShotDriver implements Runnable {
    private final float pitch;
 
    /**
-    * Steps: {@code "hide"} hides the HUD, {@code "grab"} screenshots the main
-    * render target to {@code screenshots/<arg>}, {@code "stop"} stops the
-    * client.
+    * Steps: {@code "hide"} hides the HUD, {@code "windowed"} resizes the
+    * window to {@code <arg>} ({@code "WxH"}), {@code "grab"} screenshots the
+    * main render target to {@code screenshots/<arg>}, {@code "stop"} stops
+    * the client.
     */
    public ShotDriver(final String step, final String arg) {
       this.step = step;
@@ -104,6 +105,16 @@ public final class ShotDriver implements Runnable {
                      throw new IllegalStateException(error);
                   }
                });
+               break;
+            }
+            case "windowed": {
+               String[] size = this.arg.split("x", 2);
+               if (size.length != 2) {
+                  throw new IllegalArgumentException("windowed step expects WxH: " + this.arg);
+               }
+               int width = Integer.parseInt(size[0]);
+               int height = Integer.parseInt(size[1]);
+               minecraft.getWindow().setWindowed(width, height);
                break;
             }
             case "grab":

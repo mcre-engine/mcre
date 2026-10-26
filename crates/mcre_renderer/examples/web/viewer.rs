@@ -501,7 +501,7 @@ async fn load_uploaded_pack(
         .await
         .map_err(|error| error.to_string())?;
     let roots = packs.texture_roots();
-    let data = Arc::new(packs.build(&*fs).await.map_err(|error| error.to_string())?);
+    let data = Arc::new(packs.build().await.map_err(|error| error.to_string())?);
     let atlas = Arc::new(
         build_atlas_square(&*fs, &roots, &data.texture_table)
             .await
@@ -771,6 +771,7 @@ async fn load_save_world(fs: &OpfsFs, save_root: &FsPath) -> Result<(World, Spaw
         mcre_anvil::read_spawn_from_root(&level).map_err(|error| format!("read spawn: {error}"))?;
     let region_dir = resolve_region_dir(fs, save_root, &spawn.dimension).await;
     let entity_dir = resolve_entity_dir(fs, save_root, &spawn.dimension).await;
+    let has_skylight = mcre_anvil::dimension_has_skylight(&spawn.dimension);
 
     let blocks = BlockResolver::new();
     let biomes = BiomeResolver::new();
@@ -790,7 +791,13 @@ async fn load_save_world(fs: &OpfsFs, save_root: &FsPath) -> Result<(World, Spaw
                 Some(region) => match region.chunk_nbt(chunk_x, chunk_z) {
                     Ok(Some(root)) => {
                         match mcre_anvil::load_chunk_from_nbt(
-                            &root, chunk_x, chunk_z, &blocks, &biomes, &mut stats,
+                            &root,
+                            chunk_x,
+                            chunk_z,
+                            &blocks,
+                            &biomes,
+                            has_skylight,
+                            &mut stats,
                         ) {
                             Ok(chunk) => chunk,
                             Err(error) => {

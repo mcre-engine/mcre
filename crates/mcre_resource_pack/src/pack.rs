@@ -124,13 +124,10 @@ impl ResourcePack {
             }
             let json = fs.read_to_string(&culling_path).await?;
             let raw: HashMap<String, CullingOverride> = serde_json::from_str(&json)?;
-            culling = raw
-                .into_iter()
-                .map(|(name, overrides)| {
-                    let bare = name.rsplit(':').next().unwrap_or(&name).to_string();
-                    (bare, overrides)
-                })
-                .collect();
+            for (name, overrides) in raw {
+                let bare = name.rsplit(':').next().unwrap_or(&name).to_string();
+                culling.insert(bare, overrides);
+            }
         }
 
         let mut colormaps = HashMap::new();
@@ -168,7 +165,8 @@ impl ResourcePack {
     }
 
     /// Checks if a filter pattern in this pack's `pack.mcmeta` matches the given
-    /// (namespace, path) pair. Used to remove entries from lower-priority packs.
+    /// (namespace, path) pair. `path` is the full resource path vanilla tests,
+    /// e.g. `blockstates/stone.json`; patterns are unanchored Java regexes.
     pub fn matches_filter(&self, namespace: &str, key_path: &str) -> bool {
         let Some(filter) = &self.meta.filter else {
             return false;
@@ -178,12 +176,12 @@ impl ResourcePack {
             let ns_match = pattern
                 .namespace
                 .as_deref()
-                .is_none_or(|ns| regex_match(ns, namespace));
+                .is_none_or(|ns| crate::pattern::find(ns, namespace));
 
             let path_match = pattern
                 .path
                 .as_deref()
-                .is_none_or(|p| regex_match(p, key_path));
+                .is_none_or(|p| crate::pattern::find(p, key_path));
 
             ns_match && path_match
         })
@@ -221,67 +219,91 @@ impl ResourcePack {
     }
 }
 
-/// A simple regex-lite pattern matcher.
-/// Supports `.*` (any sequence), `\.` escaped dots, and prefix/suffix patterns.
-fn regex_match(pattern: &str, s: &str) -> bool {
-    // Handle `.*` as wildcard (matches everything)
-    if pattern == ".*" {
-        return true;
-    }
-    // Split on `.*` to handle wildcards in any position
-    let parts: Vec<&str> = pattern.split(".*").collect();
-    let unescape = |p: &str| -> String { p.replace(r"\.", ".") };
-
-    match parts.len() {
-        1 => s == unescape(parts[0]),
-        2 => {
-            let prefix = parts[0];
-            let suffix = parts[1];
-            let prefix_ok = prefix.is_empty() || s.starts_with(prefix);
-            let suffix_ok = suffix.is_empty() || s.ends_with(&unescape(suffix));
-            prefix_ok && suffix_ok
-        }
-        _ => {
-            // Multiple wildcards: check prefix, suffix, and mid parts
-            let prefix = parts[0];
-            let suffix = parts[parts.len() - 1];
-            if !prefix.is_empty() && !s.starts_with(prefix) {
-                return false;
-            }
-            if !suffix.is_empty() && !s.ends_with(&unescape(suffix)) {
-                return false;
-            }
-            true
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use mcre_fs::native::NativeFs;
 
-    #[test]
-    fn test_regex_match_wildcard() {
-        assert!(regex_match(".*", "anything"));
+    #[tokio::test]
+    async fn filters_match_vanilla_resource_paths() {
+        let root = std::env::temp_dir().join(format!("mcre-pack-filter-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let pack = root.join("pack");
+        std::fs::create_dir_all(&pack).unwrap();
+        std::fs::write(
+            pack.join("pack.mcmeta"),
+            r#"{"pack": {"description": "Filtered"},
+                "filter": {"block": [
+                    {"namespace": "minecraft", "path": ".*_wall\\.json"},
+                    {"namespace": "mymod"}
+                ]}}"#,
+        )
+        .unwrap();
+
+        let fs = NativeFs::new_custom_path(root.clone()).await.unwrap();
+        let loaded = ResourcePack::load(&fs, &FsPath::from("pack"))
+            .await
+            .unwrap();
+
+        assert!(loaded.matches_filter("minecraft", "blockstates/oak_wall.json"));
+        assert!(loaded.matches_filter("minecraft", "models/block/oak_wall.json"));
+        assert!(!loaded.matches_filter("minecraft", "blockstates/oak_fence.json"));
+        assert!(loaded.matches_filter("mymod", "blockstates/anything.json"));
+        assert!(!loaded.matches_filter("other", "blockstates/oak_wall.json"));
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
-    #[test]
-    fn test_regex_match_prefix() {
-        assert!(regex_match("minecraft.*", "minecraft:stone"));
-        assert!(!regex_match("minecraft.*", "mojang:stone"));
-    }
+    #[tokio::test]
+    async fn filters_remove_lower_pack_blockstates_and_models() {
+        let root =
+            std::env::temp_dir().join(format!("mcre-pack-merge-filter-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bottom = root.join("bottom");
+        let top = root.join("top");
+        let put = |path: &std::path::Path, contents: &str| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        };
 
-    #[test]
-    fn test_regex_match_suffix() {
-        assert!(regex_match(".*_wall\\.json", "oak_wall.json"));
-        assert!(!regex_match(".*_wall\\.json", "stone.json"));
-    }
+        put(
+            &bottom.join("pack.mcmeta"),
+            r#"{"pack":{"description":"Bottom"}}"#,
+        );
+        put(
+            &top.join("pack.mcmeta"),
+            r#"{"pack":{"description":"Top"},"filter":{"block":[{"namespace":"minecraft","path":".*_wall\\.json"}]}}"#,
+        );
+        for name in ["oak_wall", "oak_fence"] {
+            put(
+                &bottom
+                    .join("assets/minecraft/blockstates")
+                    .join(format!("{name}.json")),
+                &format!(r#"{{"variants":{{"":{{"model":"minecraft:block/{name}"}}}}}}"#),
+            );
+            put(
+                &bottom
+                    .join("assets/minecraft/models/block")
+                    .join(format!("{name}.json")),
+                "{}",
+            );
+        }
 
-    #[test]
-    fn test_filter_simple() {
-        assert!(regex_match("minecraft", "minecraft"));
-        assert!(!regex_match("minecraft", "minecraft:stone"));
+        let fs = NativeFs::new_custom_path(root.clone()).await.unwrap();
+        let bottom = ResourcePack::load(&fs, &FsPath::from("bottom"))
+            .await
+            .unwrap();
+        let top = ResourcePack::load(&fs, &FsPath::from("top")).await.unwrap();
+        let packs = [bottom, top];
+        let blockstates = crate::blockstates::merge_blockstate_definitions(&packs);
+        let models = crate::models::merge_block_model_definitions(&packs);
+
+        assert!(!blockstates.contains_key("minecraft:oak_wall"));
+        assert!(blockstates.contains_key("minecraft:oak_fence"));
+        assert!(!models.contains_key("minecraft:block/oak_wall"));
+        assert!(models.contains_key("minecraft:block/oak_fence"));
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[tokio::test]
@@ -326,7 +348,13 @@ mod tests {
                 .map(String::as_str),
             Some(r#"{"v":2}"#)
         );
-        assert_eq!(loaded.culling.len(), 1);
+        assert_eq!(
+            loaded.culling.len(),
+            2,
+            "overlay culling entries merge with the base pack instead of replacing them"
+        );
+        assert!(loaded.culling.contains_key("stone"));
+        assert!(loaded.culling.contains_key("ice"));
 
         std::fs::remove_dir_all(&root).unwrap();
     }

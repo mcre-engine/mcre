@@ -8,9 +8,10 @@ pub const SERVERDATA_AUTH: i32 = 3;
 const SERVERDATA_RESPONSE_VALUE: i32 = 0;
 const SERVERDATA_AUTH_RESPONSE: i32 = 2;
 
-/// Vanilla splits RCON payloads at this size; a full-size packet usually
-/// means another packet follows.
-const MAX_PAYLOAD: usize = 1446;
+/// Vanilla splits RCON payloads at this many characters; a full-size packet
+/// usually means another packet follows.
+const MAX_PAYLOAD_CHARS: usize = 4096;
+const MAX_BODY_BYTES: usize = MAX_PAYLOAD_CHARS * 4 + 10;
 const MAX_PACKETS_PER_REPLY: usize = 64;
 const DEFAULT_REPLY_DEADLINE: Duration = Duration::from_secs(600);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -55,6 +56,9 @@ pub fn decode_packet(bytes: &[u8]) -> Result<Option<(Packet, usize)>, Error> {
     if body_len < 10 {
         return Err(Error::Malformed("packet length below minimum"));
     }
+    if body_len as usize > MAX_BODY_BYTES {
+        return Err(Error::Malformed("packet length above maximum"));
+    }
     let total = 4 + body_len as usize;
     if bytes.len() < total {
         return Ok(None);
@@ -82,6 +86,7 @@ pub struct RconClient {
     stream: TcpStream,
     addr: SocketAddr,
     next_request_id: i32,
+    read_buf: Vec<u8>,
 }
 
 impl RconClient {
@@ -93,6 +98,7 @@ impl RconClient {
             stream,
             addr,
             next_request_id: 0,
+            read_buf: Vec::new(),
         };
         client.authenticate(password)?;
         Ok(client)
@@ -157,19 +163,18 @@ impl RconClient {
 
         let started = Instant::now();
         let mut out = String::new();
-        let mut received = false;
         let mut packets = 0;
         loop {
             if started.elapsed() >= deadline {
-                return if received {
-                    Ok(out)
-                } else {
-                    Err(Error::TimedOut)
-                };
+                self.read_buf.clear();
+                return Err(Error::TimedOut);
             }
             match self.read_packet()? {
                 ReadOutcome::Idle => continue,
-                ReadOutcome::Closed => return Err(Error::Closed),
+                ReadOutcome::Closed => {
+                    self.read_buf.clear();
+                    return Err(Error::Closed);
+                }
                 ReadOutcome::Packet(packet) => {
                     if packet.request_id != request_id {
                         continue;
@@ -178,9 +183,8 @@ impl RconClient {
                     if packets > MAX_PACKETS_PER_REPLY {
                         return Err(Error::Malformed("too many packets in one reply"));
                     }
-                    received = true;
                     out.push_str(&packet.payload);
-                    if packet.payload.len() < MAX_PAYLOAD {
+                    if packet.payload.chars().count() < MAX_PAYLOAD_CHARS {
                         break;
                     }
                 }
@@ -190,42 +194,47 @@ impl RconClient {
     }
 
     fn read_packet(&mut self) -> Result<ReadOutcome, Error> {
-        let mut len_buf = [0u8; 4];
-        match self.read_exact_pollable(&mut len_buf)? {
-            PollRead::Complete => {}
-            PollRead::Idle => return Ok(ReadOutcome::Idle),
-            PollRead::Closed => return Ok(ReadOutcome::Closed),
-        }
-        let body_len = i32::from_le_bytes(len_buf);
-        if !(10..=4096).contains(&body_len) {
-            return Err(Error::Malformed("implausible packet length"));
-        }
-        let mut body = vec![0u8; body_len as usize];
-        match self.read_exact_pollable(&mut body)? {
-            PollRead::Complete => {}
-            PollRead::Idle | PollRead::Closed => return Ok(ReadOutcome::Closed),
-        }
-        let mut full = len_buf.to_vec();
-        full.extend_from_slice(&body);
-        match decode_packet(&full)? {
-            Some((packet, _)) => Ok(ReadOutcome::Packet(packet)),
-            None => Err(Error::Malformed("decoded packet is incomplete")),
+        loop {
+            if self.read_buf.len() < 4 {
+                match self.fill_read_buf(4)? {
+                    PollRead::Complete => continue,
+                    PollRead::Idle => return Ok(ReadOutcome::Idle),
+                    PollRead::Closed => return Ok(ReadOutcome::Closed),
+                }
+            }
+
+            let body_len = i32::from_le_bytes(self.read_buf[..4].try_into().unwrap());
+            if body_len < 10 || body_len as usize > MAX_BODY_BYTES {
+                return Err(Error::Malformed("implausible packet length"));
+            }
+            let total = 4 + body_len as usize;
+            if self.read_buf.len() < total {
+                match self.fill_read_buf(total)? {
+                    PollRead::Complete => continue,
+                    PollRead::Idle => return Ok(ReadOutcome::Idle),
+                    PollRead::Closed => return Ok(ReadOutcome::Closed),
+                }
+            }
+
+            let packet = match decode_packet(&self.read_buf[..total])? {
+                Some((packet, consumed)) => {
+                    debug_assert_eq!(consumed, total);
+                    packet
+                }
+                None => return Err(Error::Malformed("decoded packet is incomplete")),
+            };
+            self.read_buf.drain(..total);
+            return Ok(ReadOutcome::Packet(packet));
         }
     }
 
-    fn read_exact_pollable(&mut self, buf: &mut [u8]) -> Result<PollRead, Error> {
-        let mut read = 0;
-        while read < buf.len() {
-            match self.stream.read(&mut buf[read..]) {
+    fn fill_read_buf(&mut self, needed: usize) -> Result<PollRead, Error> {
+        while self.read_buf.len() < needed {
+            let mut chunk = [0u8; 8192];
+            match self.stream.read(&mut chunk) {
                 Ok(0) => return Ok(PollRead::Closed),
-                Ok(n) => read += n,
-                Err(err) if is_timeout(&err) => {
-                    return Ok(if read == 0 {
-                        PollRead::Idle
-                    } else {
-                        PollRead::Closed
-                    });
-                }
+                Ok(n) => self.read_buf.extend_from_slice(&chunk[..n]),
+                Err(err) if is_timeout(&err) => return Ok(PollRead::Idle),
                 Err(err) => return Err(Error::Io(err)),
             }
         }
@@ -296,5 +305,113 @@ mod tests {
         let (packet, consumed) = decode_packet(&both).unwrap().unwrap();
         assert_eq!(packet.payload, "a");
         assert_eq!(consumed, first.len());
+    }
+
+    #[test]
+    fn two_thousand_byte_reply_terminates_immediately() {
+        let (mut client, mut server) = connected_pair();
+        let reply = "x".repeat(2000);
+        write_packet(&mut server, &reply);
+
+        let started = Instant::now();
+        let out = client
+            .run_with_deadline("test", Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(out, reply);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn multibyte_reply_uses_char_count() {
+        let (mut client, mut server) = connected_pair();
+        let reply = "é".repeat(1500);
+        write_packet(&mut server, &reply);
+
+        let started = Instant::now();
+        let out = client
+            .run_with_deadline("test", Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(out, reply);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn full_chunks_concatenate() {
+        let (mut client, mut server) = connected_pair();
+        let first = "a".repeat(MAX_PAYLOAD_CHARS);
+        let second = "b".repeat(MAX_PAYLOAD_CHARS);
+        write_packet(&mut server, &first);
+        write_packet(&mut server, &second);
+        write_packet(&mut server, "");
+
+        let out = client
+            .run_with_deadline("test", Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(out.chars().count(), MAX_PAYLOAD_CHARS * 2);
+        assert!(out.starts_with(&first));
+        assert!(out.ends_with(&second));
+    }
+
+    #[test]
+    fn deadline_does_not_accept_an_incomplete_chunked_reply() {
+        let (mut client, mut server) = connected_pair();
+        write_packet(&mut server, &"x".repeat(MAX_PAYLOAD_CHARS));
+
+        assert!(matches!(
+            client.run_with_deadline("test", Duration::from_millis(150)),
+            Err(Error::TimedOut)
+        ));
+    }
+
+    #[test]
+    fn decodes_full_size_body() {
+        let payload = "c".repeat(MAX_PAYLOAD_CHARS);
+        let encoded = encode_packet(1, SERVERDATA_RESPONSE_VALUE, &payload);
+        assert_eq!(encoded.len(), 4 + MAX_PAYLOAD_CHARS + 10);
+        let (packet, consumed) = decode_packet(&encoded).unwrap().unwrap();
+        assert_eq!(consumed, encoded.len());
+        assert_eq!(packet.payload, payload);
+    }
+
+    #[test]
+    fn resumes_after_partial_read() {
+        let (mut client, mut server) = connected_pair();
+        let payload = "partial reply";
+        let encoded = encode_packet(1, SERVERDATA_RESPONSE_VALUE, payload);
+        let split = encoded.len() / 2;
+        server.write_all(&encoded[..split]).unwrap();
+        server.flush().unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        server.write_all(&encoded[split..]).unwrap();
+        server.flush().unwrap();
+
+        let out = client
+            .run_with_deadline("test", Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(out, payload);
+    }
+
+    fn connected_pair() -> (RconClient, TcpStream) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || listener.accept().unwrap().0);
+        let stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        let client = RconClient {
+            stream,
+            addr,
+            next_request_id: 0,
+            read_buf: Vec::new(),
+        };
+        (client, server.join().unwrap())
+    }
+
+    fn write_packet(stream: &mut TcpStream, payload: &str) {
+        stream
+            .write_all(&encode_packet(1, SERVERDATA_RESPONSE_VALUE, payload))
+            .unwrap();
+        stream.flush().unwrap();
     }
 }

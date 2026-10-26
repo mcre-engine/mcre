@@ -174,19 +174,13 @@ impl ClientControl {
     }
 
     /// Resize the window in logical units; the framebuffer should follow.
+    ///
+    /// Scheduled on the render thread because `Window.setWindowed` asserts it.
     pub fn set_windowed(&self, width: i32, height: i32) -> Result<(), String> {
-        self.with_env(|env| {
-            let mc = instance_required(env)?;
-            let window = call_window(env, &mc)?;
-            env.call_method(
-                &window,
-                jni_str!("setWindowed"),
-                jni_sig!("(II)V"),
-                &[JValue::Int(width), JValue::Int(height)],
-            )
-            .map_err(|err| format!("Window.setWindowed failed: {err}"))?;
-            Ok(())
-        })
+        self.schedule_step("windowed", Some(&format!("{width}x{height}")))
+            .map_err(|err| {
+                format!("could not schedule Window.setWindowed({width}, {height}): {err}")
+            })
     }
 
     /// Hide the HUD (no-op if already hidden).

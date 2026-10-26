@@ -12,29 +12,34 @@ pub const COMPRESSION_NONE: u8 = 3;
 
 fn decompress_payload(compression: u8, payload: &[u8]) -> Result<Vec<u8>, Error> {
     match compression {
-        COMPRESSION_GZIP => {
-            let mut decoder = flate2::read::GzDecoder::new(payload);
-            let mut out = Vec::new();
-            decoder
-                .read_to_end(&mut out)
-                .map_err(|err| Error::Decompress(err.to_string()))?;
-            Ok(out)
+        COMPRESSION_GZIP => crate::read_limited(
+            flate2::read::GzDecoder::new(payload),
+            crate::MAX_DECOMPRESSED_BYTES,
+        ),
+        COMPRESSION_ZLIB => crate::read_limited(
+            flate2::read::ZlibDecoder::new(payload),
+            crate::MAX_DECOMPRESSED_BYTES,
+        ),
+        COMPRESSION_NONE => {
+            if payload.len() as u64 > crate::MAX_DECOMPRESSED_BYTES {
+                return Err(Error::DecompressedTooLarge(crate::MAX_DECOMPRESSED_BYTES));
+            }
+            Ok(payload.to_vec())
         }
-        COMPRESSION_ZLIB => {
-            let mut decoder = flate2::read::ZlibDecoder::new(payload);
-            let mut out = Vec::new();
-            decoder
-                .read_to_end(&mut out)
-                .map_err(|err| Error::Decompress(err.to_string()))?;
-            Ok(out)
-        }
-        COMPRESSION_NONE => Ok(payload.to_vec()),
         other => Err(Error::UnknownCompression(other)),
     }
 }
 
 pub struct RegionFile {
     bytes: Vec<u8>,
+}
+
+/// A header entry is usable only when it points past the two header sectors
+/// and claims at least one sector. Vanilla rejects both cases; treating them
+/// as absent keeps a corrupt header from panicking or reading header bytes as
+/// chunk data.
+fn valid_sector_location((sectors_offset, sector_count): (u32, u32)) -> bool {
+    sectors_offset >= HEADER_SECTORS as u32 && sector_count != 0
 }
 
 impl RegionFile {
@@ -78,12 +83,12 @@ impl RegionFile {
     }
 
     pub fn has_chunk(&self, local_x: u32, local_z: u32) -> bool {
-        self.location(local_x, local_z) != (0, 0)
+        valid_sector_location(self.location(local_x, local_z))
     }
 
     pub fn chunk_payload(&self, local_x: u32, local_z: u32) -> Result<Option<Vec<u8>>, Error> {
         let (sectors_offset, sector_count) = self.location(local_x, local_z);
-        if sectors_offset == 0 {
+        if !valid_sector_location((sectors_offset, sector_count)) {
             return Ok(None);
         }
         let start = sectors_offset as usize * SECTOR_BYTES;
@@ -91,6 +96,9 @@ impl RegionFile {
             .checked_add(sector_count as usize * SECTOR_BYTES)
             .ok_or(Error::Truncated)?;
         if end > self.bytes.len() {
+            return Err(Error::Truncated);
+        }
+        if start + 5 > end {
             return Err(Error::Truncated);
         }
         let length = u32::from_be_bytes([
@@ -164,7 +172,7 @@ fn read_payload_from_file(
 ) -> Result<Option<Vec<u8>>, Error> {
     let mut file = std::fs::File::open(path).map_err(|err| Error::Io(err.to_string()))?;
     let (sectors_offset, sector_count) = read_header_entry(&mut file, local_x, local_z)?;
-    if sectors_offset == 0 || sector_count == 0 {
+    if !valid_sector_location((sectors_offset, sector_count)) {
         return Ok(None);
     }
     let start = sectors_offset as u64 * SECTOR_BYTES as u64;
@@ -174,6 +182,9 @@ fn read_payload_from_file(
         .map_err(|err| Error::Io(err.to_string()))?
         .len();
     if end > file_len {
+        return Err(Error::Truncated);
+    }
+    if start + 5 > end {
         return Err(Error::Truncated);
     }
     file.seek(SeekFrom::Start(start))
@@ -226,7 +237,7 @@ pub fn chunk_present(region_dir: &Path, chunk_x: i32, chunk_z: i32) -> Result<bo
     let local_z = chunk_z.rem_euclid(32) as u32;
     let mut file = std::fs::File::open(&path).map_err(|err| Error::Io(err.to_string()))?;
     let (sectors_offset, sector_count) = read_header_entry(&mut file, local_x, local_z)?;
-    Ok(sectors_offset != 0 && sector_count != 0)
+    Ok(valid_sector_location((sectors_offset, sector_count)))
 }
 
 #[cfg(test)]
@@ -304,6 +315,36 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
+    fn region_with_header(entry: u32) -> RegionFile {
+        let mut bytes = vec![0u8; HEADER_SECTORS * SECTOR_BYTES + SECTOR_BYTES];
+        bytes[0..4].copy_from_slice(&entry.to_be_bytes());
+        RegionFile::from_bytes(bytes).unwrap()
+    }
+
+    #[test]
+    fn zero_sector_count_is_a_missing_chunk() {
+        let region = region_with_header(2u32 << 8);
+        assert!(!region.has_chunk(0, 0));
+        assert_eq!(region.chunk_count(), 0);
+        assert!(region.chunk_payload(0, 0).unwrap().is_none());
+    }
+
+    #[test]
+    fn header_sector_offset_is_rejected() {
+        let region = region_with_header((1u32 << 8) | 1);
+        assert!(!region.has_chunk(0, 0));
+        assert!(region.chunk_payload(0, 0).unwrap().is_none());
+    }
+
+    #[test]
+    fn payload_length_past_sector_is_truncated() {
+        let region = region_with_header((2u32 << 8) | 1);
+        let mut bytes = region.bytes;
+        bytes[8192..8196].copy_from_slice(&(SECTOR_BYTES as u32).to_be_bytes());
+        let region = RegionFile::from_bytes(bytes).unwrap();
+        assert!(matches!(region.chunk_payload(0, 0), Err(Error::Truncated)));
+    }
+
     fn status_payload(status: &str) -> Vec<u8> {
         let mut out = vec![10, 0, 0];
         out.push(3);
@@ -338,5 +379,22 @@ mod tests {
         assert_eq!(chunk_status(&dir, 32, 0).unwrap(), None);
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn decompression_limit_rejects_oversized_output() {
+        let data = vec![0u8; 1024];
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&data).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        assert_eq!(
+            decompress_payload(COMPRESSION_ZLIB, &compressed).unwrap(),
+            data
+        );
+        assert!(matches!(
+            crate::read_limited(flate2::read::ZlibDecoder::new(&compressed[..]), 1023),
+            Err(Error::DecompressedTooLarge(1023))
+        ));
     }
 }

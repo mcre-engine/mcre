@@ -18,7 +18,16 @@ pub type RegionKey = (i32, i32, i32);
 pub const SECTIONS_PER_REGION: usize = 8 * 4 * 8;
 pub const VERTEX_STRIDE: u64 = size_of::<TerrainVertex>() as u64;
 const FREE_LAG_FRAMES: u64 = 3;
-const INITIAL_ARENA_BYTES: u64 = 1 << 20;
+
+/// Rounds `value` up to a multiple of `align`.
+const fn align_up(value: u64, align: u64) -> u64 {
+    value.div_ceil(align) * align
+}
+
+/// Every arena capacity is a whole number of vertices so growth boundaries stay
+/// stride-aligned (vertex offsets are derived by integer division).
+const INITIAL_ARENA_BYTES: u64 = align_up(1 << 20, VERTEX_STRIDE);
+const _: () = assert!(INITIAL_ARENA_BYTES.is_multiple_of(VERTEX_STRIDE));
 const INITIAL_QUADS: u32 = 1 << 15;
 
 pub fn region_key(section_x: i32, section_y: i32, section_z: i32) -> RegionKey {
@@ -238,6 +247,9 @@ impl FreeList {
         self.capacity = capacity;
     }
 
+    /// Next capacity to grow to, or `None` when the free list can already
+    /// satisfy `needed`. The result is rounded up to a whole vertex so the
+    /// block appended by [`Self::grow`] starts on a stride boundary.
     fn grow_capacity(&self, needed: u64) -> Option<u64> {
         let largest = self.free.iter().map(|b| b.size).max().unwrap_or(0);
         if largest >= needed {
@@ -247,6 +259,7 @@ impl FreeList {
             .capacity
             .saturating_mul(2)
             .max(self.capacity.saturating_add(needed));
+        let capacity = align_up(capacity, VERTEX_STRIDE);
         (capacity > self.capacity).then_some(capacity)
     }
 }
@@ -288,6 +301,11 @@ impl GpuArena {
                 self.list.alloc(size)?
             }
         };
+        debug_assert_eq!(
+            offset % VERTEX_STRIDE,
+            0,
+            "arena allocation must start on a vertex boundary"
+        );
         queue.write_buffer(&self.buffer, offset, bytemuck::cast_slice(vertices));
         Some(ArenaAllocation {
             vertex_offset: (offset / VERTEX_STRIDE) as u32,
@@ -669,6 +687,34 @@ mod tests {
             }
         );
         assert_eq!(list.alloc(1024), Some(0));
+    }
+
+    #[test]
+    fn free_list_grows_on_stride_boundaries() {
+        let mut list = FreeList::new(align_up(1 << 10, VERTEX_STRIDE));
+        let chunk = 11 * VERTEX_STRIDE;
+        let mut offsets = Vec::new();
+        for _ in 0..64 {
+            if let Some(offset) = list.alloc(chunk) {
+                offsets.push(offset);
+            } else {
+                let capacity = list.grow_capacity(chunk).expect("growth must be possible");
+                assert!(capacity.is_multiple_of(VERTEX_STRIDE));
+                list.grow(capacity);
+                offsets.push(list.alloc(chunk).expect("growth must make room"));
+            }
+        }
+        assert!(
+            offsets
+                .iter()
+                .all(|offset| offset.is_multiple_of(VERTEX_STRIDE))
+        );
+        let freed = offsets[3];
+        list.free(freed, chunk);
+        for _ in 0..FREE_LAG_FRAMES {
+            list.begin_frame();
+        }
+        assert_eq!(list.alloc(chunk), Some(freed));
     }
 
     #[test]

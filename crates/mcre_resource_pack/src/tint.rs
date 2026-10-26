@@ -44,6 +44,16 @@ pub fn tint_sources(block_name: &str) -> &'static [TintSource] {
     }
 }
 
+/// Vanilla `BlockTintSource::colorAsTerrainParticle` for the layer-0 source,
+/// used by break particles. `None` is vanilla's `-1` (no tint);
+/// `BlockTintSources.grassBlock` overrides the default method that way.
+pub fn particle_tint_source(block_name: &str) -> Option<TintSource> {
+    match block_name {
+        "grass_block" => None,
+        other => tint_sources(other).first().copied(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,5 +108,23 @@ mod tests {
         assert_eq!(rgb(-8345771), [0x80, 0xA7, 0x55]);
         assert_eq!(rgb(-2046180), [0xE0, 0xC7, 0x1C]);
         assert_eq!(rgb(-14647248), [0x20, 0x80, 0x30]);
+    }
+
+    #[test]
+    fn particle_tint_matches_vanilla_terrain_particle_colors() {
+        assert_eq!(particle_tint_source("grass_block"), None);
+        assert_eq!(
+            particle_tint_source("sugar_cane"),
+            Some(TintSource::SugarCane)
+        );
+        assert_eq!(particle_tint_source("stone"), None);
+        assert_eq!(
+            particle_tint_source("oak_leaves"),
+            Some(TintSource::Foliage)
+        );
+        assert_eq!(
+            particle_tint_source("redstone_wire"),
+            Some(TintSource::Redstone)
+        );
     }
 }

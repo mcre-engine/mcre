@@ -7,6 +7,7 @@ pub mod lookup;
 pub mod models;
 pub mod pack;
 pub mod pack_meta;
+mod pattern;
 pub mod resolve;
 pub mod tint;
 
@@ -18,7 +19,7 @@ pub use colormap::{
 };
 pub use error::{ResourcePackError, Result};
 pub use lookup::ResourcePackData;
-pub use tint::{TintSource, tint_sources};
+pub use tint::{TintSource, particle_tint_source, tint_sources};
 
 use std::collections::HashMap;
 
@@ -70,8 +71,10 @@ impl ResourcePackSet {
             .collect()
     }
 
-    /// Build the final lookup table by running all loading stages.
-    pub async fn build(self, _fs: &impl Fs) -> Result<ResourcePackData> {
+    /// Build the final lookup table by running all loading stages. Resource
+    /// filters are applied while merging blockstates and models; texture
+    /// resolution does not yet apply resource filters.
+    pub async fn build(self) -> Result<ResourcePackData> {
         // Stage 2: Merge blockstate definitions across all packs (last wins)
         let blockstate_defs = merge_blockstate_definitions(&self.packs);
 
@@ -179,7 +182,7 @@ mod tests {
         let mut set = ResourcePackSet::new();
         set.add_pack(&fs, &FsPath::from("base")).await.unwrap();
         set.add_pack(&fs, &FsPath::from("top")).await.unwrap();
-        let data = set.build(&fs).await.unwrap();
+        let data = set.build().await.unwrap();
 
         assert_eq!(&data.colormaps.grass[0..3], &[0, 255, 0]);
         assert_eq!(&data.colormaps.foliage[0..3], &[0, 255, 0]);
@@ -198,7 +201,7 @@ mod tests {
 
         let mut set = ResourcePackSet::new();
         set.add_pack(&fs, &FsPath::from("base")).await.unwrap();
-        let data = set.build(&fs).await.unwrap();
+        let data = set.build().await.unwrap();
 
         let path = |id: u32| data.texture_table[id as usize].as_ref();
         let chests = data.chest_textures;
@@ -411,7 +414,7 @@ mod tests {
 
         let mut set = ResourcePackSet::new();
         set.add_pack(&fs, &FsPath::from("pack")).await.unwrap();
-        let result = set.build(&fs).await;
+        let result = set.build().await;
         assert!(matches!(result, Err(ResourcePackError::MissingColormap(_))));
 
         std::fs::remove_dir_all(&root).unwrap();

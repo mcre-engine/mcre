@@ -25,19 +25,6 @@ const BARS_TAG: &str = "bars";
 const LEAVES_TAG: &str = "leaves";
 const FLUID_FLOW_TAG: &str = "blocks_fluid_flow";
 
-const ICE_TAG_FALLBACK: &[&str] = &["ice", "brittle_ice", "frosted_ice"];
-const BARS_TAG_FALLBACK: &[&str] = &[
-    "iron_bars",
-    "copper_bars",
-    "exposed_copper_bars",
-    "weathered_copper_bars",
-    "oxidized_copper_bars",
-    "waxed_copper_bars",
-    "waxed_exposed_copper_bars",
-    "waxed_weathered_copper_bars",
-    "waxed_oxidized_copper_bars",
-];
-
 fn read_block_tag(jar_version: &str, root: &std::path::Path, tag: &str) -> Option<Vec<String>> {
     let jar_path = root
         .join("target/downloads")
@@ -49,6 +36,24 @@ fn read_block_tag(jar_version: &str, root: &std::path::Path, tag: &str) -> Optio
     let mut visited = std::collections::HashSet::new();
     resolve_block_tag(&mut archive, tag, &mut members, &mut visited)?;
     Some(members)
+}
+
+/// Resolves a vanilla block tag from the game jar. The jar is mandatory when
+/// the generator runs, so a missing tag is a version-bump failure, not
+/// something to paper over with a hardcoded list.
+fn block_tag_members(tag: &str) -> Vec<String> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../");
+    let version = fs::read_to_string(root.join("mc-version"))
+        .unwrap_or_else(|err| panic!("failed to read mc-version: {err}"))
+        .trim()
+        .to_string();
+    let jar_path = root.join("target/downloads").join(&version).join("mc.jar");
+    read_block_tag(&version, &root, tag).unwrap_or_else(|| {
+        panic!(
+            "failed to resolve block tag {tag:?} from {}",
+            jar_path.display()
+        )
+    })
 }
 
 fn resolve_block_tag(
@@ -83,55 +88,6 @@ fn resolve_block_tag(
         }
     }
     Some(())
-}
-
-fn face_occluding_ice_blocks() -> Vec<String> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../");
-    let version = fs::read_to_string(root.join("mc-version")).map(|s| s.trim().to_string());
-    let result: Option<Vec<String>> = version
-        .ok()
-        .and_then(|version| read_block_tag(&version, &root, ICE_TAG));
-    match result {
-        Some(members) => members,
-        None => {
-            eprintln!(
-                "[WARN] Could not read face_occluding_ice_blocks from mc.jar, using fallback {ICE_TAG_FALLBACK:?}"
-            );
-            ICE_TAG_FALLBACK.iter().map(|s| s.to_string()).collect()
-        }
-    }
-}
-
-fn bars_tag_members() -> Vec<String> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../");
-    let version = fs::read_to_string(root.join("mc-version")).map(|s| s.trim().to_string());
-    let result: Option<Vec<String>> = version
-        .ok()
-        .and_then(|version| read_block_tag(&version, &root, BARS_TAG));
-    match result {
-        Some(members) => members,
-        None => {
-            eprintln!(
-                "[WARN] Could not read bars tag from mc.jar, using fallback {BARS_TAG_FALLBACK:?}"
-            );
-            BARS_TAG_FALLBACK.iter().map(|s| s.to_string()).collect()
-        }
-    }
-}
-
-fn fluid_flow_tag_members() -> Vec<String> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../");
-    let version = fs::read_to_string(root.join("mc-version")).map(|s| s.trim().to_string());
-    let result: Option<Vec<String>> = version
-        .ok()
-        .and_then(|version| read_block_tag(&version, &root, FLUID_FLOW_TAG));
-    match result {
-        Some(members) => members,
-        None => {
-            eprintln!("[WARN] Could not read {FLUID_FLOW_TAG} from mc.jar");
-            Vec::new()
-        }
-    }
 }
 
 fn direction<'a>(env: &mut Env<'a>, name: &str) -> JObject<'a> {
@@ -335,9 +291,9 @@ fn generate_block_data<'a>(env: &mut Env<'a>) {
             "net/minecraft/world/level/block/HalfTransparentBlock"
         ))
         .unwrap();
-    let ice_tag_members = face_occluding_ice_blocks();
-    let bars_tag_members = bars_tag_members();
-    let fluid_flow_tag_members = fluid_flow_tag_members();
+    let ice_tag_members = block_tag_members(ICE_TAG);
+    let bars_tag_members = block_tag_members(BARS_TAG);
+    let fluid_flow_tag_members = block_tag_members(FLUID_FLOW_TAG);
     let fluid_registry = get_registry(env, "FLUID", "DefaultedRegistry");
 
     iterate(&block_registry, env, |i, block, env| {

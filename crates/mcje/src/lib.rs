@@ -44,6 +44,7 @@ pub struct ServerHandle {
     shutdown: Arc<AtomicBool>,
     stopping: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
+    server_exited: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -56,6 +57,11 @@ impl ServerHandle {
     /// Call right before sending `stop`, so the failure monitor stays quiet.
     pub fn mark_stopping(&self) {
         self.stopping.store(true, Ordering::SeqCst);
+    }
+
+    /// True once the dedicated server's `main` method has returned.
+    pub fn server_exited(&self) -> bool {
+        self.server_exited.load(Ordering::SeqCst)
     }
 
     /// Release the keep-alive thread and wait for it to detach.
@@ -76,14 +82,21 @@ pub fn spawn_dedicated_server(jvm: JavaVM, args: Vec<String>) -> ServerHandle {
     let shutdown = Arc::new(AtomicBool::new(false));
     let stopping = Arc::new(AtomicBool::new(false));
     let failed = Arc::new(AtomicBool::new(false));
+    let server_exited = Arc::new(AtomicBool::new(false));
 
     let thread = {
         let shutdown = shutdown.clone();
         let stopping = stopping.clone();
         let failed = failed.clone();
+        let server_exited = server_exited.clone();
         std::thread::spawn(move || {
             let result = jvm.attach_current_thread(|env| {
-                run_server_main(env, &args)?;
+                let result = run_server_main(env, &args);
+                if result.is_err() {
+                    failed.store(true, Ordering::SeqCst);
+                }
+                server_exited.store(true, Ordering::SeqCst);
+                result?;
                 monitor_server_thread(env, &shutdown, &stopping, &failed);
                 Ok::<_, jni::errors::Error>(())
             });
@@ -91,6 +104,7 @@ pub fn spawn_dedicated_server(jvm: JavaVM, args: Vec<String>) -> ServerHandle {
                 eprintln!("mcje: dedicated server thread failed: {err}");
                 failed.store(true, Ordering::SeqCst);
             }
+            server_exited.store(true, Ordering::SeqCst);
         })
     };
 
@@ -98,6 +112,7 @@ pub fn spawn_dedicated_server(jvm: JavaVM, args: Vec<String>) -> ServerHandle {
         shutdown,
         stopping,
         failed,
+        server_exited,
         thread: Some(thread),
     }
 }

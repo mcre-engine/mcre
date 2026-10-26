@@ -255,8 +255,9 @@ M9 — Clouds — done
       depth write), per-cell mesh cache rebuilt when the camera crosses a
       cell, status (Off/Fast/Fancy) + range (2..=128, viewer default 32)
       + height (192.33) + color setters; viewer loads the texture through the
-      pack stack, drifts on real time (20 ticks/s), tints by the day/night
-      scalar (`Timelines.NIGHT_CLOUD_COLOR_MULTIPLIER`)
+      pack stack, drifts on real time (20 ticks/s), tints by the
+      `visual/cloud_color` timeline track over the overworld base
+      (`#ccffffff` × white→`#ff191926`)
 
 M8 — Liquids — done
 - [x] `mcre_world::fluid`: vanilla `FlowingFluid` state mapping

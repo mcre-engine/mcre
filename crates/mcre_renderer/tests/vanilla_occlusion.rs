@@ -44,7 +44,7 @@ fn pack_data() -> &'static ResourcePackData {
 
             let mut set = ResourcePackSet::new();
             set.add_pack(&fs, &path).await.expect("load default pack");
-            set.build(&fs).await.expect("bake pack")
+            set.build().await.expect("bake pack")
         })
     })
 }

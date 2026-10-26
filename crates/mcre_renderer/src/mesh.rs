@@ -5,7 +5,7 @@ use mcre_resource_pack::{
     Colormaps, ResourcePackData, TintSource,
     colormap::{DRY_FOLIAGE_DEFAULT, FOLIAGE_DEFAULT, GRASS_DEFAULT, sample_colormap},
     lookup::{BlockRule, BlockVariant},
-    tint_sources,
+    particle_tint_source, tint_sources,
 };
 use mcre_world::shape::{face_boxes, face_shape_is_cube, is_covered};
 use mcre_world::{
@@ -3753,11 +3753,10 @@ fn mesh_spawner_displays<A: BlockAccess + ?Sized>(
         entity_data.set("id", Tag::String(id.clone()));
         let (x, y, z) = block_entity.position();
         let position = [f64::from(x), f64::from(y), f64::from(z)];
-        let entity = mcre_world::WorldEntity::new(
-            id,
-            position,
-            mcre_anvil::nbt::write_named("", &entity_data),
-        );
+        let Ok(nbt) = mcre_anvil::nbt::write_named("", &entity_data) else {
+            continue;
+        };
+        let entity = mcre_world::WorldEntity::new(id, position, nbt);
         let mut display_chunk = Chunk::new_at(chunk.pos());
         if !display_chunk.set_entity(entity) {
             continue;
@@ -4604,10 +4603,10 @@ pub fn particle_tint<A: BlockAccess + ?Sized>(
     state: BlockState,
     block_pos: [i32; 3],
 ) -> [f32; 3] {
-    let Some(source) = tint_sources(state.block().name()).first() else {
+    let Some(source) = particle_tint_source(state.block().name()) else {
         return [1.0; 3];
     };
-    rgb_to_float(tint_source_color(data, access, state, block_pos, *source))
+    rgb_to_float(tint_source_color(data, access, state, block_pos, source))
 }
 
 fn tint_source_color<A: BlockAccess + ?Sized>(
@@ -5802,7 +5801,7 @@ mod tests {
         mcre_world::BlockEntity::new(
             id.into(),
             (0, 0, 0),
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -5866,7 +5865,7 @@ mod tests {
         mcre_world::WorldEntity::new(
             id.into(),
             [8.0, 64.0, 8.0],
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -5991,7 +5990,7 @@ mod tests {
         mcre_world::WorldEntity::new(
             "minecraft:horse".into(),
             [8.0, 64.0, 8.0],
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -6017,7 +6016,7 @@ mod tests {
         mcre_world::WorldEntity::new(
             id.into(),
             [8.0, 64.0, 8.0],
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -6040,7 +6039,7 @@ mod tests {
         mcre_world::WorldEntity::new(
             "minecraft:falling_block".into(),
             [8.0, 64.0, 8.0],
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -6057,7 +6056,7 @@ mod tests {
         mcre_world::WorldEntity::new(
             "minecraft:item".into(),
             [8.0, 64.0, 8.0],
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -6074,7 +6073,7 @@ mod tests {
         mcre_world::BlockEntity::new(
             "minecraft:mob_spawner".into(),
             (8, 64, 8),
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -6090,7 +6089,7 @@ mod tests {
         mcre_world::BlockEntity::new(
             "minecraft:trial_spawner".into(),
             (8, 64, 8),
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -6106,7 +6105,7 @@ mod tests {
         mcre_world::WorldEntity::new(
             "minecraft:parrot".into(),
             [8.0, 64.0, 8.0],
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -6585,7 +6584,7 @@ mod tests {
         assert!(chunk.set_entity(mcre_world::WorldEntity::new(
             "minecraft:sheep".into(),
             [8.0, 64.0, 8.0],
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )));
         assert!(mesh_entity(&pig_data(), &chunk).is_empty());
     }
@@ -6659,7 +6658,7 @@ mod tests {
         mcre_world::WorldEntity::new(
             "minecraft:sheep".into(),
             [8.0, 64.0, 8.0],
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )
     }
 
@@ -7247,7 +7246,7 @@ mod tests {
         assert!(chunk.set_entity(mcre_world::WorldEntity::new(
             "minecraft:cow".into(),
             [8.0, 64.0, 8.0],
-            mcre_anvil::nbt::write_named("", &root),
+            mcre_anvil::nbt::write_named("", &root).unwrap(),
         )));
         assert!(mesh_entity(&cow_data(), &chunk).is_empty());
     }

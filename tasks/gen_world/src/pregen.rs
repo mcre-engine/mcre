@@ -407,7 +407,11 @@ fn chunked_map<T: Send>(items: usize, threads: usize, f: impl Fn(usize) -> T + S
             .collect();
         handles
             .into_iter()
-            .flat_map(|handle| handle.join().unwrap_or_default())
+            .flat_map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
+            })
             .collect()
     })
 }
@@ -488,6 +492,17 @@ mod tests {
             tile.unforceload_command(),
             "forceload remove 256 -512 511 -257"
         );
+    }
+
+    #[test]
+    fn chunked_map_propagates_worker_panics() {
+        let result = std::panic::catch_unwind(|| {
+            chunked_map(8, 2, |index| {
+                assert!(index != 3, "worker panicked");
+                index
+            })
+        });
+        assert!(result.is_err());
     }
 
     #[test]

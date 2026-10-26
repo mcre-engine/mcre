@@ -21,9 +21,10 @@ pub use atlas::{
     SpriteAnimation, build_atlas, build_atlas_square,
 };
 pub use atmosphere::{
-    FOG_COLOR_MULTIPLIER, LAVA_FOG_COLOR, NIGHT_CLOUD_COLOR, OVERWORLD_FOG_COLOR,
-    OVERWORLD_SKY_COLOR, SKY_COLOR_MULTIPLIER, SKY_FOG_END_DISTANCE, WATER_FOG_COLOR,
-    atmospheric_fog_color, cloud_color_for, time_multiplier, vanilla_fog,
+    CLOUD_COLOR_ALPHA, CLOUD_COLOR_MULTIPLIER, FOG_COLOR_MULTIPLIER, LAVA_FOG_COLOR,
+    OVERWORLD_CLOUD_COLOR, OVERWORLD_FOG_COLOR, OVERWORLD_SKY_COLOR, SKY_COLOR_MULTIPLIER,
+    SKY_FOG_END_DISTANCE, WATER_FOG_COLOR, atmospheric_fog_color, cloud_color, time_multiplier,
+    vanilla_fog,
 };
 pub use camera::FlyCamera;
 pub use clouds::{

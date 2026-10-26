@@ -190,11 +190,12 @@ fn decode_section(
                 .ok_or(Error::MissingField("block_states.data"))?;
             let indices = unpack(&data, bits, SECTION_CELLS)?;
             for (index, palette_index) in indices.iter().enumerate() {
-                let state = resolved
+                let state = *resolved
                     .get(*palette_index)
-                    .copied()
-                    .flatten()
                     .ok_or(Error::PaletteIndex(*palette_index))?;
+                let Some(state) = state else {
+                    continue;
+                };
                 if state.is_air() {
                     continue;
                 }
@@ -400,11 +401,11 @@ fn decode_block_entities(
         stored.set("x", Tag::Int(position.0));
         stored.set("y", Tag::Int(position.1));
         stored.set("z", Tag::Int(position.2));
-        block_entities.push(BlockEntity::new(
-            id,
-            position,
-            crate::nbt::write_named("", &stored),
-        ));
+        let Ok(nbt) = crate::nbt::write_named("", &stored) else {
+            stats.skipped_block_entities += 1;
+            continue;
+        };
+        block_entities.push(BlockEntity::new(id, position, nbt));
         stats.block_entities += 1;
     }
     block_entities
@@ -504,11 +505,11 @@ pub fn load_entities_from_nbt(
             format!("minecraft:{raw_id}")
         };
         stored.set("id", Tag::String(id.clone()));
-        entities.push(WorldEntity::new(
-            id,
-            position,
-            crate::nbt::write_named("", &stored),
-        ));
+        let Ok(nbt) = crate::nbt::write_named("", &stored) else {
+            stats.skipped_entities += 1;
+            continue;
+        };
+        entities.push(WorldEntity::new(id, position, nbt));
         stats.entities += 1;
     }
     entities
@@ -523,16 +524,7 @@ pub fn import_chunk(
     biomes: &BiomeResolver,
     stats: &mut ImportStats,
 ) -> Result<(), Error> {
-    if let (Some(x), Some(z)) = (
-        root.get("xPos").and_then(Tag::as_i32),
-        root.get("zPos").and_then(Tag::as_i32),
-    ) && (x != chunk_x || z != chunk_z)
-    {
-        return Err(Error::ChunkMismatch {
-            expected: (chunk_x, chunk_z),
-            found: (x, z),
-        });
-    }
+    validate_chunk_position(root, (chunk_x, chunk_z))?;
     let Some(sections) = root.get("sections").and_then(Tag::as_list) else {
         stats.skipped_chunks += 1;
         return Ok(());
@@ -549,6 +541,20 @@ pub fn import_chunk(
     Ok(())
 }
 
+fn validate_chunk_position(root: &Tag, expected: (i32, i32)) -> Result<(), Error> {
+    if let (Some(x), Some(z)) = (
+        root.get("xPos").and_then(Tag::as_i32),
+        root.get("zPos").and_then(Tag::as_i32),
+    ) && (x != expected.0 || z != expected.1)
+    {
+        return Err(Error::ChunkMismatch {
+            expected,
+            found: (x, z),
+        });
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ImportRect {
     pub min_chunk: (i32, i32),
@@ -558,21 +564,24 @@ pub struct ImportRect {
 
 /// Loads one chunk from a region directory as a detached `Chunk` at true
 /// save coordinates, including the light stored in the save when it is marked
-/// correct (`isLightOn`). Returns `None` when the chunk is not stored (caller
-/// typically substitutes an empty air chunk).
+/// correct (`isLightOn`). `has_skylight` selects the dimension's skylight
+/// storage (false for the Nether/End). Returns `None` when the chunk is not
+/// stored (caller typically substitutes an empty air chunk).
 pub fn load_chunk(
     region_dir: &std::path::Path,
     chunk_x: i32,
     chunk_z: i32,
     blocks: &BlockResolver,
     biomes: &BiomeResolver,
+    has_skylight: bool,
     stats: &mut ImportStats,
 ) -> Result<Option<Chunk>, Error> {
     let Some(root) = region::chunk_nbt(region_dir, chunk_x, chunk_z)? else {
         stats.skipped_chunks += 1;
         return Ok(None);
     };
-    let Some(mut chunk) = load_chunk_from_nbt(&root, chunk_x, chunk_z, blocks, biomes, stats)?
+    let Some(mut chunk) =
+        load_chunk_from_nbt(&root, chunk_x, chunk_z, blocks, biomes, has_skylight, stats)?
     else {
         return Ok(None);
     };
@@ -596,8 +605,10 @@ pub fn load_chunk_from_nbt(
     chunk_z: i32,
     blocks: &BlockResolver,
     biomes: &BiomeResolver,
+    has_skylight: bool,
     stats: &mut ImportStats,
 ) -> Result<Option<Chunk>, Error> {
+    validate_chunk_position(root, (chunk_x, chunk_z))?;
     let Some(sections) = root.get("sections").and_then(Tag::as_list) else {
         stats.skipped_chunks += 1;
         return Ok(None);
@@ -634,7 +645,7 @@ pub fn load_chunk_from_nbt(
         }
     }
     if light_correct {
-        import_chunk_light(&mut chunk, &sky_layers, &block_layers);
+        import_chunk_light(&mut chunk, &sky_layers, &block_layers, has_skylight);
         chunk.mark_light_stored();
     }
     stats.chunks += 1;
@@ -658,15 +669,19 @@ fn section_light_bytes(section: &Tag, key: &str) -> Option<[u8; SECTION_LIGHT_BY
 /// (`SkyLightSectionStorage`/`BlockLightSectionStorage`): sections above the
 /// topmost stored sky layer are fully lit, missing sky layers repeat the
 /// nearest layer's bottom light plane, and missing block layers are dark.
+/// Dimensions without skylight start from a dark sky plane instead.
 fn import_chunk_light(
     chunk: &mut Chunk,
     sky_layers: &[Option<[u8; SECTION_LIGHT_BYTES]>],
     block_layers: &[Option<[u8; SECTION_LIGHT_BYTES]>],
+    has_skylight: bool,
 ) {
-    let mut sky = [0xFFu8; SECTION_LIGHT_BYTES];
+    let mut sky = [if has_skylight { 0xFF } else { 0x00 }; SECTION_LIGHT_BYTES];
     let dark = [0u8; SECTION_LIGHT_BYTES];
     for index in (0..mcre_world::SECTIONS_PER_CHUNK).rev() {
-        if let Some(layer) = sky_layers[index] {
+        if !has_skylight {
+            sky = dark;
+        } else if let Some(layer) = sky_layers[index] {
             sky = layer;
         } else {
             sky = repeat_first_light_layer(&sky);
@@ -685,6 +700,9 @@ fn repeat_first_light_layer(layer: &[u8; SECTION_LIGHT_BYTES]) -> [u8; SECTION_L
     repeated
 }
 
+/// Imports block and entity data for a chunk rectangle. Missing chunks are
+/// counted in `skipped_chunks`; malformed NBT, including coordinate
+/// mismatches, fails the import immediately.
 pub fn import_area(
     world: &mut World,
     region_dir: &std::path::Path,
@@ -699,6 +717,7 @@ pub fn import_area(
                 stats.skipped_chunks += 1;
                 continue;
             };
+            validate_chunk_position(&root, (chunk_x, chunk_z))?;
             let Some(sections) = root.get("sections").and_then(Tag::as_list) else {
                 stats.skipped_chunks += 1;
                 continue;
@@ -816,7 +835,7 @@ mod tests {
         let blocks = BlockResolver::new();
         let biomes = BiomeResolver::new();
         let mut stats = ImportStats::default();
-        let chunk = load_chunk(&dir, 5, -3, &blocks, &biomes, &mut stats)
+        let chunk = load_chunk(&dir, 5, -3, &blocks, &biomes, true, &mut stats)
             .expect("load")
             .expect("present");
         assert_eq!(stats.chunks, 1);
@@ -824,7 +843,7 @@ mod tests {
         assert_eq!(chunk.get_block(0, 5, 0).block().name(), "stone",);
         assert_eq!(chunk.biome_at(0, 5, 0).name(), "plains");
         assert!(
-            load_chunk(&dir, 6, -3, &blocks, &biomes, &mut stats)
+            load_chunk(&dir, 6, -3, &blocks, &biomes, true, &mut stats)
                 .expect("load")
                 .is_none()
         );
@@ -858,12 +877,15 @@ mod tests {
                 ])]),
             ),
         ]);
-        write_region(&entity_dir, &crate::nbt::write_named("", &entity_root));
+        write_region(
+            &entity_dir,
+            &crate::nbt::write_named("", &entity_root).unwrap(),
+        );
 
         let blocks = BlockResolver::new();
         let biomes = BiomeResolver::new();
         let mut stats = ImportStats::default();
-        let chunk = load_chunk(&region_dir, 5, -3, &blocks, &biomes, &mut stats)
+        let chunk = load_chunk(&region_dir, 5, -3, &blocks, &biomes, true, &mut stats)
             .expect("load")
             .expect("present");
 
@@ -880,12 +902,79 @@ mod tests {
         let blocks = BlockResolver::new();
         let biomes = BiomeResolver::new();
         let mut stats = ImportStats::default();
-        let chunk = load_chunk_from_nbt(&root, 5, -3, &blocks, &biomes, &mut stats)
+        let chunk = load_chunk_from_nbt(&root, 5, -3, &blocks, &biomes, true, &mut stats)
             .expect("load")
             .expect("present");
         assert_eq!((chunk.pos().x, chunk.pos().z), (5, -3));
         assert_eq!(chunk.get_block(0, 5, 0).block().name(), "stone");
         assert_eq!(chunk.biome_at(0, 5, 0).name(), "plains");
+    }
+
+    fn palette_root(palette: Vec<Tag>, data: Vec<i64>) -> Tag {
+        Tag::Compound(vec![
+            ("xPos".into(), Tag::Int(0)),
+            ("zPos".into(), Tag::Int(0)),
+            (
+                "sections".into(),
+                Tag::List(vec![Tag::Compound(vec![
+                    ("Y".into(), Tag::Int(0)),
+                    (
+                        "block_states".into(),
+                        Tag::Compound(vec![
+                            ("palette".into(), Tag::List(palette)),
+                            ("data".into(), Tag::LongArray(data)),
+                        ]),
+                    ),
+                ])]),
+            ),
+        ])
+    }
+
+    #[test]
+    fn unknown_palette_entry_skips_only_its_cells() {
+        let root = palette_root(
+            vec![
+                Tag::String("minecraft:stone".into()),
+                Tag::String("minecraft:not_a_block".into()),
+            ],
+            {
+                let mut data = vec![0i64; 256];
+                data[0] = 1;
+                data
+            },
+        );
+        let blocks = BlockResolver::new();
+        let biomes = BiomeResolver::new();
+        let mut stats = ImportStats::default();
+        let chunk = load_chunk_from_nbt(&root, 0, 0, &blocks, &biomes, true, &mut stats)
+            .expect("unknown block must not discard the chunk")
+            .expect("present");
+
+        assert_eq!(chunk.get_block(0, 0, 0).block().name(), "air");
+        assert_eq!(chunk.get_block(1, 0, 0).block().name(), "stone");
+        assert_eq!(stats.unknown_blocks, ["minecraft:not_a_block"]);
+    }
+
+    #[test]
+    fn out_of_range_palette_index_still_errors() {
+        let root = palette_root(
+            vec![
+                Tag::String("minecraft:stone".into()),
+                Tag::String("minecraft:dirt".into()),
+            ],
+            {
+                let mut data = vec![0i64; 256];
+                data[0] = 2;
+                data
+            },
+        );
+        let blocks = BlockResolver::new();
+        let biomes = BiomeResolver::new();
+        let mut stats = ImportStats::default();
+        assert!(matches!(
+            load_chunk_from_nbt(&root, 0, 0, &blocks, &biomes, true, &mut stats),
+            Err(Error::PaletteIndex(2))
+        ));
     }
 
     #[test]
@@ -917,7 +1006,7 @@ mod tests {
         let blocks = BlockResolver::new();
         let biomes = BiomeResolver::new();
         let mut stats = ImportStats::default();
-        let chunk = load_chunk_from_nbt(&root, 5, -3, &blocks, &biomes, &mut stats)
+        let chunk = load_chunk_from_nbt(&root, 5, -3, &blocks, &biomes, true, &mut stats)
             .expect("load")
             .expect("present");
 
@@ -957,7 +1046,7 @@ mod tests {
         let blocks = BlockResolver::new();
         let biomes = BiomeResolver::new();
         let mut stats = ImportStats::default();
-        let chunk = load_chunk_from_nbt(&root, 5, -3, &blocks, &biomes, &mut stats)
+        let chunk = load_chunk_from_nbt(&root, 5, -3, &blocks, &biomes, true, &mut stats)
             .expect("load")
             .expect("present");
 
@@ -1050,7 +1139,7 @@ mod tests {
         sky[source_section] = Some(sky_layer);
         block[source_section] = Some([0x33; SECTION_LIGHT_BYTES]);
 
-        import_chunk_light(&mut chunk, &sky, &block);
+        import_chunk_light(&mut chunk, &sky, &block, true);
 
         let lower_section_y = WORLD_MIN_Y + 16;
         assert_eq!(chunk.light().level(0, WORLD_MIN_Y + 3 * 16, 0), (0, 15));
@@ -1058,6 +1147,92 @@ mod tests {
         assert_eq!(chunk.light().level(0, WORLD_MIN_Y + 2 * 16 + 1, 0), (3, 15));
         assert_eq!(chunk.light().level(0, lower_section_y, 0), (0, 2));
         assert_eq!(chunk.light().level(0, lower_section_y + 15, 0), (0, 2));
+    }
+
+    #[test]
+    fn sky_less_dimensions_import_dark_sky_light() {
+        let mut block_light = vec![0i8; SECTION_LIGHT_BYTES];
+        block_light.fill(0x33);
+        let sky_light = vec![-1i8; SECTION_LIGHT_BYTES];
+        let root = Tag::Compound(vec![
+            ("xPos".into(), Tag::Int(0)),
+            ("zPos".into(), Tag::Int(0)),
+            ("isLightOn".into(), Tag::Int(1)),
+            (
+                "sections".into(),
+                Tag::List(vec![Tag::Compound(vec![
+                    ("Y".into(), Tag::Int(0)),
+                    ("SkyLight".into(), Tag::ByteArray(sky_light)),
+                    ("BlockLight".into(), Tag::ByteArray(block_light)),
+                ])]),
+            ),
+        ]);
+        let blocks = BlockResolver::new();
+        let biomes = BiomeResolver::new();
+        let mut stats = ImportStats::default();
+        let chunk = load_chunk_from_nbt(&root, 0, 0, &blocks, &biomes, false, &mut stats)
+            .expect("load")
+            .expect("present");
+
+        assert!(chunk.has_stored_light());
+        assert_eq!(chunk.light().level(0, 0, 0), (3, 0));
+        assert_eq!(
+            chunk.light().level(0, 17, 0),
+            (0, 0),
+            "missing sections stay dark in a sky-less dimension"
+        );
+    }
+
+    #[test]
+    fn load_rejects_chunk_nbt_stored_at_another_position() {
+        let (_, root) = crate::nbt::read_named(&chunk_payload()).unwrap();
+        let blocks = BlockResolver::new();
+        let biomes = BiomeResolver::new();
+        let mut stats = ImportStats::default();
+        assert!(matches!(
+            load_chunk_from_nbt(&root, 6, -3, &blocks, &biomes, true, &mut stats),
+            Err(Error::ChunkMismatch {
+                expected: (6, -3),
+                found: (5, -3)
+            })
+        ));
+    }
+
+    #[test]
+    fn import_area_rejects_chunk_nbt_stored_at_another_position() {
+        let dir = std::env::temp_dir().join(format!(
+            "mcre_anvil_import_area_mismatch_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut payload = chunk_payload();
+        payload[10..14].copy_from_slice(&4i32.to_be_bytes());
+        write_region(&dir, &payload);
+
+        let mut world = World::new(1);
+        let mut stats = ImportStats::default();
+        let result = import_area(
+            &mut world,
+            &dir,
+            ImportRect {
+                min_chunk: (5, -3),
+                max_chunk: (5, -3),
+                origin_chunk: (0, 0),
+            },
+            &BlockResolver::new(),
+            &BiomeResolver::new(),
+            &mut stats,
+        );
+        assert!(matches!(
+            result,
+            Err(Error::ChunkMismatch {
+                expected: (5, -3),
+                found: (4, -3)
+            })
+        ));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     fn chunk_payload_legacy_biomes() -> Vec<u8> {
@@ -1110,7 +1285,7 @@ mod tests {
         let blocks = BlockResolver::new();
         let biomes = BiomeResolver::new();
         let mut stats = ImportStats::default();
-        let chunk = load_chunk(&dir, 5, -3, &blocks, &biomes, &mut stats)
+        let chunk = load_chunk(&dir, 5, -3, &blocks, &biomes, true, &mut stats)
             .expect("load")
             .expect("present");
         assert_eq!(chunk.biome_at(0, 5, 0).name(), "forest");

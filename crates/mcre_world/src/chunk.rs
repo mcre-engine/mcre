@@ -202,9 +202,6 @@ impl Chunk {
     }
 
     pub fn fill_biome(&mut self, biome: Biome) {
-        if biome == Biome::PLAINS {
-            return;
-        }
         self.biomes = (0..SECTIONS_PER_CHUNK)
             .map(|_| Some(Box::new([u16::from(biome); BIOME_CELLS_PER_SECTION])))
             .collect();

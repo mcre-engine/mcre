@@ -19,8 +19,12 @@ pub struct DiscoveredPack {
     pub path: FsPath,
     /// True for `.zip` archives (need extraction before loading).
     pub is_zip: bool,
-    /// File size for zips (0 for folders); keys cache freshness.
+    /// File size for zips (0 for folders); keys cache freshness together with
+    /// [`Self::fingerprint`].
     pub size: u64,
+    /// FNV-1a hash of the zip bytes (0 for folders). Detects same-size edits
+    /// that a size check misses.
+    pub fingerprint: u64,
     /// Format compatibility when `pack.mcmeta` parses; `None` when the pack
     /// is broken (see `error`).
     pub compatible: Option<bool>,
@@ -104,6 +108,7 @@ pub async fn discover_packs(fs: &impl Fs, dir: &FsPath) -> Vec<DiscoveredPack> {
                         path: entry.path.clone(),
                         is_zip: false,
                         size: 0,
+                        fingerprint: 0,
                         compatible: Some(meta.supports_current_version()),
                         error: None,
                     }),
@@ -128,6 +133,7 @@ pub async fn discover_packs(fs: &impl Fs, dir: &FsPath) -> Vec<DiscoveredPack> {
                         path: entry.path.clone(),
                         is_zip: true,
                         size: bytes.len() as u64,
+                        fingerprint: zip_fingerprint(&bytes),
                         compatible: Some(meta.supports_current_version()),
                         error: None,
                     }),
@@ -154,16 +160,26 @@ fn broken(id: &str, path: &FsPath, is_zip: bool, size: u64, error: String) -> Di
         path: path.clone(),
         is_zip,
         size,
+        fingerprint: 0,
         compatible: None,
         error: Some(error),
     }
 }
 
+fn zip_fingerprint(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 const ZIP_MARKER: &str = ".mcre_zip_marker";
 
 /// Resolves a discovered pack to a loadable directory: folders pass through,
-/// zips extract into `cache_dir/<stem>` (re-extracted when the zip size
-/// changed since). Rejects zip-slip paths.
+/// zips extract into `cache_dir/<stem>` (re-extracted when the zip's size or
+/// content fingerprint changed since). Rejects zip-slip paths.
 pub async fn ensure_extracted(
     fs: &impl Fs,
     pack: &DiscoveredPack,
@@ -175,8 +191,9 @@ pub async fn ensure_extracted(
     let stem = pack.id.strip_suffix(".zip").unwrap_or(&pack.id).to_string();
     let target = cache_dir.join(stem.as_str());
     let marker = target.join(ZIP_MARKER);
+    let marker_note = format!("{}:{:016x}", pack.size, pack.fingerprint);
     if let Ok(note) = fs.read_to_string(&marker).await
-        && note.trim() == pack.size.to_string()
+        && note.trim() == marker_note
         && fs.is_dir(&target).await
     {
         return Ok(target);
@@ -228,7 +245,7 @@ pub async fn ensure_extracted(
             .map_err(|err| ResourcePackError::Zip(err.to_string()))?;
         fs.write(&out, &contents).await?;
     }
-    fs.write(&marker, pack.size.to_string().as_bytes()).await?;
+    fs.write(&marker, marker_note.as_bytes()).await?;
     Ok(target)
 }
 
@@ -369,6 +386,54 @@ mod tests {
         let evil = packs.iter().find(|pack| pack.id == "evil.zip").unwrap();
         assert!(ensure_extracted(&fs, evil, &cache).await.is_err());
         assert!(!root.join("evil.txt").exists());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn same_size_zip_edit_is_reextracted() {
+        let root = test_root("same-size");
+        stage_zip(
+            &root,
+            "pack.zip",
+            &[("pack.mcmeta", META.as_bytes()), ("assets/a.txt", b"one")],
+        );
+        let fs = NativeFs::new_custom_path(root.clone()).await.unwrap();
+        let cache = FsPath::from("cache");
+
+        let first = discover_packs(&fs, &FsPath::from("packs"))
+            .await
+            .into_iter()
+            .find(|pack| pack.id == "pack.zip")
+            .unwrap();
+        let out = ensure_extracted(&fs, &first, &cache).await.unwrap();
+        assert_eq!(
+            fs.read_to_string(&out.join("assets").join("a.txt"))
+                .await
+                .unwrap(),
+            "one"
+        );
+
+        stage_zip(
+            &root,
+            "pack.zip",
+            &[("pack.mcmeta", META.as_bytes()), ("assets/a.txt", b"two")],
+        );
+        let second = discover_packs(&fs, &FsPath::from("packs"))
+            .await
+            .into_iter()
+            .find(|pack| pack.id == "pack.zip")
+            .unwrap();
+        assert_eq!(first.size, second.size);
+        assert_ne!(first.fingerprint, second.fingerprint);
+
+        let out = ensure_extracted(&fs, &second, &cache).await.unwrap();
+        assert_eq!(
+            fs.read_to_string(&out.join("assets").join("a.txt"))
+                .await
+                .unwrap(),
+            "two"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

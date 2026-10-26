@@ -3,7 +3,9 @@ use chrono::{DateTime, Utc};
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use url::Url;
 
 const MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
@@ -335,12 +337,14 @@ impl AssetIndexFile {
     }
 
     /// Objects not stored under `objects_root` or stored with the wrong
-    /// size, deduplicated by hash (several logical paths share content).
+    /// size or content, deduplicated by hash (several logical paths share
+    /// content).
     pub fn missing(&self, objects_root: &Path) -> Vec<(PathBuf, AssetObject)> {
         let mut missing: HashMap<&str, (PathBuf, AssetObject)> = HashMap::new();
         for object in self.objects.values() {
             let dest = object.path_in(objects_root);
-            let stored = std::fs::metadata(&dest).is_ok_and(|meta| meta.len() == object.size);
+            let stored = std::fs::metadata(&dest).is_ok_and(|meta| meta.len() == object.size)
+                && std::fs::read(&dest).is_ok_and(|bytes| sha1_hex(&bytes) == object.hash);
             if !stored {
                 missing
                     .entry(&object.hash)
@@ -367,10 +371,13 @@ impl AssetObject {
         for attempt in 1..=3u64 {
             match fetch(client, &url).await {
                 Ok(bytes) if bytes.len() as u64 == self.size => {
-                    if let Some(parent) = dest.parent() {
-                        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+                    let actual = sha1_hex(&bytes);
+                    if actual != self.hash {
+                        last = format!("{}: SHA-1 mismatch (got {actual})", self.hash);
+                    } else {
+                        return write_atomic(dest, &bytes)
+                            .map_err(|err| format!("{}: {err}", dest.display()));
                     }
-                    return std::fs::write(dest, bytes).map_err(|err| err.to_string());
                 }
                 Ok(bytes) => {
                     last = format!(
@@ -394,6 +401,126 @@ impl AssetObject {
 /// Shared HTTP client for bulk asset downloads (one connection pool).
 pub fn asset_client() -> reqwest::Result<reqwest::Client> {
     reqwest::Client::builder().build()
+}
+
+/// Write `bytes` to `path` through a temporary file in the same directory.
+///
+/// The rename replaces the target atomically, so an interrupted write leaves
+/// the previous file intact instead of a truncated one.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    std::fs::create_dir_all(parent)?;
+
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "download".to_string());
+    let temp = parent.join(format!(
+        ".{name}.{}.{}.tmp",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    let result = (|| {
+        let mut file = std::fs::File::create(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        rename_replace(&temp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
+}
+
+#[cfg(not(windows))]
+fn rename_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::rename(from, to)
+}
+
+#[cfg(windows)]
+fn rename_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        #[link_name = "MoveFileExW"]
+        fn move_file_ex_w(existing: *const u16, new: *const u16, flags: u32) -> i32;
+    }
+
+    let from: Vec<u16> = from.as_os_str().encode_wide().chain([0]).collect();
+    let to: Vec<u16> = to.as_os_str().encode_wide().chain([0]).collect();
+    let replaced = unsafe { move_file_ex_w(from.as_ptr(), to.as_ptr(), 0x1 | 0x8) };
+    if replaced == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// Lowercase hex SHA-1 digest of `bytes`.
+pub fn sha1_hex(bytes: &[u8]) -> String {
+    let mut state: [u32; 5] = [
+        0x6745_2301,
+        0xEFCD_AB89,
+        0x98BA_DCFE,
+        0x1032_5476,
+        0xC3D2_E1F0,
+    ];
+    let bit_len = (bytes.len() as u64).wrapping_mul(8);
+
+    let mut padded = Vec::with_capacity((bytes.len() + 72) & !63);
+    padded.extend_from_slice(bytes);
+    padded.push(0x80);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&bit_len.to_be_bytes());
+
+    for block in padded.as_chunks::<64>().0 {
+        let mut words = [0u32; 80];
+        for (index, chunk) in block.as_chunks::<4>().0.iter().enumerate() {
+            words[index] = u32::from_be_bytes(*chunk);
+        }
+        for index in 16..80 {
+            words[index] =
+                (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
+                    .rotate_left(1);
+        }
+
+        let [mut a, mut b, mut c, mut d, mut e] = state;
+        for (index, word) in words.iter().enumerate() {
+            let (f, k) = match index {
+                0..=19 => ((b & c) | (!b & d), 0x5A82_7999),
+                20..=39 => (b ^ c ^ d, 0x6ED9_EBA1),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1B_BCDC),
+                _ => (b ^ c ^ d, 0xCA62_C1D6),
+            };
+            let next = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(*word);
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = next;
+        }
+        state[0] = state[0].wrapping_add(a);
+        state[1] = state[1].wrapping_add(b);
+        state[2] = state[2].wrapping_add(c);
+        state[3] = state[3].wrapping_add(d);
+        state[4] = state[4].wrapping_add(e);
+    }
+
+    state.iter().map(|word| format!("{word:08x}")).collect()
 }
 
 async fn fetch(client: &reqwest::Client, url: &str) -> Result<Bytes, String> {
@@ -585,4 +712,87 @@ pub fn convert_mappings(mappings: &str) -> String {
     }
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sha1_matches_known_vectors() {
+        assert_eq!(sha1_hex(b""), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+        assert_eq!(sha1_hex(b"abc"), "a9993e364706816aba3e25717850c26c9cd0d89d");
+        assert_eq!(
+            sha1_hex(b"The quick brown fox jumps over the lazy dog"),
+            "2fd4e1c67a2d28fced849ee1bb76e7391b93eb12"
+        );
+    }
+
+    #[test]
+    fn asset_cache_rejects_same_size_wrong_content() {
+        let dir = temp_dir("asset-hash");
+        let bytes = b"good";
+        let hash = sha1_hex(bytes);
+        let object = AssetObject {
+            hash: hash.clone(),
+            size: bytes.len() as u64,
+        };
+        let index = AssetIndexFile {
+            objects: HashMap::from([("asset".to_string(), object.clone())]),
+        };
+        let path = object.path_in(&dir);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"evil").unwrap();
+        assert_eq!(index.missing(&dir).len(), 1);
+
+        std::fs::write(&path, bytes).unwrap();
+        assert!(index.missing(&dir).is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn write_atomic_replaces_existing_file() {
+        let dir = temp_dir("replace");
+        let path = dir.join("file.bin");
+        std::fs::write(&path, b"old").unwrap();
+
+        write_atomic(&path, b"new").unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        assert_no_temp_files(&dir);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn write_atomic_leaves_no_temp_file() {
+        let dir = temp_dir("clean");
+        let path = dir.join("nested").join("file.bin");
+
+        write_atomic(&path, b"data").unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"data");
+        assert_no_temp_files(path.parent().unwrap());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "mcre_downloader_{name}_{}_{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn assert_no_temp_files(dir: &Path) {
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let name = entry.file_name();
+            assert!(
+                !name.to_string_lossy().ends_with(".tmp"),
+                "{name:?} left behind"
+            );
+        }
+    }
 }

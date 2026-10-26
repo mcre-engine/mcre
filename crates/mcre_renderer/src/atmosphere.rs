@@ -8,8 +8,11 @@ pub const OVERWORLD_FOG_COLOR: [f32; 3] = [192.0 / 255.0, 216.0 / 255.0, 1.0];
 pub const OVERWORLD_SKY_COLOR: [f32; 3] = [120.0 / 255.0, 167.0 / 255.0, 1.0];
 /// Vanilla `EnvironmentAttributes.SKY_FOG_END_DISTANCE`.
 pub const SKY_FOG_END_DISTANCE: f32 = 512.0;
-/// Vanilla `Timelines.NIGHT_CLOUD_COLOR_MULTIPLIER`.
-pub const NIGHT_CLOUD_COLOR: [f32; 3] = [0.1, 0.1, 0.15];
+/// Vanilla `EnvironmentAttributes.CLOUD_COLOR` base for the overworld
+/// (`#ccffffff`): white with 0.8 alpha.
+pub const OVERWORLD_CLOUD_COLOR: [f32; 3] = [1.0, 1.0, 1.0];
+/// Vanilla `EnvironmentAttributes.CLOUD_COLOR` base alpha.
+pub const CLOUD_COLOR_ALPHA: f32 = 0.8;
 /// Vanilla `EnvironmentAttributes.WATER_FOG_COLOR` default (`#050533`).
 pub const WATER_FOG_COLOR: [f32; 3] = [5.0 / 255.0, 5.0 / 255.0, 51.0 / 255.0];
 /// Vanilla `LavaFogEnvironment.COLOR` (`#991900`).
@@ -30,6 +33,15 @@ pub const SKY_COLOR_MULTIPLIER: [(f32, [f32; 3]); 4] = [
     (11867.0, [1.0, 1.0, 1.0]),
     (13670.0, [0.0, 0.0, 0.0]),
     (22330.0, [0.0, 0.0, 0.0]),
+];
+
+/// Vanilla `Timelines.OVERWORLD_DAY` `visual/cloud_color` multiplier track
+/// (`multiply`), white by day and `#ff191926` at night.
+pub const CLOUD_COLOR_MULTIPLIER: [(f32, [f32; 3]); 4] = [
+    (133.0, [1.0, 1.0, 1.0]),
+    (11867.0, [1.0, 1.0, 1.0]),
+    (13670.0, [25.0 / 255.0, 25.0 / 255.0, 38.0 / 255.0]),
+    (22330.0, [25.0 / 255.0, 25.0 / 255.0, 38.0 / 255.0]),
 ];
 
 /// Linear keyframe track with the day wrapping from the last keyframe back
@@ -125,22 +137,41 @@ fn brightened_water_fog_color(water_vision: f32) -> [f32; 3] {
     color
 }
 
-/// Approximation of the vanilla `CLOUD_COLOR` timeline keyed on the same
-/// day/night scalar as the fog: white at day, dark blue-grey at night, with
-/// the overworld's 0.8 alpha.
-pub fn cloud_color_for(sky: f32) -> [f32; 4] {
-    let t = sky.clamp(0.0, 1.0);
+/// Vanilla `EnvironmentAttributes.CLOUD_COLOR`: the dimension base colour
+/// multiplied by the `visual/cloud_color` timeline track at `time_ticks`.
+pub fn cloud_color(time_ticks: f32) -> [f32; 4] {
+    let multiplier = time_multiplier(time_ticks, &CLOUD_COLOR_MULTIPLIER);
     [
-        NIGHT_CLOUD_COLOR[0] + (1.0 - NIGHT_CLOUD_COLOR[0]) * t,
-        NIGHT_CLOUD_COLOR[1] + (1.0 - NIGHT_CLOUD_COLOR[1]) * t,
-        NIGHT_CLOUD_COLOR[2] + (1.0 - NIGHT_CLOUD_COLOR[2]) * t,
-        0.8,
+        OVERWORLD_CLOUD_COLOR[0] * multiplier[0],
+        OVERWORLD_CLOUD_COLOR[1] * multiplier[1],
+        OVERWORLD_CLOUD_COLOR[2] * multiplier[2],
+        CLOUD_COLOR_ALPHA,
     ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cloud_color_follows_the_cloud_track() {
+        let noon = cloud_color(6000.0);
+        assert_eq!(noon, [1.0, 1.0, 1.0, 0.8]);
+
+        // Vanilla sample at tick 18000: #ff191926 over #ccffffff.
+        let night = cloud_color(18000.0);
+        assert!((night[0] - 25.0 / 255.0).abs() < 1.0e-6);
+        assert!((night[1] - 25.0 / 255.0).abs() < 1.0e-6);
+        assert!((night[2] - 38.0 / 255.0).abs() < 1.0e-6);
+        assert_eq!(night[3], 0.8);
+
+        // The track is continuous across the day boundary.
+        let before_wrap = cloud_color(23_999.0);
+        let after_wrap = cloud_color(0.0);
+        for channel in 0..3 {
+            assert!((before_wrap[channel] - after_wrap[channel]).abs() < 1.0e-3);
+        }
+    }
 
     #[test]
     fn water_fog_uses_minimum_vision_and_vanilla_brightening() {

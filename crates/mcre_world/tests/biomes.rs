@@ -47,4 +47,9 @@ fn fill_biome_covers_all_sections() {
     assert_eq!(chunk.biome_at(0, 0, 0), Biome::DESERT);
     assert_eq!(chunk.biome_at(15, 319, 15), Biome::DESERT);
     assert_eq!(chunk.biome_at(0, -64, 0), Biome::DESERT);
+
+    chunk.fill_biome(Biome::PLAINS);
+    assert_eq!(chunk.biome_at(0, 0, 0), Biome::PLAINS);
+    assert_eq!(chunk.biome_at(15, 319, 15), Biome::PLAINS);
+    assert_eq!(chunk.biome_at(0, -64, 0), Biome::PLAINS);
 }

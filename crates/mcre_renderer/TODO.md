@@ -97,7 +97,7 @@ Storage decisions (locked):
       through the same `ResourcePack::load` once extracted. Zip-direct user
       packs deferred to Phase 2 pack UI.)
 - [x] `pack_format`/overlay application (`pack_meta.rs` already parses them);
-      pack-order config. (Current format 100.1 from jar `version.json`,
+      pack-order config. (Current format 100.2 from jar `version.json`,
       jar-cross-checked in tests; overlay dirs layer above primary,
       last-listed wins; incompatible packs warn-and-load with `compatible` flag.)
 - [x] Rework `build_atlas` to resolve each texture through the pack stack

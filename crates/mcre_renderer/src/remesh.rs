@@ -16,6 +16,7 @@ pub struct StreamSource {
     pub region_dir: std::path::PathBuf,
     pub blocks: Arc<mcre_anvil::BlockResolver>,
     pub biomes: Arc<mcre_anvil::BiomeResolver>,
+    pub has_skylight: bool,
 }
 
 pub struct MeshJob {
@@ -66,6 +67,7 @@ pub fn run_job(
                     cz,
                     &source.blocks,
                     &source.biomes,
+                    source.has_skylight,
                     &mut stats,
                 ) {
                     Ok(chunk) => chunk,
@@ -421,6 +423,7 @@ mod tests {
             region_dir: std::path::PathBuf::from("/nonexistent"),
             blocks: Arc::new(mcre_anvil::BlockResolver::new()),
             biomes: Arc::new(mcre_anvil::BiomeResolver::new()),
+            has_skylight: true,
         };
         let mut worker = MeshWorker::new(data, atlas, Some(source));
 

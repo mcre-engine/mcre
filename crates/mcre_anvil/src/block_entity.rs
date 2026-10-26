@@ -177,7 +177,11 @@ mod tests {
     fn block_entity(id: &str, payload: Tag) -> BlockEntity {
         let mut payload = payload;
         payload.set("id", Tag::String(id.into()));
-        BlockEntity::new(id.into(), (1, 64, 2), crate::nbt::write_named("", &payload))
+        BlockEntity::new(
+            id.into(),
+            (1, 64, 2),
+            crate::nbt::write_named("", &payload).unwrap(),
+        )
     }
 
     #[test]

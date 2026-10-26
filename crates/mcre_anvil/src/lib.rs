@@ -17,6 +17,20 @@ pub use resolve::{BiomeResolver, BlockResolver};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+pub(crate) const MAX_DECOMPRESSED_BYTES: u64 = 64 << 20;
+
+pub(crate) fn read_limited(reader: impl Read, limit: u64) -> Result<Vec<u8>, Error> {
+    let mut out = Vec::new();
+    reader
+        .take(limit + 1)
+        .read_to_end(&mut out)
+        .map_err(|err| Error::Decompress(err.to_string()))?;
+    if out.len() as u64 > limit {
+        return Err(Error::DecompressedTooLarge(limit));
+    }
+    Ok(out)
+}
+
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error {
     #[error("I/O error: {0}")]
@@ -27,6 +41,8 @@ pub enum Error {
     Truncated,
     #[error("invalid UTF-8 in NBT string")]
     InvalidUtf8,
+    #[error("NBT string too long: {0} bytes (maximum 65535)")]
+    StringTooLong(usize),
     #[error("negative NBT length")]
     NegativeLength,
     #[error("unknown NBT tag: {0}")]
@@ -52,6 +68,33 @@ pub enum Error {
         expected: (i32, i32),
         found: (i32, i32),
     },
+    #[error("NBT nesting deeper than {0} levels")]
+    NbtTooDeep(usize),
+    #[error("decompressed NBT exceeds {0} bytes")]
+    DecompressedTooLarge(u64),
+}
+
+/// Whether a dimension type stores skylight in chunk sections. The three
+/// vanilla dimensions are the only built-in types; generated dimension data
+/// replaces this lookup when R11 lands.
+pub fn dimension_has_skylight(dimension: &str) -> bool {
+    !matches!(
+        dimension,
+        "minecraft:the_nether" | "minecraft:the_end" | "the_nether" | "the_end"
+    )
+}
+
+#[cfg(test)]
+mod dimension_tests {
+    use super::dimension_has_skylight;
+
+    #[test]
+    fn vanilla_dimension_skylight_flags() {
+        assert!(dimension_has_skylight("minecraft:overworld"));
+        assert!(!dimension_has_skylight("minecraft:the_nether"));
+        assert!(!dimension_has_skylight("minecraft:the_end"));
+        assert!(!dimension_has_skylight("the_nether"));
+    }
 }
 
 pub struct SavePaths {
@@ -110,13 +153,11 @@ pub struct Spawn {
 
 fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     if bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
-        let mut decoder = flate2::read::GzDecoder::new(bytes);
-        let mut out = Vec::new();
-        decoder
-            .read_to_end(&mut out)
-            .map_err(|err| Error::Decompress(err.to_string()))?;
-        Ok(out)
+        read_limited(flate2::read::GzDecoder::new(bytes), MAX_DECOMPRESSED_BYTES)
     } else {
+        if bytes.len() as u64 > MAX_DECOMPRESSED_BYTES {
+            return Err(Error::DecompressedTooLarge(MAX_DECOMPRESSED_BYTES));
+        }
         Ok(bytes.to_vec())
     }
 }
@@ -146,7 +187,7 @@ pub fn read_gzip_nbt_bytes(bytes: &[u8]) -> Result<nbt::Tag, Error> {
 /// Write a root compound as a gzip-compressed NBT file, creating parent
 /// directories as needed.
 pub fn write_gzip_nbt(path: &Path, root: &nbt::Tag) -> Result<(), Error> {
-    let raw = nbt::write_named("", root);
+    let raw = nbt::write_named("", root)?;
     let bytes = gzip(&raw);
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()

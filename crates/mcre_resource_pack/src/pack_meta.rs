@@ -137,7 +137,66 @@ pub struct OverlayEntry {
     #[serde(default)]
     pub max_format: Option<PackVersion>,
     #[serde(default)]
-    pub formats: Option<(u32, u32)>,
+    pub formats: Option<FormatRange>,
+}
+
+/// Legacy `formats` bounds: either a single major pack format or an inclusive
+/// `[min, max]` pair, matching vanilla's `InclusiveRange<Integer>` codec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatRange {
+    pub min: u32,
+    pub max: u32,
+}
+
+impl<'de> Deserialize<'de> for FormatRange {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Unexpected, Visitor};
+
+        struct FormatRangeVisitor;
+
+        impl<'de> Visitor<'de> for FormatRangeVisitor {
+            type Value = FormatRange;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an integer or a two-element array of integers")
+            }
+
+            fn visit_u32<E: de::Error>(self, value: u32) -> Result<FormatRange, E> {
+                Ok(FormatRange {
+                    min: value,
+                    max: value,
+                })
+            }
+
+            fn visit_u64<E: de::Error>(self, value: u64) -> Result<FormatRange, E> {
+                let value = u32::try_from(value).map_err(|_| {
+                    E::invalid_value(Unexpected::Unsigned(value), &"value fits in u32")
+                })?;
+                Ok(FormatRange {
+                    min: value,
+                    max: value,
+                })
+            }
+
+            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<FormatRange, A::Error> {
+                let min = seq
+                    .next_element::<u32>()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &"at least one element"))?;
+                let max = seq
+                    .next_element::<u32>()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &"a two-element array"))?;
+                if seq.next_element::<de::IgnoredAny>()?.is_some() {
+                    return Err(de::Error::invalid_length(3, &"a two-element array"));
+                }
+                Ok(FormatRange { min, max })
+            }
+        }
+
+        deserializer.deserialize_any(FormatRangeVisitor)
+    }
 }
 
 impl PackMeta {
@@ -174,8 +233,9 @@ impl PackMeta {
                     && entry
                         .max_format
                         .is_none_or(|max| PackVersion::CURRENT <= max)
-                    && entry.formats.is_none_or(|(lo, hi)| {
-                        lo <= PackVersion::CURRENT.major && PackVersion::CURRENT.major <= hi
+                    && entry.formats.is_none_or(|range| {
+                        range.min <= PackVersion::CURRENT.major
+                            && PackVersion::CURRENT.major <= range.max
                     })
             })
             .map(|entry| entry.directory.clone())
@@ -288,6 +348,7 @@ mod tests {
                     {"directory": "current", "min_format": 90},
                     {"directory": "exact", "min_format": [100, 2], "max_format": [100, 2]},
                     {"directory": "legacy", "formats": [90, 200]},
+                    {"directory": "legacy_single", "formats": 100},
                     {"directory": "legacy_old", "formats": [10, 50]},
                     {"directory": "future", "min_format": 200},
                     {"directory": "unbounded"}
@@ -302,8 +363,32 @@ mod tests {
                 "current".to_string(),
                 "exact".to_string(),
                 "legacy".to_string(),
+                "legacy_single".to_string(),
                 "unbounded".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn test_parse_single_format_and_pair() {
+        let single: PackMeta = serde_json::from_str(
+            r#"{"pack": {"description": "Test"},
+                "overlays": {"entries": [{"directory": "one", "formats": 100}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            single.overlays.unwrap().entries[0].formats,
+            Some(FormatRange { min: 100, max: 100 })
+        );
+
+        let pair: PackMeta = serde_json::from_str(
+            r#"{"pack": {"description": "Test"},
+                "overlays": {"entries": [{"directory": "two", "formats": [90, 200]}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            pair.overlays.unwrap().entries[0].formats,
+            Some(FormatRange { min: 90, max: 200 })
         );
     }
 

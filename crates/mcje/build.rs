@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use mcje_downloader::{Library, RootManifest};
+use mcje_downloader::{Library, RootManifest, sha1_hex, write_atomic};
 use tokio::{fs, time};
 
 #[tokio::main]
@@ -39,9 +39,10 @@ async fn main() {
         fs::create_dir_all(&download_dir).await.unwrap();
     }
 
-    if !main_path.exists() {
+    if !cache_matches(&main_path, &version_manifest.downloads.client.sha1).await {
         let client = version_manifest.downloads.client.download().await.unwrap();
-        fs::write(&main_path, client).await.unwrap();
+        verify_sha1(&client, &version_manifest.downloads.client.sha1, &main_path);
+        write_atomic(&main_path, &client).unwrap();
     }
 
     let libs_root = download_dir.join("libs");
@@ -64,15 +65,12 @@ async fn main() {
                 format!("{}.jar", name)
             });
             classpath += &format!("{}{}", sep, lib_path.to_str().unwrap());
-            if !lib_path.exists() {
+            let artifact = lib.artifact();
+            if !cache_matches(&lib_path, &artifact.sha1).await {
                 time::sleep(Duration::from_millis(100)).await;
-                let lib_source = lib.artifact().download().await.unwrap();
-                if let Some(parent) = lib_path.parent()
-                    && !parent.exists()
-                {
-                    fs::create_dir_all(parent).await.unwrap();
-                }
-                fs::write(&lib_path, lib_source).await.unwrap();
+                let lib_source = artifact.download().await.unwrap();
+                verify_sha1(&lib_source, &artifact.sha1, &lib_path);
+                write_atomic(&lib_path, &lib_source).unwrap();
             }
         }
     }
@@ -137,11 +135,11 @@ async fn main() {
     if let Some(asset_index) = version_manifest.asset_index {
         let index_root = assets_root.join("indexes");
         let index_path = index_root.join(format!("{}.json", asset_index.id));
-        if !index_path.exists() {
+        if !cache_matches(&index_path, &asset_index.sha1).await {
             time::sleep(Duration::from_millis(100)).await;
             let index_bytes = asset_index.download().await.unwrap();
-            fs::create_dir_all(&index_root).await.unwrap();
-            fs::write(&index_path, index_bytes).await.unwrap();
+            verify_sha1(&index_bytes, &asset_index.sha1, &index_path);
+            write_atomic(&index_path, &index_bytes).unwrap();
         }
         println!("cargo:rustc-env=MCJE_ASSET_INDEX={}", asset_index.id);
     } else {
@@ -252,10 +250,26 @@ async fn extract_natives(jar_path: &Path, natives_root: &Path, exclude: &[String
             continue;
         }
         let dest = natives_root.join(&name);
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).await.unwrap();
-        }
-        let mut out = std::fs::File::create(&dest).expect("create natives file");
-        std::io::copy(&mut entry, &mut out).expect("extract natives file");
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).expect("read natives file");
+        write_atomic(&dest, &bytes).expect("extract natives file");
+    }
+}
+
+fn verify_sha1(bytes: &[u8], expected: &str, path: &Path) {
+    if expected.is_empty() {
+        return;
+    }
+    let actual = sha1_hex(bytes);
+    assert_eq!(actual, expected, "SHA-1 mismatch for {}", path.display());
+}
+
+async fn cache_matches(path: &Path, expected: &str) -> bool {
+    if expected.is_empty() {
+        return path.exists();
+    }
+    match fs::read(path).await {
+        Ok(bytes) => sha1_hex(&bytes) == expected,
+        Err(_) => false,
     }
 }

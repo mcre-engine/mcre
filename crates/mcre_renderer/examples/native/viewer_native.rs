@@ -9,7 +9,7 @@ use mcre_renderer::lightmap::{DAY_LENGTH_TICKS, DEFAULT_BRIGHTNESS, sky_light_fa
 use mcre_renderer::{
     Atlas, AtlasAnimator, CullParams, DebugFlags, EguiFrame, FlyCamera, Frustum, LightMode, Mat4,
     Mesh, MeshOptions, MeshResult, MeshWorker, ParticleSystem, RenderChunk, Renderer, SectionMesh,
-    SectionVisibility, StreamSource, build_atlas, build_atlas_square, cloud_color_for,
+    SectionVisibility, StreamSource, build_atlas, build_atlas_square, cloud_color,
     find_visible_sections, mesh_chunk, pack_chunk_sections, vanilla_fog,
 };
 use mcre_resource_pack::{ResourcePackData, ResourcePackSet, download};
@@ -612,7 +612,7 @@ impl PackManager {
             }
         }
         let roots = set.texture_roots();
-        let data = set.build(&self.fs).await.map_err(|err| err.to_string())?;
+        let data = set.build().await.map_err(|err| err.to_string())?;
         let atlas = if self.square_atlas {
             build_atlas_square(&self.fs, &roots, &data.texture_table).await
         } else {
@@ -652,6 +652,7 @@ fn load_save_into(world: &mut World, save_dir: &str, radius: u32) -> SaveSetup {
         region_dir,
         blocks: blocks.clone(),
         biomes: biomes.clone(),
+        has_skylight: mcre_anvil::dimension_has_skylight(&spawn.dimension),
     };
 
     // Initial 3x3 around spawn, synchronously: instant scene, the streamer
@@ -667,6 +668,7 @@ fn load_save_into(world: &mut World, save_dir: &str, radius: u32) -> SaveSetup {
                 pos.1,
                 &blocks,
                 &biomes,
+                source.has_skylight,
                 &mut stats,
             ) {
                 Ok(Some(chunk)) => chunk,
@@ -1056,7 +1058,7 @@ impl ApplicationHandler for Viewer {
         renderer.set_cloud_status(self.cloud_status);
         renderer.set_cloud_range(self.cloud_range);
         renderer.set_cloud_height(CLOUD_HEIGHT);
-        renderer.set_cloud_color(cloud_color_for(self.sky_factor));
+        renderer.set_cloud_color(cloud_color(self.time_ticks));
 
         let egui_ctx = egui::Context::default();
         let egui_state = egui_winit::State::new(
@@ -1845,7 +1847,7 @@ impl Viewer {
             self.cloud_ticks.fract() as f32,
         );
         renderer.set_spawner_animation_ticks(self.cloud_ticks as f32);
-        renderer.set_cloud_color(cloud_color_for(self.sky_factor));
+        renderer.set_cloud_color(cloud_color(self.time_ticks));
         self.render_visible(
             view_proj.0,
             camera_relative_view_proj.0,
@@ -1873,7 +1875,7 @@ impl Viewer {
             self.cloud_ticks.floor() as i64,
             self.cloud_ticks.fract() as f32,
         );
-        let cloud_color = cloud_color_for(self.sky_factor);
+        let cloud_color = cloud_color(self.time_ticks);
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };
