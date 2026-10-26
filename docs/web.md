@@ -44,10 +44,14 @@ and adult temperate/warm pigs, temperate cows, temperate/warm chickens,
 creepers, adult sheep, zombies, drowned/husks, skeletons, wild wolves,
 parrots, bats, bees, endermen, squids, spiders, horses, chest minecarts,
 falling blocks, and dropped block items render from the entity and block
-textures. Hanging sign text, non-ASCII glyphs, flat dropped items, other
-entity models, dropped-item stack clusters, animation, shadows, and picking
-are not yet rendered. The current pack supplies the blockstates, models, and
-textures, so load a pack first.
+textures. Mob/trial spawners with explicit spawn data render their preview with
+vanilla scaling and animation-clock spin; entity faces use directional diffuse
+lighting, and supported mobs cast soft, light- and distance-faded shadows onto
+sturdy block tops. Registry-configured spawner contents, non-ASCII sign glyphs,
+flat dropped items, other entity models and animations,
+dropped-item stack clusters, shadows for non-mob entities, and picking are not
+yet rendered. The current pack supplies the blockstates, models, and textures,
+so load a pack first.
 
 "Download world zip" re-zips `saves/upload/` and downloads it as `world.zip`.
 Region write-back (saving edits) is still out of scope; `mcre_anvil` only

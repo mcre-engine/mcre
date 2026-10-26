@@ -18,6 +18,7 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec3<f32>,
+    @location(2) shadow_alpha: f32,
     /// `x` spherical camera distance, `y` cylindrical camera distance.
     @location(3) distance: vec2<f32>,
     @location(4) raw_light: vec2<f32>,
@@ -34,11 +35,20 @@ struct Params {
     /// render-distance end, `w` cloud fog fade-out distance.
     fog_end_sky: vec4<f32>,
     flags: vec4<u32>,
-    /// `x` texcoord shrink epsilon, `y` fog density.
+    /// `x` texcoord shrink epsilon, `y` fog density, `z` spawner animation ticks.
     fog_misc: vec4<f32>,
     /// `x`,`y` inverse atlas size (`1.0 / TextureSize`).
     tex_size: vec4<f32>,
 };
+
+const SPAWNER_SPIN_RADIANS_PER_TICK: f32 = 0.04363323;
+
+fn entity_directional_brightness(normal: vec3<f32>) -> f32 {
+    let light0 = vec3<f32>(0.1616904, 0.8084521, -0.5659165);
+    let light1 = vec3<f32>(-0.1616904, 0.8084521, 0.5659165);
+    let diffuse = max(dot(normal, light0), 0.0) + max(dot(normal, light1), 0.0);
+    return min(1.0, diffuse * 0.6 + 0.4);
+}
 
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var atlas_texture: texture_2d<f32>;
@@ -68,7 +78,33 @@ fn fog_value(in: VertexOutput) -> f32 {
 fn vs_main(in: VertexInput, @builtin(instance_index) instance: u32) -> VertexOutput {
     var out: VertexOutput;
     let section_origin = section_table[instance].xyz;
-    let relative_pos = decode_position(in.position) + section_origin;
+    var relative_pos = decode_position(in.position) + section_origin;
+    var spawner_shade = 1.0;
+    var shadow_alpha = 1.0;
+    let marker = u32(in.mid_block.w) & 0xffu;
+    let is_shadow = (marker & 0x40u) != 0u && (marker & 0x80u) == 0u;
+    if (is_shadow) {
+        shadow_alpha = f32(marker & 0x3fu) / 63.0;
+    }
+    if (in.mid_block.w < 0) {
+        let pivot = relative_pos + vec3<f32>(in.mid_block.xyz) / 64.0 - vec3<f32>(0.0, 0.1, 0.0);
+        let angle = params.fog_misc.z * SPAWNER_SPIN_RADIANS_PER_TICK;
+        let sin_angle = sin(angle);
+        let cos_angle = cos(angle);
+        let relative_to_pivot = relative_pos - pivot;
+        relative_pos = pivot + vec3<f32>(
+            relative_to_pivot.x * cos_angle + relative_to_pivot.z * sin_angle,
+            relative_to_pivot.y,
+            -relative_to_pivot.x * sin_angle + relative_to_pivot.z * cos_angle,
+        );
+        let normal = octahedral_decode(in.normal_tangent.xy);
+        let spun_normal = vec3<f32>(
+            normal.x * cos_angle + normal.z * sin_angle,
+            normal.y,
+            -normal.x * sin_angle + normal.z * cos_angle,
+        );
+        spawner_shade = entity_directional_brightness(spun_normal);
+    }
     out.clip_position = params.view_proj * vec4<f32>(relative_pos, 1.0);
     out.uv = decode_texcoord(in.tex) + decode_texcoord_bias(in.tex) * params.fog_misc.x;
     let light_uv = decode_lightmap_uv(in.light_data.xy);
@@ -78,13 +114,17 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instance: u32) -> VertexOut
     }
     // Vanilla `terrain.vsh`: the lightmap multiplies the vertex color before
     // interpolation, so the product (not each factor) is interpolated.
-    out.color = in.color.rgb * light;
+    out.color = in.color.rgb * light * spawner_shade;
     let camera_fraction = params.camera_pos.xyz - floor(params.camera_pos.xyz);
     let camera_relative_pos = relative_pos - camera_fraction;
     out.distance = vec2<f32>(
         length(camera_relative_pos),
         max(length(camera_relative_pos.xz), abs(camera_relative_pos.y)),
     );
+    if (is_shadow) {
+        shadow_alpha *= max(0.0, 1.0 - out.distance.x * out.distance.x / 256.0);
+    }
+    out.shadow_alpha = shadow_alpha;
     out.raw_light = light_uv;
     out.cutout = in.light_data.z;
     out.uv_bounds = vec4<f32>(in.uv_bounds) / 65535.0;
@@ -193,7 +233,7 @@ fn terrain_color(in: VertexOutput, cutout: bool, mip: bool) -> vec4<f32> {
         let fog = fog_value(in) * params.fog_misc.y;
         rgb = mix(rgb, params.fog_color_start.rgb, fog);
     }
-    return vec4<f32>(rgb, alpha);
+    return vec4<f32>(rgb, alpha * in.shadow_alpha);
 }
 
 @fragment

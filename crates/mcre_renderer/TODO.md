@@ -176,9 +176,9 @@ Storage decisions (locked):
       them in the native block inspector.
 - [x] Render single and double chest halves (normal, trapped, ender, copper
       weathering) from the entity chest textures with facing rotation.
-- [x] Render standing/wall sign text from the built-in ASCII font, including
-      dye colours and glowing full-bright light.
-- [ ] Render hanging sign text, glowing text outlines, and non-ASCII glyphs.
+- [x] Render standing/wall/hanging sign text from the built-in ASCII font,
+      including dye colours, glowing full-bright text, and text outlines.
+- [ ] Render non-ASCII sign glyphs.
 - [ ] Wire edits and interaction.
 
 ## M13 — Entities (in progress)
@@ -194,18 +194,25 @@ Storage decisions (locked):
       model at the entity position), and dropped block items (block model with
       the vanilla ground display transform) into chunk meshes from entity NBT
       (yaw, variant, age) with the entity and block atlas textures and block
-      light. (Colored-sheep undercoat, wolf collar/angry overlays,
+      light. Mob/trial spawners with explicit spawn data render their entity
+      preview with vanilla scaling and animation-clock spin; entity faces use
+      vanilla directional diffuse lighting; supported mobs cast soft,
+      block-light-aware shadows onto sturdy block tops. Flat entity model cubes
+      are double-sided based on their dimensions. (Colored-sheep undercoat,
+      wolf collar/angry overlays,
       parrot/bat/bee pose/flap animation, angry/nectar bee textures, carried
       blocks/glowing eyes, tentacle rotation, leg animation, horse
       saddle/armor/baby models, minecart rail alignment and other minecart
       variants, flat dropped items, dropped-item stack clusters, and sitting
-      poses deferred.)
+      poses deferred. Registry-configured trial-spawner contents, equipment
+      layers, and the remaining entity types are still unsupported.)
 - [ ] Decode and render the remaining entity models, animation, movement,
-      shadows, and picking.
+      non-mob shadows, and picking.
 
 Order: M1 → M2 → M3 → M4 → M5 → M6 → M7 → M9 → M8 → M10 → M11 → M12 → M13.
-Next: continue M13 entity models and animation, finish M12 hanging signs and
-outlines, then M11 particle providers and shape-aware collision.
+Next: expand M13 entity and block-entity coverage with parity shots; finish
+M12 hanging signs and outlines, then M11 particle providers and shape-aware
+collision.
 Verify each milestone: `cargo ck`, `cargo lint -- -D warnings`,
 `cargo test --workspace --all-features`, `cargo fmt --check`, `typos`,
 25s viewer smoke (expect exit 124).

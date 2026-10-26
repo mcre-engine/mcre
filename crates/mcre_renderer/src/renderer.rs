@@ -289,6 +289,7 @@ pub struct Renderer {
     cloud_height: f32,
     cloud_range_chunks: u32,
     cloud_time: (i64, f32),
+    spawner_animation_ticks: f32,
     stats: FrameStats,
     capture: Option<CaptureTarget>,
 }
@@ -419,6 +420,7 @@ impl Renderer {
             cloud_height: CLOUD_HEIGHT,
             cloud_range_chunks: DEFAULT_CLOUD_RANGE,
             cloud_time: (0, 0.0),
+            spawner_animation_ticks: 0.0,
             stats: FrameStats::default(),
             capture: None,
         })
@@ -536,6 +538,10 @@ impl Renderer {
     /// day/night cycle, like vanilla world time.
     pub fn set_cloud_time(&mut self, game_ticks: i64, partial_ticks: f32) {
         self.cloud_time = (game_ticks, partial_ticks);
+    }
+
+    pub fn set_spawner_animation_ticks(&mut self, ticks: f32) {
+        self.spawner_animation_ticks = ticks;
     }
 
     /// Rebuilds the cell-anchored cloud mesh if the camera crossed a cell or
@@ -960,7 +966,12 @@ impl Renderer {
                 cloud_fog_end(self.cloud_range_chunks),
             ],
             flags: [debug_bits(&self.debug_flags), 0, 0, 0],
-            fog_misc: [self.tex_coord_shrink, self.fog.density, 0.0, 0.0],
+            fog_misc: [
+                self.tex_coord_shrink,
+                self.fog.density,
+                self.spawner_animation_ticks,
+                0.0,
+            ],
             tex_size: [self.atlas_texel_size[0], self.atlas_texel_size[1], 0.0, 0.0],
         };
         self.queue

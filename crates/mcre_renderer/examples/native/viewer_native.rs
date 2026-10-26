@@ -1844,6 +1844,7 @@ impl Viewer {
             self.cloud_ticks.floor() as i64,
             self.cloud_ticks.fract() as f32,
         );
+        renderer.set_spawner_animation_ticks(self.cloud_ticks as f32);
         renderer.set_cloud_color(cloud_color_for(self.sky_factor));
         self.render_visible(
             view_proj.0,
@@ -1883,6 +1884,11 @@ impl Viewer {
         renderer.set_cloud_status(cloud_status);
         renderer.set_cloud_range(cloud_range);
         renderer.set_cloud_time(cloud_ticks.0, cloud_ticks.1);
+        renderer.set_spawner_animation_ticks(
+            self.shot
+                .as_ref()
+                .map_or(0.0, |shot| shot.spec.animation_ticks as f32),
+        );
         renderer.set_cloud_color(cloud_color);
     }
 

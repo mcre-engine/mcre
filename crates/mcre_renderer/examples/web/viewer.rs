@@ -1224,6 +1224,7 @@ impl WebViewer {
             }
         }
         renderer.set_time(state.time_ticks);
+        renderer.set_spawner_animation_ticks(state.animation_ticks as f32);
         renderer.set_brightness(state.brightness);
         renderer.set_fog(if state.fog_enabled {
             vanilla_fog(state.render_distance, state.time_ticks, None, 0.0)
@@ -1270,6 +1271,10 @@ impl WebViewer {
             })
             .collect();
         renderer.render(view_projection, camera_position, &chunks, None);
+        let rendered_sections = renderer.frame_stats().sections;
+        if let Some(body) = web_sys::window().and_then(|window| window.document()?.body()) {
+            let _ = body.set_attribute("data-rendered-sections", &rendered_sections.to_string());
+        }
         if state.debug_visible {
             let stats = renderer.frame_stats();
             let chunk_x = (camera_position[0].floor() as i32).div_euclid(16);

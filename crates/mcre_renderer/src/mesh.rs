@@ -106,6 +106,8 @@ pub struct QuadMeta {
     pub pass: TerrainPass,
     pub block_pos: [i32; 3],
     pub state: BlockState,
+    pub spawner_display: bool,
+    pub shadow_opacity: Option<u8>,
 }
 
 /// Per-quad sort key for translucent back-to-front ordering (Sodium
@@ -205,7 +207,13 @@ pub fn pack_chunk_sections(
                 state_id: u16::from(meta.state),
                 translucent: meta.pass == TerrainPass::Translucent,
                 cutout: meta.pass == TerrainPass::Cutout,
-                emission: meta.state.light_emission().min(15),
+                emission: if meta.spawner_display {
+                    0x80
+                } else if let Some(opacity) = meta.shadow_opacity {
+                    0x40 | ((u16::from(opacity) * 63 + 127) / 255) as u8
+                } else {
+                    meta.state.light_emission().min(15)
+                },
                 section_id: pack_local_section_index(local_x, (section_y as u8) & 0x3, local_z),
             });
             let facing = (meta.facing as usize).min(FACING_COUNT - 1);
@@ -410,6 +418,8 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                     pass,
                     block_pos,
                     state,
+                    spawner_display: false,
+                    shadow_opacity: None,
                 });
                 if options.double_sided_liquids && state.block().liquid_fluid().is_some() {
                     mesh.indices.extend_from_slice(&[
@@ -425,13 +435,16 @@ pub fn mesh_chunk<A: BlockAccess + ?Sized>(
                         pass,
                         block_pos,
                         state,
+                        spawner_display: false,
+                        shadow_opacity: None,
                     });
                 }
             }
         });
     }
 
-    mesh_entities(data, atlas, access, &mut mesh, chunk);
+    mesh_entities(data, atlas, access, &mut mesh, chunk, true);
+    mesh_spawner_displays(data, atlas, access, &mut mesh, chunk);
     mesh.section_visibility = compute_section_visibility(chunk);
     mesh
 }
@@ -731,6 +744,8 @@ fn emit_chest_box(
             pass,
             block_pos,
             state,
+            spawner_display: false,
+            shadow_opacity: None,
         });
     }
 }
@@ -771,13 +786,27 @@ const SIGN_TEXT_MAX_LINES: usize = 4;
 const SIGN_TEXT_SCALE: f32 = 1.0 / 96.0;
 const SIGN_TEXT_OFFSET: [f32; 3] = [0.0, 0.333_333_34, 0.046_666_667];
 const SIGN_TEXT_WALL_OFFSET: [f32; 3] = [0.0, -0.3125, -0.4375];
+const HANGING_SIGN_TEXT_LINE_HEIGHT: f32 = 9.0;
+const HANGING_SIGN_TEXT_MAX_WIDTH: f32 = 60.0;
+const HANGING_SIGN_TEXT_SCALE: f32 = 0.0140625;
+const HANGING_SIGN_TEXT_OFFSET: [f32; 3] = [0.0, -0.32, 0.073];
+const SIGN_TEXT_OUTLINE_OFFSETS: [[f32; 2]; 8] = [
+    [-1.0, -1.0],
+    [0.0, -1.0],
+    [1.0, -1.0],
+    [-1.0, 0.0],
+    [1.0, 0.0],
+    [-1.0, 1.0],
+    [0.0, 1.0],
+    [1.0, 1.0],
+];
 const SIGN_TEXT_DEPTH_OFFSET: f32 = 0.001;
 const ENTITY_OVERLAY_DEPTH_OFFSET: f32 = 0.001;
 const ENTITY_SCALE_PIVOT_Y: f32 = 24.016;
 
-/// Vanilla standing/wall sign text (`AbstractSignRenderer` +
-/// `StandingSignRenderer`): four centred lines of ASCII glyphs from
-/// `font/ascii.png`, transformed into the sign's front or back plane.
+/// Vanilla sign text (`AbstractSignRenderer` + sign renderer transforms):
+/// four centred lines of ASCII glyphs from `font/ascii.png`, transformed into
+/// the sign's front or back plane.
 fn mesh_sign_text<A: BlockAccess + ?Sized>(
     data: &ResourcePackData,
     atlas: &Atlas,
@@ -788,7 +817,7 @@ fn mesh_sign_text<A: BlockAccess + ?Sized>(
     state: BlockState,
 ) {
     let name = state.block().name();
-    if !name.ends_with("_sign") || name.contains("hanging_sign") {
+    if !name.ends_with("_sign") {
         return;
     }
     let Some(block_entity) = chunk.block_entity_at((block_pos[0], block_pos[1], block_pos[2]))
@@ -800,7 +829,8 @@ fn mesh_sign_text<A: BlockAccess + ?Sized>(
     else {
         return;
     };
-    let wall = name.ends_with("_wall_sign");
+    let hanging = name.contains("hanging_sign");
+    let wall = name.ends_with("_wall_sign") || name.contains("_wall_hanging_sign");
     let angle = if wall {
         direction_y_rotation(state.facing())
     } else {
@@ -827,9 +857,33 @@ fn mesh_sign_text<A: BlockAccess + ?Sized>(
             block_light
         };
         let color = sign_text_color(&text.color, text.glowing);
+        let outline = text.glowing.then(|| sign_text_outline_color(&text.color));
+        let line_height = if hanging {
+            HANGING_SIGN_TEXT_LINE_HEIGHT
+        } else {
+            SIGN_TEXT_LINE_HEIGHT
+        };
         for (line_index, line) in text.lines.iter().take(SIGN_TEXT_MAX_LINES).enumerate() {
             emit_sign_line(
-                atlas, mesh, block_pos, state, angle, wall, back, region, line_index, line, color,
+                atlas,
+                mesh,
+                block_pos,
+                state,
+                angle,
+                wall,
+                hanging,
+                back,
+                region,
+                line_index,
+                line,
+                line_height,
+                if hanging {
+                    HANGING_SIGN_TEXT_MAX_WIDTH
+                } else {
+                    90.0
+                },
+                color,
+                outline,
                 light,
             );
         }
@@ -844,56 +898,100 @@ fn emit_sign_line(
     state: BlockState,
     angle: f32,
     wall: bool,
+    hanging: bool,
     back: bool,
     region: AtlasRegion,
     line_index: usize,
     line: &str,
+    line_height: f32,
+    max_width: f32,
     color: [f32; 3],
+    outline: Option<[f32; 3]>,
     light: [f32; 2],
 ) {
-    let transform = sign_text_transform(angle, wall, back);
-    let width: f32 = visible_sign_chars(line)
-        .map(|character| sign_glyph(atlas, region, character).map_or(0.0, |(_, advance)| advance))
-        .sum();
-    let mut x = -width / 2.0;
-    let y = line_index as f32 * SIGN_TEXT_LINE_HEIGHT - 2.0 * SIGN_TEXT_LINE_HEIGHT;
+    let transform = sign_text_transform(angle, wall, hanging, back);
+    let mut glyphs = Vec::new();
+    let mut width = 0.0;
     for character in visible_sign_chars(line) {
         let Some((uvs, advance)) = sign_glyph(atlas, region, character) else {
             continue;
         };
+        if width + advance > max_width {
+            break;
+        }
+        glyphs.push((character, uvs, advance));
+        width += advance;
+    }
+    let mut x = -width / 2.0;
+    let y = line_index as f32 * line_height - 2.0 * line_height;
+    for (character, uvs, advance) in glyphs {
         if !character.is_whitespace() {
             let corners = [[x, y], [x, y + 8.0], [x + 8.0, y + 8.0], [x + 8.0, y]];
-            let base = mesh.vertices.len() as u32;
-            for (index, corner) in corners.iter().enumerate() {
-                let position = transform(*corner);
-                mesh.vertices.push(Vertex {
-                    position: [
-                        block_pos[0] as f32 + position[0],
-                        block_pos[1] as f32 + position[1],
-                        block_pos[2] as f32 + position[2],
-                    ],
-                    uv: uvs[index],
-                    color,
-                    light,
-                });
+            if let Some(outline) = outline {
+                for offset in SIGN_TEXT_OUTLINE_OFFSETS {
+                    let outline_corners =
+                        corners.map(|corner| [corner[0] + offset[0], corner[1] + offset[1]]);
+                    emit_sign_glyph_quad(
+                        mesh,
+                        block_pos,
+                        state,
+                        &transform,
+                        outline_corners,
+                        uvs,
+                        outline,
+                        light,
+                    );
+                }
             }
-            mesh.translucent_indices.extend_from_slice(&[
-                base,
-                base + 1,
-                base + 2,
-                base,
-                base + 2,
-                base + 3,
-            ]);
-            mesh.translucent_meta.push(QuadMeta {
-                facing: FACING_UNASSIGNED,
-                pass: TerrainPass::Translucent,
-                block_pos,
-                state,
-            });
+            emit_sign_glyph_quad(
+                mesh, block_pos, state, &transform, corners, uvs, color, light,
+            );
         }
         x += advance;
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_sign_glyph_quad<F: Fn([f32; 2]) -> [f32; 3]>(
+    mesh: &mut Mesh,
+    block_pos: [i32; 3],
+    state: BlockState,
+    transform: &F,
+    corners: [[f32; 2]; 4],
+    uvs: [[f32; 2]; 4],
+    color: [f32; 3],
+    light: [f32; 2],
+) {
+    let base = mesh.vertices.len() as u32;
+    for (index, corner) in corners.iter().enumerate() {
+        let position = transform(*corner);
+        mesh.vertices.push(Vertex {
+            position: [
+                block_pos[0] as f32 + position[0],
+                block_pos[1] as f32 + position[1],
+                block_pos[2] as f32 + position[2],
+            ],
+            uv: uvs[index],
+            color,
+            light,
+        });
+    }
+    mesh.translucent_indices.extend_from_slice(&[
+        base,
+        base + 1,
+        base + 2,
+        base,
+        base + 2,
+        base + 3,
+    ]);
+    mesh.translucent_meta.push(QuadMeta {
+        facing: FACING_UNASSIGNED,
+        pass: TerrainPass::Translucent,
+        block_pos,
+        state,
+        spawner_display: false,
+        shadow_opacity: None,
+    });
 }
 
 /// Glyph UV quad (top-left, bottom-left, bottom-right, top-right) and advance
@@ -955,21 +1053,36 @@ fn sign_glyph(atlas: &Atlas, region: AtlasRegion, character: char) -> Option<([[
 
 /// `StandingSignRenderer.textTransformation`: block centre, yaw, optional
 /// wall offset, optional 180° back flip, then text offset and 1/96 scale.
-fn sign_text_transform(angle: f32, wall: bool, back: bool) -> impl Fn([f32; 2]) -> [f32; 3] {
+fn sign_text_transform(
+    angle: f32,
+    wall: bool,
+    hanging: bool,
+    back: bool,
+) -> impl Fn([f32; 2]) -> [f32; 3] {
     let (sin, cos) = angle.to_radians().sin_cos();
-    let wall_offset = if wall {
+    let wall_offset = if wall && !hanging {
         SIGN_TEXT_WALL_OFFSET
     } else {
         [0.0; 3]
+    };
+    let (scale, text_offset, anchor_y, translate_y) = if hanging {
+        (
+            HANGING_SIGN_TEXT_SCALE,
+            HANGING_SIGN_TEXT_OFFSET,
+            0.9375,
+            -0.3125,
+        )
+    } else {
+        (SIGN_TEXT_SCALE, SIGN_TEXT_OFFSET, 0.5, 0.0)
     };
     let normal = if back { -1.0 } else { 1.0 };
     let normal_x = -normal * sin;
     let normal_z = normal * cos;
     move |corner| {
         let mut point = [
-            corner[0] * SIGN_TEXT_SCALE + SIGN_TEXT_OFFSET[0] + wall_offset[0],
-            -corner[1] * SIGN_TEXT_SCALE + SIGN_TEXT_OFFSET[1] + wall_offset[1],
-            SIGN_TEXT_OFFSET[2] + wall_offset[2],
+            corner[0] * scale + text_offset[0] + wall_offset[0],
+            -corner[1] * scale + anchor_y + translate_y + text_offset[1] + wall_offset[1],
+            text_offset[2] + wall_offset[2],
         ];
         if back {
             point[0] = -point[0];
@@ -979,7 +1092,7 @@ fn sign_text_transform(angle: f32, wall: bool, back: bool) -> impl Fn([f32; 2]) 
         let z = point[0] * sin + point[2] * cos;
         [
             0.5 + x + normal_x * SIGN_TEXT_DEPTH_OFFSET,
-            0.5 + point[1],
+            if hanging { point[1] } else { 0.5 + point[1] },
             0.5 + z + normal_z * SIGN_TEXT_DEPTH_OFFSET,
         ]
     }
@@ -1035,6 +1148,155 @@ struct EntityModel {
     cubes: &'static [EntityCube],
     rotated_cubes: &'static [EntityCubeRot],
     scale: f32,
+}
+
+fn entity_shadow_radius(model: &EntityModel) -> f32 {
+    let mut min = [f32::INFINITY; 2];
+    let mut max = [f32::NEG_INFINITY; 2];
+    let mut include = |vertex: [f32; 3]| {
+        min[0] = min[0].min(vertex[0]);
+        min[1] = min[1].min(vertex[2]);
+        max[0] = max[0].max(vertex[0]);
+        max[1] = max[1].max(vertex[2]);
+    };
+    for cube in model.cubes {
+        for (_, vertices, _) in
+            model_box_faces(cube.cube, cube.texture_origin, cube.mirror, cube.growth)
+        {
+            for vertex in vertices {
+                let vertex = entity_part_vertex(vertex, cube.offset, [cube.rotation_x, 0.0, 0.0]);
+                include([vertex[0] * model.scale, vertex[1], vertex[2] * model.scale]);
+            }
+        }
+    }
+    for cube in model.rotated_cubes {
+        for (_, vertices, _) in
+            model_box_faces(cube.cube, cube.texture_origin, cube.mirror, cube.growth)
+        {
+            for vertex in vertices {
+                let vertex = entity_part_vertex(vertex, cube.offset, cube.rotation);
+                include([vertex[0] * model.scale, vertex[1], vertex[2] * model.scale]);
+            }
+        }
+    }
+    ((max[0] - min[0]).max(max[1] - min[1]) / 32.0).clamp(0.25, 1.5)
+}
+
+fn entity_shadow_model(id: &str) -> Option<&'static EntityModel> {
+    match id {
+        "minecraft:pig" => Some(&PIG_MODEL),
+        "minecraft:cow" => Some(&COW_MODEL),
+        "minecraft:chicken" => Some(&CHICKEN_MODEL),
+        "minecraft:creeper" => Some(&CREEPER_MODEL),
+        "minecraft:sheep" => Some(&SHEEP_MODEL),
+        "minecraft:zombie" | "minecraft:drowned" | "minecraft:husk" => Some(&ZOMBIE_MODEL),
+        "minecraft:skeleton" => Some(&SKELETON_MODEL),
+        "minecraft:wolf" => Some(&WOLF_MODEL),
+        "minecraft:parrot" => Some(&PARROT_MODEL),
+        "minecraft:bat" => Some(&BAT_MODEL),
+        "minecraft:bee" => Some(&BEE_MODEL),
+        "minecraft:enderman" => Some(&ENDERMAN_MODEL),
+        "minecraft:squid" | "minecraft:glow_squid" => Some(&SQUID_MODEL),
+        "minecraft:spider" => Some(&SPIDER_MODEL),
+        "minecraft:horse" => Some(&HORSE_MODEL),
+        _ => None,
+    }
+}
+
+fn emit_entity_shadow<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    access: &A,
+    mesh: &mut Mesh,
+    position: [f64; 3],
+    radius: f32,
+) {
+    let texture_id = data.entity_textures.shadow;
+    if data
+        .texture_table
+        .get(texture_id as usize)
+        .is_none_or(|path| path.as_ref() != "minecraft:misc/shadow")
+    {
+        return;
+    }
+    let region = atlas.region(texture_id);
+    let x0 = (position[0] as f32 - radius).floor() as i32;
+    let x1 = (position[0] as f32 + radius).floor() as i32;
+    let z0 = (position[2] as f32 - radius).floor() as i32;
+    let z1 = (position[2] as f32 + radius).floor() as i32;
+    let y_top = position[1].floor() as i32;
+    let y_bottom = (position[1] - 1.0).floor() as i32;
+
+    for z in z0..=z1 {
+        let min_z = (z as f32).max(position[2] as f32 - radius);
+        let max_z = (z as f32 + 1.0).min(position[2] as f32 + radius);
+        for x in x0..=x1 {
+            let min_x = (x as f32).max(position[0] as f32 - radius);
+            let max_x = (x as f32 + 1.0).min(position[0] as f32 + radius);
+            for y in (y_bottom..=y_top).rev() {
+                let state = access.block_at(x, y, z);
+                if !mcre_world::is_face_sturdy(state, Direction::Up) {
+                    continue;
+                }
+                let surface_y = y + 1;
+                let depth = (position[1] - f64::from(surface_y)) as f32;
+                if !(0.0..=1.0).contains(&depth) {
+                    continue;
+                }
+                let (block_light, sky_light) = access.light_at(x, surface_y, z);
+                let brightness = f32::from(block_light.max(sky_light)) / 15.0;
+                if brightness <= 0.0 {
+                    continue;
+                }
+                let alpha = (0.5 * (1.0 - depth * 0.5) * brightness).clamp(0.0, 1.0);
+                let alpha = (alpha * 255.0 + 0.5).floor() as u8;
+                if alpha == 0 {
+                    continue;
+                }
+                let top = surface_y as f32 + 0.002;
+                let u = |world_x: f32| 0.5 - (world_x - position[0] as f32) / (2.0 * radius);
+                let v = |world_z: f32| 0.5 - (world_z - position[2] as f32) / (2.0 * radius);
+                let positions = [
+                    [min_x, top, min_z],
+                    [min_x, top, max_z],
+                    [max_x, top, max_z],
+                    [max_x, top, min_z],
+                ];
+                let uvs = [
+                    [u(min_x), v(min_z)],
+                    [u(min_x), v(max_z)],
+                    [u(max_x), v(max_z)],
+                    [u(max_x), v(min_z)],
+                ];
+                let base = mesh.vertices.len() as u32;
+                for index in 0..4 {
+                    mesh.vertices.push(Vertex {
+                        position: positions[index],
+                        uv: atlas_uv_dimensions(region, atlas, &uvs[index], [1.0, 1.0]),
+                        color: [1.0; 3],
+                        light: [15.0; 2],
+                    });
+                }
+                mesh.translucent_indices.extend_from_slice(&[
+                    base,
+                    base + 1,
+                    base + 2,
+                    base,
+                    base + 2,
+                    base + 3,
+                ]);
+                mesh.translucent_meta.push(QuadMeta {
+                    facing: FACING_UNASSIGNED,
+                    pass: TerrainPass::Translucent,
+                    block_pos: [x, y, z],
+                    state: Block::AIR.default_state(),
+                    spawner_display: false,
+                    shadow_opacity: Some(alpha),
+                });
+                break;
+            }
+        }
+    }
 }
 
 const PIG_CUBES: &[EntityCube] = &[
@@ -2417,6 +2679,20 @@ fn quad_normal(points: [[f32; 3]; 4]) -> [f32; 3] {
     }
 }
 
+fn entity_diffuse_brightness(normal: [f32; 3]) -> f32 {
+    let light0 = [0.16169042, 0.8084521, -0.5659165];
+    let light1 = [-0.16169042, 0.8084521, 0.5659165];
+    let dot = |light: [f32; 3]| {
+        (normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2]).max(0.0)
+    };
+    ((dot(light0) + dot(light1)) * 0.6 + 0.4).min(1.0)
+}
+
+const SPAWNER_PREVIEW_SCALE: f32 = 0.53125;
+const SPAWNER_PREVIEW_Y: f32 = 0.4;
+const SPAWNER_PREVIEW_PITCH: f32 = -core::f32::consts::FRAC_PI_6;
+const SPAWNER_PREVIEW_DROP: f32 = 0.2;
+
 #[allow(clippy::too_many_arguments)]
 fn emit_entity_cube(
     atlas: &Atlas,
@@ -2463,38 +2739,54 @@ fn emit_entity_cube(
                 }
             }
         }
+        let diffuse = entity_diffuse_brightness(quad_normal(positions));
+        let two_sided = (cube[3] == 0.0 || cube[4] == 0.0 || cube[5] == 0.0)
+            && quad_normal(positions) != [0.0; 3];
+        let side_count = 1 + usize::from(two_sided);
         for (index, position) in positions.iter().enumerate() {
             mesh.vertices.push(Vertex {
                 position: *position,
                 uv: atlas_uv_dimensions(region, atlas, &uvs[index], texture_size),
-                color: tint,
+                color: tint.map(|component| component * diffuse),
                 light,
             });
         }
         if pass == TerrainPass::Translucent {
-            mesh.translucent_indices.extend_from_slice(&[
-                base,
-                base + 1,
-                base + 2,
-                base,
-                base + 2,
-                base + 3,
-            ]);
-            mesh.translucent_meta.push(QuadMeta {
-                facing: FACING_UNASSIGNED,
-                pass,
-                block_pos,
-                state: Block::AIR.default_state(),
-            });
+            for side in 0..side_count {
+                let reverse = side == 1;
+                let indices = if reverse {
+                    [base, base + 2, base + 1, base, base + 3, base + 2]
+                } else {
+                    [base, base + 1, base + 2, base, base + 2, base + 3]
+                };
+                mesh.translucent_indices.extend_from_slice(&indices);
+                mesh.translucent_meta.push(QuadMeta {
+                    facing: FACING_UNASSIGNED,
+                    pass,
+                    block_pos,
+                    state: Block::AIR.default_state(),
+                    spawner_display: false,
+                    shadow_opacity: None,
+                });
+            }
         } else {
-            mesh.indices
-                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
-            mesh.opaque_meta.push(QuadMeta {
-                facing: FACING_UNASSIGNED,
-                pass,
-                block_pos,
-                state: Block::AIR.default_state(),
-            });
+            for side in 0..side_count {
+                let reverse = side == 1;
+                let indices = if reverse {
+                    [base, base + 2, base + 1, base, base + 3, base + 2]
+                } else {
+                    [base, base + 1, base + 2, base, base + 2, base + 3]
+                };
+                mesh.indices.extend_from_slice(&indices);
+                mesh.opaque_meta.push(QuadMeta {
+                    facing: FACING_UNASSIGNED,
+                    pass,
+                    block_pos,
+                    state: Block::AIR.default_state(),
+                    spawner_display: false,
+                    shadow_opacity: None,
+                });
+            }
         }
     }
 }
@@ -2712,6 +3004,8 @@ fn emit_minecart_cube(
             pass,
             block_pos,
             state: Block::AIR.default_state(),
+            spawner_display: false,
+            shadow_opacity: None,
         });
     }
 }
@@ -2769,6 +3063,8 @@ fn emit_minecart_chest(
                 pass,
                 block_pos,
                 state: Block::AIR.default_state(),
+                spawner_display: false,
+                shadow_opacity: None,
             });
         }
     }
@@ -2915,6 +3211,8 @@ fn mesh_item_entity<A: BlockAccess + ?Sized>(
                 pass,
                 block_pos,
                 state,
+                spawner_display: false,
+                shadow_opacity: None,
             });
         }
     });
@@ -2974,6 +3272,8 @@ fn mesh_falling_block<A: BlockAccess + ?Sized>(
                 pass,
                 block_pos,
                 state,
+                spawner_display: false,
+                shadow_opacity: None,
             });
         }
     });
@@ -2985,6 +3285,7 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
     access: &A,
     mesh: &mut Mesh,
     chunk: &Chunk,
+    include_shadows: bool,
 ) {
     for entity in chunk.entities() {
         let Ok((_, root)) = mcre_anvil::nbt::read_named(entity.nbt()) else {
@@ -2998,6 +3299,7 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
             continue;
         }
         let position = entity.position();
+        let entity_vertex_start = mesh.vertices.len();
         let block_pos = [
             position[0].floor() as i32,
             position[1].floor() as i32,
@@ -3403,6 +3705,121 @@ fn mesh_entities<A: BlockAccess + ?Sized>(
             }
             _ => {}
         }
+        if include_shadows
+            && mesh.vertices.len() > entity_vertex_start
+            && let Some(model) = entity_shadow_model(entity.id())
+        {
+            emit_entity_shadow(
+                data,
+                atlas,
+                access,
+                mesh,
+                position,
+                entity_shadow_radius(model),
+            );
+        }
+    }
+}
+
+fn mesh_spawner_displays<A: BlockAccess + ?Sized>(
+    data: &ResourcePackData,
+    atlas: &Atlas,
+    access: &A,
+    mesh: &mut Mesh,
+    chunk: &Chunk,
+) {
+    for block_entity in chunk.block_entities() {
+        let preview_state = match block_entity.id() {
+            "minecraft:mob_spawner" => Block::SPAWNER.default_state(),
+            "minecraft:trial_spawner" => Block::TRIAL_SPAWNER.default_state(),
+            _ => continue,
+        };
+        let Ok((_, root)) = mcre_anvil::nbt::read_named(block_entity.nbt()) else {
+            continue;
+        };
+        let Some(spawn_data) = root.get("SpawnData").or_else(|| root.get("spawn_data")) else {
+            continue;
+        };
+        let entity_data = spawn_data.get("entity").unwrap_or(spawn_data);
+        let Some(id) = entity_data.get("id").and_then(Tag::as_str) else {
+            continue;
+        };
+        let id = if id.contains(':') {
+            id.to_owned()
+        } else {
+            format!("minecraft:{id}")
+        };
+        let mut entity_data = entity_data.clone();
+        entity_data.set("id", Tag::String(id.clone()));
+        let (x, y, z) = block_entity.position();
+        let position = [f64::from(x), f64::from(y), f64::from(z)];
+        let entity = mcre_world::WorldEntity::new(
+            id,
+            position,
+            mcre_anvil::nbt::write_named("", &entity_data),
+        );
+        let mut display_chunk = Chunk::new_at(chunk.pos());
+        if !display_chunk.set_entity(entity) {
+            continue;
+        }
+        let vertex_start = mesh.vertices.len();
+        let opaque_meta_start = mesh.opaque_meta.len();
+        let translucent_meta_start = mesh.translucent_meta.len();
+        mesh_entities(data, atlas, access, mesh, &display_chunk, false);
+        if mesh.vertices.len() == vertex_start {
+            continue;
+        }
+
+        let mut min = [f32::INFINITY; 3];
+        let mut max = [f32::NEG_INFINITY; 3];
+        for vertex in &mesh.vertices[vertex_start..] {
+            for axis in 0..3 {
+                let local = vertex.position[axis] - position[axis] as f32;
+                min[axis] = min[axis].min(local);
+                max[axis] = max[axis].max(local);
+            }
+        }
+        let max_size = (0..3).map(|axis| max[axis] - min[axis]).fold(0.0, f32::max);
+        let scale = if max_size > 1.0 {
+            SPAWNER_PREVIEW_SCALE / max_size
+        } else {
+            SPAWNER_PREVIEW_SCALE
+        };
+        let (sin_x, cos_x) = SPAWNER_PREVIEW_PITCH.sin_cos();
+        let center = [x as f32 + 0.5, y as f32 + SPAWNER_PREVIEW_Y, z as f32 + 0.5];
+        for face in mesh.vertices[vertex_start..].as_chunks_mut::<4>().0 {
+            let old_positions = core::array::from_fn(|index| face[index].position);
+            let old_diffuse = entity_diffuse_brightness(quad_normal(old_positions));
+            for vertex in face.iter_mut() {
+                let mut local = [
+                    (vertex.position[0] - x as f32) * scale,
+                    (vertex.position[1] - y as f32) * scale,
+                    (vertex.position[2] - z as f32) * scale,
+                ];
+                let rotated_y = local[1] * cos_x - local[2] * sin_x - SPAWNER_PREVIEW_DROP;
+                let rotated_z = local[1] * sin_x + local[2] * cos_x;
+                local[1] = rotated_y;
+                local[2] = rotated_z;
+                vertex.position = [
+                    center[0] + local[0],
+                    center[1] + local[1],
+                    center[2] + local[2],
+                ];
+            }
+            if old_diffuse > 0.0 {
+                for vertex in face.iter_mut() {
+                    vertex.color = vertex.color.map(|component| component / old_diffuse);
+                }
+            }
+        }
+        for meta in &mut mesh.opaque_meta[opaque_meta_start..] {
+            meta.state = preview_state;
+            meta.spawner_display = true;
+        }
+        for meta in &mut mesh.translucent_meta[translucent_meta_start..] {
+            meta.state = preview_state;
+            meta.spawner_display = true;
+        }
     }
 }
 
@@ -3427,6 +3844,14 @@ fn sign_text_color(name: &str, glowing: bool) -> [f32; 3] {
     };
     let scale = if glowing { 1.0 } else { 0.4 };
     rgb.map(|component| ((component as f32 * scale) as u8) as f32 / 255.0)
+}
+
+fn sign_text_outline_color(name: &str) -> [f32; 3] {
+    if name == "black" {
+        [240.0 / 255.0, 235.0 / 255.0, 204.0 / 255.0]
+    } else {
+        sign_text_color(name, false)
+    }
 }
 
 /// Vanilla `Block.getShadeBrightness`: collision-full cells darken
@@ -5332,6 +5757,25 @@ mod tests {
         color: &str,
         glowing: bool,
     ) -> mcre_world::BlockEntity {
+        sign_entity_with_id("minecraft:sign", front, back, color, glowing)
+    }
+
+    fn hanging_sign_entity(
+        front: &[&str],
+        back: &[&str],
+        color: &str,
+        glowing: bool,
+    ) -> mcre_world::BlockEntity {
+        sign_entity_with_id("minecraft:hanging_sign", front, back, color, glowing)
+    }
+
+    fn sign_entity_with_id(
+        id: &str,
+        front: &[&str],
+        back: &[&str],
+        color: &str,
+        glowing: bool,
+    ) -> mcre_world::BlockEntity {
         use mcre_anvil::nbt::Tag;
         let side = |lines: &[&str]| {
             Tag::Compound(vec![
@@ -5356,7 +5800,7 @@ mod tests {
             ("back_text".into(), side(back)),
         ]);
         mcre_world::BlockEntity::new(
-            "minecraft:sign".into(),
+            id.into(),
             (0, 0, 0),
             mcre_anvil::nbt::write_named("", &root),
         )
@@ -5613,6 +6057,39 @@ mod tests {
         mcre_world::WorldEntity::new(
             "minecraft:item".into(),
             [8.0, 64.0, 8.0],
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
+    fn spawner_block_entity(id: &str) -> mcre_world::BlockEntity {
+        let spawn_data = Tag::Compound(vec![(
+            "entity".into(),
+            Tag::Compound(vec![("id".into(), Tag::String(id.into()))]),
+        )]);
+        let root = Tag::Compound(vec![
+            ("id".into(), Tag::String("minecraft:mob_spawner".into())),
+            ("SpawnData".into(), spawn_data),
+            ("Delay".into(), Tag::Short(200)),
+        ]);
+        mcre_world::BlockEntity::new(
+            "minecraft:mob_spawner".into(),
+            (8, 64, 8),
+            mcre_anvil::nbt::write_named("", &root),
+        )
+    }
+
+    fn trial_spawner_block_entity(id: &str) -> mcre_world::BlockEntity {
+        let spawn_data = Tag::Compound(vec![(
+            "entity".into(),
+            Tag::Compound(vec![("id".into(), Tag::String(id.into()))]),
+        )]);
+        let root = Tag::Compound(vec![
+            ("id".into(), Tag::String("minecraft:trial_spawner".into())),
+            ("spawn_data".into(), spawn_data),
+        ]);
+        mcre_world::BlockEntity::new(
+            "minecraft:trial_spawner".into(),
+            (8, 64, 8),
             mcre_anvil::nbt::write_named("", &root),
         )
     }
@@ -5927,14 +6404,47 @@ mod tests {
     }
 
     #[test]
+    fn hanging_sign_text_uses_vanilla_scale_and_anchor() {
+        let mut chunk = Chunk::new();
+        let state = Block::OAK_HANGING_SIGN
+            .state(&[PropVal::Rotation(0)])
+            .expect("hanging sign rotation");
+        chunk.set_block(0, 0, 0, state);
+        assert!(chunk.set_block_entity(hanging_sign_entity(&["A"], &[], "black", false)));
+
+        let mesh = mesh_sign(&sign_data(), &sign_atlas(), &chunk);
+        assert_eq!(mesh.translucent_indices.len(), 6);
+        assert_eq!(mesh.translucent_meta.len(), 1);
+        let min_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - (0.5 - 3.5 * HANGING_SIGN_TEXT_SCALE)).abs() < 1e-5);
+        assert!((max_x - (0.5 + 4.5 * HANGING_SIGN_TEXT_SCALE)).abs() < 1e-5);
+        assert!((mesh.vertices[0].position[1] - 0.558125).abs() < 1e-5);
+        assert!((mesh.vertices[0].position[2] - 0.5 - 0.073 - 0.001).abs() < 1e-5);
+    }
+
+    #[test]
     fn glowing_sign_text_uses_bright_color_and_full_light() {
         let mut chunk = Chunk::new();
         chunk.set_block(0, 0, 0, sign_state(0));
         assert!(chunk.set_block_entity(sign_entity(&["A"], &[], "red", true)));
 
         let mesh = mesh_sign(&sign_data(), &sign_atlas(), &chunk);
-        assert_eq!(mesh.vertices[0].color, [1.0, 0.0, 0.0]);
-        assert_eq!(mesh.vertices[0].light, [15.0, 15.0]);
+        assert_eq!(mesh.translucent_meta.len(), 9);
+        assert_eq!(mesh.vertices[0].color, sign_text_color("red", false));
+        assert_eq!(
+            mesh.vertices[mesh.vertices.len() - 4].color,
+            [1.0, 0.0, 0.0]
+        );
+        assert_eq!(mesh.vertices[mesh.vertices.len() - 4].light, [15.0, 15.0]);
     }
 
     #[test]
@@ -6003,6 +6513,44 @@ mod tests {
         assert!((max[1] - 65.001).abs() < 1e-4);
         assert!((min[2] - 7.4375).abs() < 1e-4);
         assert!((max[2] - 8.9375).abs() < 1e-4);
+        assert_ne!(mesh.vertices[0].color, mesh.vertices[4].color);
+    }
+
+    #[test]
+    fn mob_spawner_bakes_and_marks_its_display_entity() {
+        let mut chunk = Chunk::new();
+        chunk.set_block(8, 64, 8, Block::SPAWNER.default_state());
+        assert!(chunk.set_block_entity(spawner_block_entity("minecraft:pig")));
+
+        let mesh = mesh_entity_with_atlas(&pig_data(), &entity_atlas(), &chunk);
+        assert_eq!(mesh.opaque_meta.len(), 42);
+        assert!(mesh.opaque_meta.iter().all(|meta| {
+            meta.state == Block::SPAWNER.default_state()
+                && meta.facing == crate::vertex::FACING_UNASSIGNED
+                && meta.spawner_display
+        }));
+        let (min, max) = mesh_bounds(&mesh);
+        assert!(min[0] > 8.2 && max[0] < 8.8);
+        assert!(min[1] > 64.0 && max[1] < 64.7, "{min:?} {max:?}");
+        assert!(min[2] > 8.1 && max[2] < 8.8);
+
+        let sections = pack_chunk_sections(&mesh, [0, 0]);
+        let section = sections[8].as_ref().expect("spawner display section");
+        assert!(
+            section.passes[TerrainPass::Cutout.index()]
+                .vertices
+                .iter()
+                .all(|vertex| vertex.mid_block[3] == 0x80)
+        );
+
+        let mut trial_chunk = Chunk::new();
+        trial_chunk.set_block(8, 64, 8, Block::TRIAL_SPAWNER.default_state());
+        assert!(trial_chunk.set_block_entity(trial_spawner_block_entity("minecraft:pig")));
+        let trial_mesh = mesh_entity_with_atlas(&pig_data(), &entity_atlas(), &trial_chunk);
+        assert_eq!(trial_mesh.opaque_meta.len(), 42);
+        assert!(trial_mesh.opaque_meta.iter().all(|meta| {
+            meta.state == Block::TRIAL_SPAWNER.default_state() && meta.spawner_display
+        }));
     }
 
     #[test]
@@ -6252,7 +6800,7 @@ mod tests {
         assert!(chunk.set_entity(parrot_entity(0)));
 
         let mesh = mesh_entity_with_atlas(&parrot_data(), &atlas, &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 66);
+        assert_eq!(mesh.opaque_meta.len(), 68);
         let leg_vertices = &mesh.vertices[54 * 4..];
         assert_eq!(leg_vertices.len(), 12 * 4);
         for quad in leg_vertices.as_chunks::<4>().0 {
@@ -6271,8 +6819,8 @@ mod tests {
         assert!(chunk.set_entity(parrot_entity(0)));
 
         let mesh = mesh_entity(&parrot_data(), &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 66);
-        assert_eq!(mesh.indices.len(), 66 * 6);
+        assert_eq!(mesh.opaque_meta.len(), 68);
+        assert_eq!(mesh.indices.len(), 68 * 6);
         let (min, max) = mesh_bounds(&mesh);
         assert!((min[0] - 7.875).abs() < 1e-4);
         assert!((max[0] - 8.125).abs() < 1e-4);
@@ -6296,7 +6844,7 @@ mod tests {
         assert!(chunk.set_entity(parrot_entity(3)));
 
         let mesh = mesh_entity_with_atlas(&data, &parrot_atlas(), &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 66);
+        assert_eq!(mesh.opaque_meta.len(), 68);
         assert!(
             mesh.vertices
                 .iter()
@@ -6310,8 +6858,8 @@ mod tests {
         assert!(chunk.set_entity(entity("minecraft:bat", 0.0, "minecraft:temperate")));
 
         let mesh = mesh_entity(&bat_data(), &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 54);
-        assert_eq!(mesh.indices.len(), 54 * 6);
+        assert_eq!(mesh.opaque_meta.len(), 68);
+        assert_eq!(mesh.indices.len(), 68 * 6);
         let (min, max) = mesh_bounds(&mesh);
         assert!((min[0] - 7.40625).abs() < 1e-4);
         assert!((max[0] - 8.59375).abs() < 1e-4);
@@ -6327,8 +6875,8 @@ mod tests {
         assert!(chunk.set_entity(entity("minecraft:bee", 0.0, "minecraft:temperate")));
 
         let mesh = mesh_entity(&bee_data(), &chunk);
-        assert_eq!(mesh.opaque_meta.len(), 54);
-        assert_eq!(mesh.indices.len(), 54 * 6);
+        assert_eq!(mesh.opaque_meta.len(), 74);
+        assert_eq!(mesh.indices.len(), 74 * 6);
         let (min, max) = mesh_bounds(&mesh);
         assert!((min[0] - 7.343688).abs() < 1e-4);
         assert!((max[0] - 8.656312).abs() < 1e-4);
@@ -6336,6 +6884,97 @@ mod tests {
         assert!((max[1] - 64.56356).abs() < 1e-4);
         assert!((min[2] - 7.5625).abs() < 1e-4);
         assert!((max[2] - 8.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn zero_thickness_entity_cubes_emit_reverse_faces() {
+        let atlas = entity_atlas();
+        let mut mesh = Mesh::default();
+        emit_entity_cube(
+            &atlas,
+            &mut mesh,
+            [8.0, 64.0, 8.0],
+            [8, 64, 8],
+            atlas.region(0),
+            TerrainPass::Cutout,
+            [0.0, 15.0],
+            [64.0, 64.0],
+            [1.0; 3],
+            [0.0; 3],
+            [0.0; 3],
+            [0.0; 2],
+            [-2.0, 0.0, -2.0, 4.0, 0.0, 4.0],
+            0.0,
+            false,
+            1.0,
+            0.0,
+            0.0,
+        );
+
+        assert_eq!(mesh.opaque_meta.len(), 8);
+        let quad = |group: &[u32]| {
+            let order = recover_quad(group);
+            core::array::from_fn(|index| mesh.vertices[order[index] as usize].position)
+        };
+        let front_normal = quad_normal(quad(&mesh.indices[..6]));
+        let reverse_normal = quad_normal(quad(&mesh.indices[6..12]));
+        let dot = (0..3)
+            .map(|axis| front_normal[axis] * reverse_normal[axis])
+            .sum::<f32>();
+        assert!(dot < -0.99);
+    }
+
+    #[test]
+    fn entity_shadows_follow_sturdy_top_faces_and_pack_alpha() {
+        struct LitStoneFloor;
+
+        impl BlockAccess for LitStoneFloor {
+            fn block_at(&self, _x: i32, y: i32, _z: i32) -> BlockState {
+                if y == 63 {
+                    Block::STONE.default_state()
+                } else {
+                    Block::AIR.default_state()
+                }
+            }
+
+            fn light_at(&self, _x: i32, _y: i32, _z: i32) -> (u8, u8) {
+                (0, 15)
+            }
+        }
+
+        let mut data = pig_data();
+        data.texture_table.push("minecraft:misc/shadow".into());
+        data.entity_textures.shadow = 1;
+        let atlas = entity_atlas();
+        let mut mesh = Mesh::default();
+        emit_entity_shadow(
+            &data,
+            &atlas,
+            &LitStoneFloor,
+            &mut mesh,
+            [8.0, 64.0, 8.0],
+            0.5,
+        );
+
+        assert_eq!(mesh.translucent_meta.len(), 4);
+        assert_eq!(mesh.translucent_indices.len(), 24);
+        assert!(mesh.translucent_meta.iter().all(|meta| {
+            meta.pass == TerrainPass::Translucent && meta.shadow_opacity == Some(128)
+        }));
+        assert!(
+            mesh.vertices
+                .iter()
+                .all(|vertex| vertex.position[1] == 64.002)
+        );
+
+        let sections = pack_chunk_sections(&mesh, [0, 0]);
+        let section = sections[7].as_ref().expect("entity shadow section");
+        assert!(
+            section.passes[TerrainPass::Translucent.index()]
+                .vertices
+                .iter()
+                .all(|vertex| vertex.mid_block[3] & 0xc0 == 0x40)
+        );
     }
 
     #[test]

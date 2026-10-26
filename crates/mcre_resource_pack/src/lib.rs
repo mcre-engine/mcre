@@ -229,6 +229,7 @@ mod tests {
             path(data.entity_textures.pig_warm),
             "minecraft:entity/pig/pig_warm"
         );
+        assert_eq!(path(data.entity_textures.shadow), "minecraft:misc/shadow");
         assert_eq!(
             path(data.entity_textures.cow_temperate),
             "minecraft:entity/cow/cow_temperate"

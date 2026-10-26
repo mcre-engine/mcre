@@ -280,6 +280,8 @@ fn push_face(
         pass,
         block_pos,
         state,
+        spawner_display: false,
+        shadow_opacity: None,
     });
     if back_face {
         indices.extend_from_slice(&[base + 2, base + 1, base, base + 3, base + 2, base]);
@@ -288,6 +290,8 @@ fn push_face(
             pass,
             block_pos,
             state,
+            spawner_display: false,
+            shadow_opacity: None,
         });
     }
 }
