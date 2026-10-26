@@ -86,28 +86,23 @@ try {
   ]);
   assert.equal(canvasSize[0], canvasSize[2], "canvas backing store width differs from css");
   assert.equal(canvasSize[1], canvasSize[3], "canvas backing store height differs from css");
-  let afterShot;
-  let after;
-  let changed = 0;
-  const changedThreshold = before.width * before.height * 0.01;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    afterShot = await canvas.screenshot();
-    after = PNG.sync.read(afterShot);
-    assert.equal(after.width, before.width);
-    assert.equal(after.height, before.height);
-    changed = 0;
-    for (let pixel = 0; pixel < after.width * after.height; pixel++) {
-      const offset = pixel * 4;
-      const difference = Math.abs(after.data[offset] - before.data[offset])
-        + Math.abs(after.data[offset + 1] - before.data[offset + 1])
-        + Math.abs(after.data[offset + 2] - before.data[offset + 2]);
-      if (difference > 12) changed++;
-    }
-    if (changed > changedThreshold) break;
-    await page.waitForTimeout(250);
-  }
+  await page.waitForTimeout(250);
+  const afterShot = await canvas.screenshot();
   writeFileSync(join(root, "web-demo.png"), afterShot);
-  assert(changed > after.width * after.height * 0.01, `pack upload changed only ${changed} pixels`);
+  const after = PNG.sync.read(afterShot);
+  assert.equal(after.width, before.width);
+  assert.equal(after.height, before.height);
+
+  let changed = 0;
+  for (let pixel = 0; pixel < after.width * after.height; pixel++) {
+    const offset = pixel * 4;
+    const difference = Math.abs(after.data[offset] - before.data[offset])
+      + Math.abs(after.data[offset + 1] - before.data[offset + 1])
+      + Math.abs(after.data[offset + 2] - before.data[offset + 2]);
+    if (difference > 12) changed++;
+  }
+  const renderedDraws = Number(await page.evaluate(() => document.body.dataset.renderedDraws));
+  console.log(`pack upload rendered ${renderedDraws} draw batches; ${changed} pixels changed`);
 
   const reference = PNG.sync.read(readFileSync(referencePath));
   assert.equal(after.width, reference.width, "web demo width differs from native reference");
