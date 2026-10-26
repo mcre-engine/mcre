@@ -1271,9 +1271,13 @@ impl WebViewer {
             })
             .collect();
         renderer.render(view_projection, camera_position, &chunks, None);
-        let rendered_sections = renderer.frame_stats().sections;
-        if let Some(body) = web_sys::window().and_then(|window| window.document()?.body()) {
-            let _ = body.set_attribute("data-rendered-sections", &rendered_sections.to_string());
+        if renderer.last_frame_presented() {
+            let stats = renderer.frame_stats();
+            if let Some(body) = web_sys::window().and_then(|window| window.document()?.body()) {
+                let _ = body.set_attribute("data-rendered-sections", &stats.sections.to_string());
+                let rendered_draws = stats.opaque_draws + stats.translucent_draws;
+                let _ = body.set_attribute("data-rendered-draws", &rendered_draws.to_string());
+            }
         }
         if state.debug_visible {
             let stats = renderer.frame_stats();

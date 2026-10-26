@@ -291,6 +291,7 @@ pub struct Renderer {
     cloud_time: (i64, f32),
     spawner_animation_ticks: f32,
     stats: FrameStats,
+    last_frame_presented: bool,
     capture: Option<CaptureTarget>,
 }
 
@@ -422,6 +423,7 @@ impl Renderer {
             cloud_time: (0, 0.0),
             spawner_animation_ticks: 0.0,
             stats: FrameStats::default(),
+            last_frame_presented: false,
             capture: None,
         })
     }
@@ -429,6 +431,10 @@ impl Renderer {
     /// Terrain submission counters from the most recent `render` call.
     pub fn frame_stats(&self) -> FrameStats {
         self.stats
+    }
+
+    pub fn last_frame_presented(&self) -> bool {
+        self.last_frame_presented
     }
 
     /// Distance fog, matching vanilla `Fog` uniforms: the spherical
@@ -747,6 +753,7 @@ impl Renderer {
         chunks: &[RenderChunk<'_>],
         egui: Option<EguiFrame<'_>>,
     ) {
+        self.last_frame_presented = false;
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -825,6 +832,7 @@ impl Renderer {
         command_buffers.push(encoder.finish());
         self.queue.submit(command_buffers);
         self.queue.present(frame);
+        self.last_frame_presented = true;
     }
 
     /// Encode the terrain/sky/clouds passes (plus optional egui) into an
