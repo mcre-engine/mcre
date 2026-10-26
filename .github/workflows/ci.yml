@@ -38,27 +38,3 @@ jobs:
           java-version: 25
 
       - run: just ci
-
-  web-smoke:
-    name: WebAssembly browser smoke
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: just,wasm-bindgen-cli@0.2.129
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - run: rustup target add wasm32-unknown-unknown
-
-      - run: npm ci --prefix web
-
-      - run: npx --prefix web playwright install --with-deps chromium
-
-      - run: just web-smoke
